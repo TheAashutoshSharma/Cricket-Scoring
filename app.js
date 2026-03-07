@@ -227,6 +227,111 @@ const S = {
 };
 
 // ════════════════════════════════════════════════════════════════
+// ── AdminPanel — live index management + history clear ────────────
+function AdminPanel({matchHistory, setMatchHistory, onDone}) {
+  const [liveEntries, setLiveEntries] = React.useState(null); // null=not loaded
+  const [loading, setLoading] = React.useState(false);
+  const [msg, setMsg] = React.useState("");
+
+  function loadLiveIndex() {
+    if (!_fbDB) { setMsg("Firebase not connected"); return; }
+    setLoading(true); setMsg("");
+    _fbDB.ref("liveIndex").once("value", snap => {
+      var val = snap.val();
+      setLiveEntries(val ? Object.values(val) : []);
+      setLoading(false);
+    }, err => { setMsg("Error: "+err.message); setLoading(false); });
+  }
+
+  function deleteEntry(code) {
+    if (!_fbDB) return;
+    _fbDB.ref("liveIndex/"+code).remove()
+      .then(()=>{ setLiveEntries(e=>e.filter(x=>x.code!==code)); setMsg("Removed "+code); })
+      .catch(err=>setMsg("Error: "+err.message));
+  }
+
+  function clearAllLive() {
+    if (!_fbDB || !confirm("Remove all live index entries?")) return;
+    _fbDB.ref("liveIndex").remove()
+      .then(()=>{ setLiveEntries([]); setMsg("Live index cleared"); })
+      .catch(err=>setMsg("Error: "+err.message));
+  }
+
+  function fmtAge(ts) {
+    if (!ts) return "unknown age";
+    var mins = Math.round((Date.now()-ts)/60000);
+    if (mins < 60) return mins+"m ago";
+    return Math.round(mins/60)+"h ago";
+  }
+
+  return (
+    <div style={{paddingBottom:24}}>
+      <div style={{color:"#4ade80",fontSize:13,marginBottom:20,textAlign:"center"}}>✓ Authenticated</div>
+
+      {/* Local match history */}
+      <div style={{background:"#1e293b",borderRadius:14,padding:18,border:"1px solid #334155",marginBottom:12}}>
+        <div style={{color:"#94a3b8",fontSize:13,marginBottom:12}}>
+          Local Match History: <b style={{color:"#e2e8f0"}}>{matchHistory.length} matches</b>
+        </div>
+        <button onClick={()=>{
+          if(confirm("Permanently delete all local match history?")) {
+            localStorage.removeItem(HIST_KEY);
+            setMatchHistory([]);
+            setMsg("Local history cleared");
+          }
+        }}
+          style={{width:"100%",padding:"11px 0",background:"rgba(127,29,29,.2)",border:"1px solid #7f1d1d",borderRadius:10,color:"#fca5a5",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+          🗑 Clear All Local History
+        </button>
+      </div>
+
+      {/* Firebase live index */}
+      <div style={{background:"#1e293b",borderRadius:14,padding:18,border:"1px solid #334155",marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div style={{color:"#94a3b8",fontSize:13}}>🔴 Live Index (Firebase)</div>
+          <button onClick={loadLiveIndex} disabled={loading}
+            style={{padding:"5px 12px",background:"transparent",border:"1px solid #334155",borderRadius:8,color:"#94a3b8",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            {loading?"…":liveEntries===null?"Load":"Refresh"}
+          </button>
+        </div>
+        {liveEntries===null&&!loading&&(
+          <div style={{color:"#475569",fontSize:12,textAlign:"center",padding:"8px 0"}}>Tap Load to fetch from Firebase</div>
+        )}
+        {liveEntries!==null&&liveEntries.length===0&&(
+          <div style={{color:"#475569",fontSize:12,textAlign:"center",padding:"8px 0"}}>No entries in live index</div>
+        )}
+        {liveEntries!==null&&liveEntries.length>0&&(
+          <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+            {liveEntries.map(e=>(
+              <div key={e.code} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0f172a",borderRadius:10,padding:"10px 12px",border:"1px solid #334155"}}>
+                <div>
+                  <div style={{color:"#e2e8f0",fontSize:13}}>{e.teamA} vs {e.teamB}</div>
+                  <div style={{color:"#475569",fontSize:11}}>{e.code} · {fmtAge(e.updatedAt||e.createdAt)}</div>
+                </div>
+                <button onClick={()=>deleteEntry(e.code)}
+                  style={{padding:"6px 12px",background:"rgba(127,29,29,.2)",border:"1px solid #7f1d1d",borderRadius:8,color:"#fca5a5",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                  Remove
+                </button>
+              </div>
+            ))}
+            <button onClick={clearAllLive}
+              style={{width:"100%",padding:"10px 0",background:"rgba(127,29,29,.2)",border:"1px solid #7f1d1d",borderRadius:10,color:"#fca5a5",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",marginTop:4}}>
+              🗑 Clear All Live Entries
+            </button>
+          </div>
+        )}
+      </div>
+
+      {msg&&<div style={{color:"#4ade80",fontSize:12,textAlign:"center",marginBottom:12}}>{msg}</div>}
+
+      <button onClick={onDone}
+        style={{width:"100%",padding:"11px 0",background:"transparent",border:"1px solid #334155",borderRadius:10,color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+        Done
+      </button>
+    </div>
+  );
+}
+
 function App() {
   const [screen,    setScreen]   = useState("home");
   const [setup,     setSetup]    = useState(blankSetup);
@@ -634,7 +739,7 @@ function App() {
 
 
   if (screen==="home") return (
-    <div style={{minHeight:"100dvh",background:"linear-gradient(170deg,#0c1828,#0f172a)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"28px 16px",fontFamily:"Georgia,serif"}}>
+    <div style={{minHeight:"100dvh",background:"linear-gradient(170deg,#0c1828,#0f172a)",display:"flex",flexDirection:"column",alignItems:"center",padding:"28px 16px 40px",fontFamily:"Georgia,serif",overflowY:"auto"}}>
       <div style={{width:"100%",maxWidth:420}}>
         <div style={{textAlign:"center",marginBottom:32}}>
           <div style={{fontSize:52}}>🏏</div>
@@ -866,7 +971,7 @@ function App() {
   // ════════════════════════════════════════════════════════════
   // ADMIN
   if (screen==="admin") {
-    const ADMIN_PIN = "1989"; // change this to your PIN
+    const ADMIN_PIN = "1989";
     var pinOk = adminPin===ADMIN_PIN;
     return (
       <div style={S.page}>
@@ -887,24 +992,7 @@ function App() {
               {adminPin.length>0&&!pinOk&&<div style={{color:"#f87171",fontSize:12,marginTop:10}}>Incorrect PIN</div>}
             </div>
           ) : (
-            <div style={{background:"#1e293b",borderRadius:14,padding:24,border:"1px solid #334155"}}>
-              <div style={{color:"#4ade80",fontSize:13,marginBottom:20,textAlign:"center"}}>✓ Authenticated</div>
-              <div style={{color:"#94a3b8",fontSize:13,marginBottom:8}}>Match History: <b style={{color:"#e2e8f0"}}>{matchHistory.length} matches</b></div>
-              <button onClick={()=>{
-                if(confirm("Permanently delete all match history? This cannot be undone.")) {
-                  localStorage.removeItem(HIST_KEY);
-                  setMatchHistory([]);
-                  alert("History cleared.");
-                }
-              }}
-                style={{width:"100%",padding:"12px 0",background:"rgba(127,29,29,.2)",border:"1px solid #7f1d1d",borderRadius:10,color:"#fca5a5",fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif",marginBottom:12}}>
-                🗑 Clear All Match History
-              </button>
-              <button onClick={()=>{setScreen("home");setAdminPin("");}}
-                style={{width:"100%",padding:"10px 0",background:"transparent",border:"1px solid #334155",borderRadius:10,color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-                Done
-              </button>
-            </div>
+            <AdminPanel matchHistory={matchHistory} setMatchHistory={setMatchHistory} onDone={()=>{setScreen("home");setAdminPin("");}}/>
           )}
         </div>
       </div>
