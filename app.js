@@ -205,7 +205,6 @@ function App() {
   // Over complete: waiting for new bowler selection
   const [overComplete, setOverComplete] = useState(false);
   const listRef = useRef(null);
-  const overDoneRef = useRef(false);
 
   // Init Firebase
   useEffect(() => { setFbReady(initFB()); }, []);
@@ -224,6 +223,13 @@ function App() {
       }
     } catch(e) {}
   }, []);
+
+  // Show bowler picker whenever an over completes
+  useEffect(() => {
+    if (match && match.needsBowler && !isViewer) {
+      setOverComplete(true);
+    }
+  }, [match ? match.needsBowler : null]);
 
   // Persist locally
   useEffect(() => {
@@ -313,7 +319,7 @@ function App() {
   }
 
   function selectNewBowler(i) {
-    setMatch(m=>({...m, currentBowler:i}));
+    setMatch(m=>({...m, currentBowler:i, needsBowler:false}));
     setOverComplete(false);
   }
   function commitEdit() {
@@ -333,10 +339,10 @@ function App() {
   // ── Scoring ──────────────────────────────────────────────────
   function addRuns(r, extra) {
     extra = extra || null;
-    var overDone = false;
     setMatch(prev => {
       pushHist(prev);
       var m = JSON.parse(JSON.stringify(prev));
+      m.needsBowler = false;
       var bt=m.batting, b1=m.currentBatsmen[m.striker], bi=m.currentBowler;
       var bT=bt===0?m.teamA:m.teamB, wT=bt===0?m.teamB:m.teamA;
       var dead = extra==="Wide"||extra==="No Ball";
@@ -381,7 +387,7 @@ function App() {
           m.overs[bt]++; m.balls[bt]=0;
           wT.bowlers[bi].overs++; wT.bowlers[bi].balls=0;
           m.striker=1-m.striker;
-          overDone = true;
+          if (!(m.overs[bt]>=m.totalOvers||m.wickets[bt]>=10)) m.needsBowler = true;
         }
         if (r%2!==0) m.striker=1-m.striker;
       } else if (extra==="No Ball") {
@@ -390,17 +396,15 @@ function App() {
       }
 
       if (m.overs[bt]>=m.totalOvers||m.wickets[bt]>=10) m.inningsOver[bt]=true;
-      if (overDone && !m.inningsOver[bt]) overDoneRef.current = true;
       return m;
     });
-    if (overDone) setTimeout(()=>{ if(overDoneRef.current){overDoneRef.current=false;setOverComplete(true);} }, 80);
   }
 
   function addWicket(how) {
-    var overDone = false;
     setMatch(prev => {
       pushHist(prev);
       var m = JSON.parse(JSON.stringify(prev));
+      m.needsBowler = false;
       var bt=m.batting, b1=m.currentBatsmen[m.striker], bi=m.currentBowler;
       var bT=bt===0?m.teamA:m.teamB, wT=bt===0?m.teamB:m.teamA;
       bT.players[b1].out=true; bT.players[b1].howOut=how;
@@ -420,15 +424,13 @@ function App() {
       if (m.balls[bt]===6) {
         m.overs[bt]++; m.balls[bt]=0;
         wT.bowlers[bi].overs++; wT.bowlers[bi].balls=0;
-        overDone = true;
+        if (!(m.wickets[bt]>=10||m.overs[bt]>=m.totalOvers)) m.needsBowler = true;
       }
       m.ballLog[bt].push({r:0,wicket:how});
       var nx=m.wickets[bt]+1; if(nx<11)m.currentBatsmen[m.striker]=nx;
       if(m.wickets[bt]>=10||m.overs[bt]>=m.totalOvers)m.inningsOver[bt]=true;
-      if (overDone && !m.inningsOver[bt]) overDoneRef.current = true;
       return m;
     });
-    if (overDone) setTimeout(()=>{ if(overDoneRef.current){overDoneRef.current=false;setOverComplete(true);} }, 80);
   }
 
   // ════════════════════════════════════════════════════════════
