@@ -20,6 +20,7 @@ const EXTRAS    = ["Wide", "No Ball", "Bye", "Leg Bye"];
 const HOW_OUT   = ["Bowled", "Caught", "LBW", "Run Out", "Stumped", "Hit Wicket"];
 const RET_HURT  = "Retired Hurt";
 const LOCAL_KEY = "cricket-v5";
+const HIST_KEY  = "cricket-history-v1";
 const MAX_HIST  = 30;
 
 // ── Firebase ─────────────────────────────────────────────────────
@@ -39,7 +40,7 @@ function genCode() {
 }
 
 // ── Factories ────────────────────────────────────────────────────
-const mkP = n => ({ name:n||"Player", runs:0, balls:0, fours:0, sixes:0, out:false, howOut:"" });
+const mkP = n => ({ name:n||"Player", runs:0, balls:0, fours:0, sixes:0, out:false, retired:false, howOut:"", dismissedBy:"" });
 const mkB = n => ({ name:n||"Bowler", overs:0, balls:0, maidens:0, runs:0, wickets:0 });
 
 const blankSetup = () => ({
@@ -49,6 +50,8 @@ const blankSetup = () => ({
   teamBPlayers: Array.from({length:11},(_,i)=>"Player "+(i+1)),
   teamABowlers: Array.from({length:6}, (_,i)=>"Bowler "+(i+1)),
   teamBBowlers: Array.from({length:6}, (_,i)=>"Bowler "+(i+1)),
+  teamACount:11, teamBCount:11,
+  teamABowlerCount:6, teamBBowlerCount:6,
 });
 
 const blankMatch = (setup, code) => ({
@@ -61,12 +64,13 @@ const blankMatch = (setup, code) => ({
   extrasBreakdown:[{wide:0,noBall:0,bye:0,legBye:0},{wide:0,noBall:0,bye:0,legBye:0}],
   ballLog:[[],[]],
   inningsOver:[false,false],
+  numPlayers:[setup.teamACount||11, setup.teamBCount||11],
   teamA:{ name:setup.teamAName||"Team A",
-    players:setup.teamAPlayers.map(n=>mkP(n)),
-    bowlers:setup.teamABowlers.map(n=>mkB(n)) },
+    players:setup.teamAPlayers.slice(0,setup.teamACount||11).map(n=>mkP(n)),
+    bowlers:setup.teamABowlers.slice(0,setup.teamABowlerCount||6).map(n=>mkB(n)) },
   teamB:{ name:setup.teamBName||"Team B",
-    players:setup.teamBPlayers.map(n=>mkP(n)),
-    bowlers:setup.teamBBowlers.map(n=>mkB(n)) },
+    players:setup.teamBPlayers.slice(0,setup.teamBCount||11).map(n=>mkP(n)),
+    bowlers:setup.teamBBowlers.slice(0,setup.teamBBowlerCount||6).map(n=>mkB(n)) },
 });
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -74,6 +78,10 @@ const srFn  = p => (!p||p.balls===0)?"-":((p.runs/p.balls)*100).toFixed(1);
 const ecoFn = b => { var o=b.overs+b.balls/6; return o===0?"-":(b.runs/o).toFixed(2); };
 const bBg   = b => b.retired?"#0891b2":b.wicket?"#ef4444":b.r===6?"#f59e0b":b.r===4?"#3b82f6":b.extra?"#7c3aed":"#334155";
 const bTxt  = b => b.retired?"RH":b.wicket?"W":b.extra?(b.r+b.extra[0]):String(b.r);
+// Max wickets before innings ends = numPlayers (last man bats alone, innings ends when last man out)
+const maxWkts = (m, bt) => (m.numPlayers ? m.numPlayers[bt] : 11);
+// Check if 2nd innings chase is won
+const chaseWon = (m) => m.batting===1 && m.runs[1] > m.runs[0];
 
 // ── EditModal — top-level so it never remounts on App re-render ──
 function EditModal({editing, editVal, setEditVal, onCommit, onCancel}) {
@@ -146,6 +154,38 @@ function PendingExtraModal({extra, onConfirm, onCancel}) {
   );
 }
 
+// ── RecallPromptModal — offer to bring back retired hurt players ──
+function RecallPromptModal({match, onRecall, onDecline}) {
+  if (!match) return null;
+  var bt = match.batting;
+  var bTeam = bt===0 ? match.teamA : match.teamB;
+  var retiredPlayers = bTeam.players.map((p,i)=>({...p,i})).filter(p=>p.retired);
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:1100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+      <div style={{background:"#1e293b",borderRadius:"20px 20px 0 0",padding:"24px 20px 36px",width:"100%",maxWidth:480,border:"1px solid #0e7490",borderBottom:"none"}}>
+        <div style={{textAlign:"center",marginBottom:18}}>
+          <div style={{fontSize:28,marginBottom:6}}>🩹</div>
+          <div style={{color:"#67e8f9",fontSize:14,fontWeight:"bold",letterSpacing:1,marginBottom:4}}>LAST WICKET FALLEN</div>
+          <div style={{color:"#94a3b8",fontSize:13}}>Retired hurt player(s) can come back to bat</div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+          {retiredPlayers.map(p=>(
+            <button key={p.i} onClick={()=>onRecall(p.i)}
+              style={{padding:"13px 16px",borderRadius:12,border:"1px solid #0e7490",background:"rgba(8,145,178,.12)",color:"#67e8f9",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontWeight:"bold"}}>{p.name}</span>
+              <span style={{color:"#0891b2",fontSize:12}}>{p.runs} runs off {p.balls} balls · Recall →</span>
+            </button>
+          ))}
+        </div>
+        <button onClick={onDecline}
+          style={{width:"100%",padding:"12px 0",background:"#0f172a",border:"1px solid #7f1d1d",borderRadius:12,color:"#fca5a5",fontWeight:"bold",cursor:"pointer",fontFamily:"Georgia,serif",fontSize:14}}>
+          End Innings
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── OverCompleteModal — must pick new bowler after each over ──────
 function OverCompleteModal({match, onSelect}) {
   if (!match) return null;
@@ -194,8 +234,7 @@ function App() {
   const [history,   setHistory]  = useState([]);
   const [fbReady,   setFbReady]  = useState(false);
   const [syncing,   setSyncing]  = useState(false);
-  const [joinCode,  setJoinCode] = useState("");
-  const [joinErr,   setJoinErr]  = useState("");
+
   const [isViewer,  setIsViewer] = useState(false);
   // Inline editing state
   const [editing,   setEditing]  = useState(null);
@@ -204,10 +243,27 @@ function App() {
   const [pendingExtra, setPendingExtra] = useState(null); // "Wide" | "No Ball"
   // Over complete: waiting for new bowler selection
   const [overComplete, setOverComplete] = useState(false);
+  // Recall prompt: retired hurt players available when last batter falls
+  const [recallPrompt, setRecallPrompt] = useState(false);
+  // Match history
+  const [matchHistory, setMatchHistory] = useState([]);
+  // Admin
+  const [adminPin, setAdminPin] = useState("");
+  // Live matches list for viewer
+  const [liveMatches, setLiveMatches] = useState(null); // null=not loaded, []=empty
+  const [loadingLive, setLoadingLive] = useState(false);
   const listRef = useRef(null);
 
   // Init Firebase
   useEffect(() => { setFbReady(initFB()); }, []);
+
+  // Load match history
+  useEffect(() => {
+    try {
+      var raw = localStorage.getItem(HIST_KEY);
+      if (raw) setMatchHistory(JSON.parse(raw));
+    } catch(e) {}
+  }, []);
 
   // Restore saved match
   useEffect(() => {
@@ -230,6 +286,13 @@ function App() {
       setOverComplete(true);
     }
   }, [match ? match.needsBowler : null]);
+
+  // Show recall prompt when retired players available after last wicket
+  useEffect(() => {
+    if (match && match.needsRecall && !isViewer) {
+      setRecallPrompt(true);
+    }
+  }, [match ? match.needsRecall : null]);
 
   // Persist locally
   useEffect(() => {
@@ -270,6 +333,26 @@ function App() {
     setScreen("match");
   }
 
+  function saveToHistory(m) {
+    try {
+      var raw = localStorage.getItem(HIST_KEY);
+      var hist = raw ? JSON.parse(raw) : [];
+      var entry = {
+        id: Date.now(),
+        date: new Date().toISOString(),
+        teamA: m.teamA.name, teamB: m.teamB.name,
+        runsA: m.runs[0], wicketsA: m.wickets[0], oversA: m.overs[0], ballsA: m.balls[0],
+        runsB: m.runs[1], wicketsB: m.wickets[1], oversB: m.overs[1], ballsB: m.balls[1],
+        totalOvers: m.totalOvers,
+        snapshot: m
+      };
+      hist.unshift(entry); // newest first
+      if (hist.length > 50) hist = hist.slice(0, 50);
+      localStorage.setItem(HIST_KEY, JSON.stringify(hist));
+      setMatchHistory(hist);
+    } catch(e) {}
+  }
+
   function resetAll() {
     if (!confirm("Start a new match? This will clear everything.")) return;
     detach();
@@ -277,16 +360,29 @@ function App() {
     setIsViewer(false); setScreen("home");
   }
 
-  function joinMatch() {
-    var code = joinCode.trim().toUpperCase();
-    if (code.length < 4) { setJoinErr("Enter a valid match code"); return; }
-    if (!fbReady) { setJoinErr("Firebase not connected"); return; }
-    setJoinErr("Connecting…");
-    _fbDB.ref("matches/"+code).once("value", snap => {
-      if (!snap.val()) { setJoinErr("Match not found. Check the code."); return; }
-      setJoinErr("");
-      attachListener(code);
-    }, err => setJoinErr("Error: "+err.message));
+  function fetchLiveMatches() {
+    if (!fbReady) return;
+    setLoadingLive(true);
+    _fbDB.ref("matches").once("value", snap => {
+      var val = snap.val();
+      if (!val) { setLiveMatches([]); setLoadingLive(false); return; }
+      var now = Date.now();
+      var list = Object.values(val).filter(m => {
+        // Only show matches created in last 24h and not fully complete
+        var fresh = (now - (m.createdAt||0)) < 24*60*60*1000;
+        var ongoing = !(m.inningsOver && m.inningsOver[0] && m.inningsOver[1]);
+        return fresh && ongoing;
+      });
+      // Sort newest first
+      list.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+      setLiveMatches(list);
+      setLoadingLive(false);
+    }, ()=>setLoadingLive(false));
+  }
+
+  function joinByCode(code) {
+    if (!fbReady) return;
+    attachListener(code);
   }
 
   // ── History / Undo ───────────────────────────────────────────
@@ -387,7 +483,7 @@ function App() {
           m.overs[bt]++; m.balls[bt]=0;
           wT.bowlers[bi].overs++; wT.bowlers[bi].balls=0;
           m.striker=1-m.striker;
-          if (!(m.overs[bt]>=m.totalOvers||m.wickets[bt]>=10)) m.needsBowler = true;
+          if (!(m.overs[bt]>=m.totalOvers||m.wickets[bt]>=maxWkts(m,bt)||chaseWon(m))) m.needsBowler = true;
         }
         if (r%2!==0) m.striker=1-m.striker;
       } else if (extra==="No Ball") {
@@ -395,7 +491,7 @@ function App() {
         if (br2%2!==0) m.striker=1-m.striker;
       }
 
-      if (m.overs[bt]>=m.totalOvers||m.wickets[bt]>=10) m.inningsOver[bt]=true;
+      if (chaseWon(m) || m.overs[bt]>=m.totalOvers || m.wickets[bt]>=maxWkts(m,bt)) m.inningsOver[bt]=true;
       return m;
     });
   }
@@ -407,34 +503,86 @@ function App() {
       m.needsBowler = false;
       var bt=m.batting, b1=m.currentBatsmen[m.striker], bi=m.currentBowler;
       var bT=bt===0?m.teamA:m.teamB, wT=bt===0?m.teamB:m.teamA;
-      bT.players[b1].out=true; bT.players[b1].howOut=how;
+      bT.players[b1].out=false; bT.players[b1].retired=true; bT.players[b1].howOut=how;
       if (how===RET_HURT) {
         m.ballLog[bt].push({r:0,retired:true});
         var inUse = [m.currentBatsmen[0], m.currentBatsmen[1]];
         var nextRH = -1;
         for (var pi=0; pi<bT.players.length; pi++) {
-          if (!bT.players[pi].out && inUse.indexOf(pi)===-1) { nextRH=pi; break; }
+          if (!bT.players[pi].out && !bT.players[pi].retired && inUse.indexOf(pi)===-1) { nextRH=pi; break; }
         }
         if (nextRH !== -1) m.currentBatsmen[m.striker] = nextRH;
         return m;
       }
+      bT.players[b1].out=true; bT.players[b1].retired=false;
       bT.players[b1].balls++;
+      bT.players[b1].dismissedBy = wT.bowlers[bi].name;
       wT.bowlers[bi].wickets++; wT.bowlers[bi].balls++;
       m.wickets[bt]++; m.balls[bt]++;
       if (m.balls[bt]===6) {
         m.overs[bt]++; m.balls[bt]=0;
         wT.bowlers[bi].overs++; wT.bowlers[bi].balls=0;
-        if (!(m.wickets[bt]>=10||m.overs[bt]>=m.totalOvers)) m.needsBowler = true;
+        if (!(m.wickets[bt]>=maxWkts(m,bt)||m.overs[bt]>=m.totalOvers||chaseWon(m))) m.needsBowler = true;
       }
       m.ballLog[bt].push({r:0,wicket:how});
-      var nx=m.wickets[bt]+1; if(nx<11)m.currentBatsmen[m.striker]=nx;
-      if(m.wickets[bt]>=10||m.overs[bt]>=m.totalOvers)m.inningsOver[bt]=true;
+      // Find next available batter (not out, not retired, not currently at crease)
+      var inUse2 = [m.currentBatsmen[0], m.currentBatsmen[1]];
+      var nextBatter = -1;
+      for (var ni=0; ni<bT.players.length; ni++) {
+        if (!bT.players[ni].out && !bT.players[ni].retired && inUse2.indexOf(ni)===-1) { nextBatter=ni; break; }
+      }
+      if (nextBatter !== -1) m.currentBatsmen[m.striker] = nextBatter;
+      var noMoreBatters = nextBatter === -1;
+      var hasRetired = bT.players.some(p=>p.retired);
+      var mx = maxWkts(m, bt);
+      // Innings over when all wickets gone
+      var inningsNowOver = m.wickets[bt] >= mx;
+      // Last man: penultimate wicket just fell — new batter bats alone
+      var isLastManIn = !inningsNowOver && noMoreBatters && !hasRetired;
+      if (isLastManIn) {
+        // Point both slots at the surviving batter so they bat alone
+        m.currentBatsmen[m.striker] = m.currentBatsmen[1-m.striker];
+      }
+      if (chaseWon(m) || m.overs[bt]>=m.totalOvers || inningsNowOver) {
+        m.inningsOver[bt]=true;
+      } else if (noMoreBatters && !isLastManIn) {
+        if (hasRetired) {
+          m.needsRecall = true;
+        } else {
+          m.inningsOver[bt]=true;
+        }
+      }
       return m;
     });
   }
 
-  // ════════════════════════════════════════════════════════════
-  // HOME
+  function recallRetired(playerIdx) {
+    setMatch(prev => {
+      pushHist(prev);
+      var m = JSON.parse(JSON.stringify(prev));
+      var bt = m.batting;
+      var bT = bt===0 ? m.teamA : m.teamB;
+      bT.players[playerIdx].retired = false;
+      bT.players[playerIdx].howOut = "";
+      m.currentBatsmen[m.striker] = playerIdx;
+      m.needsRecall = false;
+      return m;
+    });
+    setRecallPrompt(false);
+  }
+
+  function declineRecall() {
+    // No retired player recalled — end the innings
+    setMatch(prev => {
+      var m = JSON.parse(JSON.stringify(prev));
+      m.inningsOver[m.batting] = true;
+      m.needsRecall = false;
+      return m;
+    });
+    setRecallPrompt(false);
+  }
+
+
   if (screen==="home") return (
     <div style={{minHeight:"100dvh",background:"linear-gradient(170deg,#0c1828,#0f172a)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"28px 16px",fontFamily:"Georgia,serif"}}>
       <div style={{width:"100%",maxWidth:420}}>
@@ -453,7 +601,7 @@ function App() {
         <div style={{background:"#1e293b",borderRadius:20,padding:24,border:"1px solid #334155",marginBottom:14,boxShadow:"0 20px 60px rgba(0,0,0,.5)"}}>
           <div style={{color:"#64748b",fontSize:11,letterSpacing:2,marginBottom:8}}>SCORE A MATCH</div>
           <p style={{color:"#64748b",fontSize:13,marginBottom:16,lineHeight:1.6}}>
-            Create a new match and score it live. {fbReady?"Viewers join with a 6-digit code.":"Firebase will sync when connected."}
+            Create a new match and score it live. {fbReady?"Viewers can find it in the live matches list.":"Firebase will sync when connected."}
           </p>
           <button onClick={()=>setScreen("setup")}
             style={{width:"100%",padding:"14px 0",background:"linear-gradient(135deg,#fbbf24,#d97706)",borderRadius:12,border:"none",color:"#0f172a",fontWeight:"bold",fontSize:15,cursor:"pointer",letterSpacing:1,fontFamily:"Georgia,serif"}}>
@@ -461,44 +609,273 @@ function App() {
           </button>
         </div>
 
-        {/* Join */}
+        {/* Watch Live */}
         <div style={{background:"#1e293b",borderRadius:20,padding:24,border:"1px solid #334155",boxShadow:"0 20px 60px rgba(0,0,0,.5)"}}>
-          <div style={{color:"#64748b",fontSize:11,letterSpacing:2,marginBottom:8}}>WATCH LIVE</div>
-          <p style={{color:"#64748b",fontSize:13,marginBottom:14,lineHeight:1.6}}>Enter the 6-digit code from the scorer to follow live.</p>
-          <div style={{display:"flex",gap:8}}>
-            <input value={joinCode} maxLength={6} placeholder="e.g. MX4291"
-              onChange={e=>{setJoinCode(e.target.value.toUpperCase());setJoinErr("");}}
-              onKeyDown={e=>{if(e.key==="Enter")joinMatch();}}
-              style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:10,padding:"12px 10px",color:"#fbbf24",fontSize:20,outline:"none",fontFamily:"monospace",letterSpacing:4,textAlign:"center"}}
-            />
-            <button onClick={joinMatch}
-              style={{padding:"12px 16px",background:"linear-gradient(135deg,#1d4ed8,#1e40af)",borderRadius:10,border:"none",color:"#fff",fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-              Join →
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div style={{color:"#64748b",fontSize:11,letterSpacing:2}}>WATCH LIVE</div>
+            <button onClick={fetchLiveMatches} disabled={!fbReady||loadingLive}
+              style={{padding:"5px 12px",background:"transparent",border:"1px solid #334155",borderRadius:8,color:fbReady?"#94a3b8":"#334155",fontSize:12,cursor:fbReady?"pointer":"not-allowed",fontFamily:"Georgia,serif"}}>
+              {loadingLive?"Loading…":"🔄 Refresh"}
             </button>
           </div>
-          {joinErr&&<div style={{color:joinErr==="Connecting…"?"#fbbf24":"#f87171",fontSize:13,marginTop:8,textAlign:"center"}}>{joinErr}</div>}
+          {liveMatches===null&&(
+            <button onClick={fetchLiveMatches} disabled={!fbReady||loadingLive}
+              style={{width:"100%",padding:"13px 0",background:fbReady?"linear-gradient(135deg,#1d4ed8,#1e40af)":"#1e293b",borderRadius:12,border:fbReady?"none":"1px solid #334155",color:fbReady?"#fff":"#475569",fontWeight:"bold",fontSize:14,cursor:fbReady?"pointer":"not-allowed",fontFamily:"Georgia,serif"}}>
+              {loadingLive?"Searching…":fbReady?"📡 Show Live Matches":"Firebase offline"}
+            </button>
+          )}
+          {liveMatches!==null&&liveMatches.length===0&&(
+            <div style={{textAlign:"center",color:"#475569",fontSize:13,padding:"14px 0"}}>No live matches found</div>
+          )}
+          {liveMatches!==null&&liveMatches.length>0&&(
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {liveMatches.map(m=>{
+                var bt=m.batting||0;
+                var bName=bt===0?m.teamA.name:m.teamB.name;
+                var r=m.runs[bt], w=m.wickets[bt], ov=m.overs[bt], bl=m.balls[bt];
+                var inn1Done=m.inningsOver&&m.inningsOver[0];
+                return (
+                  <button key={m.matchCode} onClick={()=>joinByCode(m.matchCode)}
+                    style={{width:"100%",background:"#0f172a",border:"1px solid #1d4ed8",borderRadius:12,padding:"12px 14px",cursor:"pointer",textAlign:"left",fontFamily:"Georgia,serif"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                      <span style={{color:"#ef4444",fontSize:11,fontWeight:"bold"}}>● LIVE</span>
+                      <span style={{color:"#475569",fontSize:11}}>{m.totalOvers} overs</span>
+                    </div>
+                    <div style={{color:"#94a3b8",fontSize:12,marginBottom:4}}>{m.teamA.name} vs {m.teamB.name}</div>
+                    {inn1Done&&<div style={{color:"#64748b",fontSize:11,marginBottom:2}}>{m.teamA.name}: {m.runs[0]}/{m.wickets[0]}</div>}
+                    <div style={{color:"#fbbf24",fontWeight:"bold",fontSize:15}}>{bName}: {r}/{w} <span style={{color:"#475569",fontSize:12}}>({ov}.{bl})</span></div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        {/* History button */}
+        {matchHistory.length > 0 && (
+          <button onClick={()=>setScreen("history")}
+            style={{width:"100%",marginTop:14,padding:"12px 0",background:"transparent",border:"1px solid #334155",borderRadius:12,color:"#64748b",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",letterSpacing:1}}>
+            📚 Match History ({matchHistory.length})
+          </button>
+        )}
+        <div style={{textAlign:"center",marginTop:18}}>
+          <button onClick={()=>setScreen("admin")}
+            style={{background:"none",border:"none",color:"#1e293b",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            ···
+          </button>
         </div>
       </div>
     </div>
   );
 
   // ════════════════════════════════════════════════════════════
-  // SETUP WIZARD
+  // HISTORY LIST
+  if (screen==="history") {
+    function fmtDate(iso) {
+      var d = new Date(iso);
+      return d.toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});
+    }
+    function matchResult(e) {
+      if (!e.snapshot.inningsOver[1]) return "Incomplete";
+      if (e.runsB > e.runsA) return e.teamB+" won";
+      if (e.runsA > e.runsB) return e.teamA+" won";
+      return "Tied";
+    }
+    function resultColor(e) {
+      if (!e.snapshot.inningsOver[1]) return "#fbbf24";
+      return "#86efac";
+    }
+    return (
+      <div style={S.page}>
+        <div style={{...S.wrap,padding:"0 12px"}}>
+          <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>📚 MATCH HISTORY</h2>
+            <button onClick={()=>setScreen("home")} style={S.btnSm}>← Back</button>
+          </div>
+          {matchHistory.length===0 ? (
+            <div style={{textAlign:"center",color:"#475569",padding:40}}>No matches saved yet</div>
+          ) : matchHistory.map((e)=>(
+            <div key={e.id} onClick={()=>{setMatch(e.snapshot);setScreen("historycard");}}
+              style={{background:"#1e293b",borderRadius:14,padding:"14px 16px",marginBottom:10,border:"1px solid #334155",cursor:"pointer"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                <div style={{color:"#94a3b8",fontSize:11}}>{fmtDate(e.date)}</div>
+                <div style={{color:resultColor(e),fontSize:11,fontWeight:"bold"}}>{matchResult(e)}</div>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{color:"#e2e8f0",fontSize:14,fontWeight:"bold"}}>{e.teamA}</div>
+                  <div style={{color:"#fbbf24",fontSize:16,fontWeight:"bold"}}>{e.runsA}/{e.wicketsA} <span style={{color:"#475569",fontSize:12}}>({e.oversA}.{e.ballsA})</span></div>
+                </div>
+                <div style={{color:"#475569",fontSize:13,fontWeight:"bold"}}>vs</div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{color:"#e2e8f0",fontSize:14,fontWeight:"bold"}}>{e.teamB}</div>
+                  <div style={{color:"#fbbf24",fontSize:16,fontWeight:"bold"}}>{e.runsB}/{e.wicketsB} <span style={{color:"#475569",fontSize:12}}>({e.oversB}.{e.ballsB})</span></div>
+                </div>
+              </div>
+            </div>
+          ))}
+          {matchHistory.length > 0 && (
+            <button onClick={()=>setScreen("admin")}
+              style={{width:"100%",marginTop:4,marginBottom:20,padding:"10px 0",background:"transparent",border:"1px solid #475569",borderRadius:10,color:"#64748b",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+              🔒 Admin — Manage History
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // HISTORY SCORECARD
+  if (screen==="historycard" && match) {
+    function TCardH({team,inn,opp}) {
+      return (
+        <div style={{marginBottom:20}}>
+          <div style={{background:"#1e293b",borderRadius:16,overflow:"hidden",border:"1px solid #334155"}}>
+            <div style={{background:"#0f172a",padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{color:"#fbbf24",fontWeight:"bold",fontSize:15}}>{team.name}</span>
+              <span style={{color:"#e2e8f0",fontWeight:"bold"}}>{match.runs[inn]}/{match.wickets[inn]} <span style={{color:"#475569",fontSize:12}}>({match.overs[inn]}.{match.balls[inn]})</span></span>
+            </div>
+            <table style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead><tr>{["Batter","R","B","4s","6s","SR"].map(h=><th key={h} style={{padding:"5px 7px",color:"#475569",fontSize:11,textAlign:h==="Batter"?"left":"center",fontWeight:"normal"}}>{h}</th>)}</tr></thead>
+              <tbody>
+                {team.players.filter(p=>p.balls>0||p.out||p.retired).map((p,pi)=>(
+                  <tr key={pi} style={{borderTop:"1px solid #0f172a"}}>
+                    <td style={{padding:"7px 8px",minWidth:110}}>
+                      <div style={{color:p.out?"#64748b":p.retired?"#67e8f9":"#e2e8f0",fontSize:13}}>{p.name}</div>
+                      {p.out&&<div style={{color:"#475569",fontSize:10}}>
+                        {p.howOut==="Bowled"?`b ${p.dismissedBy}`:
+                         p.howOut==="Caught"?`c & b ${p.dismissedBy}`:
+                         p.howOut==="LBW"?`lbw b ${p.dismissedBy}`:
+                         p.howOut==="Stumped"?`st b ${p.dismissedBy}`:
+                         p.howOut==="Hit Wicket"?`hit wkt b ${p.dismissedBy}`:
+                         p.howOut==="Run Out"?`run out`:p.howOut}
+                      </div>}
+                      {p.retired&&<div style={{color:"#0891b2",fontSize:10}}>Retired Hurt</div>}
+                    </td>
+                    <td style={{textAlign:"center",color:"#fbbf24",fontWeight:"bold",fontSize:14,padding:"7px 4px"}}>{p.runs}</td>
+                    <td style={{textAlign:"center",color:"#94a3b8",fontSize:13,padding:"7px 4px"}}>{p.balls}</td>
+                    <td style={{textAlign:"center",color:"#60a5fa",fontSize:13,padding:"7px 4px"}}>{p.fours}</td>
+                    <td style={{textAlign:"center",color:"#f59e0b",fontSize:13,padding:"7px 4px"}}>{p.sixes}</td>
+                    <td style={{textAlign:"center",color:"#94a3b8",fontSize:12,padding:"7px 4px"}}>{srFn(p)}</td>
+                  </tr>
+                ))}
+                <tr style={{borderTop:"1px solid #334155"}}>
+                  <td colSpan="6" style={{padding:"6px 8px"}}>
+                    <span style={{color:"#94a3b8",fontSize:12}}>Extras: <b style={{color:"#e2e8f0"}}>{match.extras[inn]}</b></span>
+                    <span style={{color:"#475569",fontSize:11,marginLeft:8}}>W:{match.extrasBreakdown[inn].wide} NB:{match.extrasBreakdown[inn].noBall} B:{match.extrasBreakdown[inn].bye} LB:{match.extrasBreakdown[inn].legBye}</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <table style={{width:"100%",borderCollapse:"collapse",borderTop:"2px solid #334155"}}>
+              <thead><tr>{["Bowler","O","M","R","W","Eco"].map(h=><th key={h} style={{padding:"5px 7px",color:"#475569",fontSize:11,textAlign:h==="Bowler"?"left":"center",fontWeight:"normal"}}>{h}</th>)}</tr></thead>
+              <tbody>
+                {opp.bowlers.filter(b=>b.overs>0||b.balls>0).map((b,bi)=>(
+                  <tr key={bi} style={{borderTop:"1px solid #0f172a"}}>
+                    <td style={{padding:"7px 8px",color:"#e2e8f0",fontSize:13,minWidth:110}}>{b.name}</td>
+                    <td style={{textAlign:"center",color:"#94a3b8",fontSize:13,padding:"7px 4px"}}>{b.overs}.{b.balls}</td>
+                    <td style={{textAlign:"center",color:"#94a3b8",fontSize:13,padding:"7px 4px"}}>{b.maidens}</td>
+                    <td style={{textAlign:"center",color:"#94a3b8",fontSize:13,padding:"7px 4px"}}>{b.runs}</td>
+                    <td style={{textAlign:"center",color:"#ef4444",fontWeight:"bold",fontSize:14,padding:"7px 4px"}}>{b.wickets}</td>
+                    <td style={{textAlign:"center",color:"#94a3b8",fontSize:12,padding:"7px 4px"}}>{ecoFn(b)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div style={S.page}>
+        <div style={{...S.wrap,padding:"0 12px"}}>
+          <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>📋 SCORECARD</h2>
+            <button onClick={()=>{setMatch(null);setScreen("history");}} style={S.btnSm}>← Back</button>
+          </div>
+          <TCardH team={match.teamA} inn={0} opp={match.teamB}/>
+          {match.inningsOver[0]&&<TCardH team={match.teamB} inn={1} opp={match.teamA}/>}
+        </div>
+      </div>
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // ADMIN
+  if (screen==="admin") {
+    const ADMIN_PIN = "1989"; // change this to your PIN
+    var pinOk = adminPin===ADMIN_PIN;
+    return (
+      <div style={S.page}>
+        <div style={{...S.wrap,padding:"0 12px"}}>
+          <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>🔒 ADMIN</h2>
+            <button onClick={()=>{setScreen("home");setAdminPin("");}} style={S.btnSm}>← Back</button>
+          </div>
+          {!pinOk ? (
+            <div style={{background:"#1e293b",borderRadius:14,padding:24,border:"1px solid #334155",textAlign:"center"}}>
+              <div style={{color:"#94a3b8",fontSize:13,marginBottom:16}}>Enter admin PIN to continue</div>
+              <input
+                type="password" maxLength={8} value={adminPin}
+                onChange={e=>setAdminPin(e.target.value)}
+                placeholder="PIN"
+                style={{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:10,padding:"14px",color:"#fbbf24",fontSize:24,textAlign:"center",outline:"none",boxSizing:"border-box",fontFamily:"monospace",letterSpacing:8}}
+              />
+              {adminPin.length>0&&!pinOk&&<div style={{color:"#f87171",fontSize:12,marginTop:10}}>Incorrect PIN</div>}
+            </div>
+          ) : (
+            <div style={{background:"#1e293b",borderRadius:14,padding:24,border:"1px solid #334155"}}>
+              <div style={{color:"#4ade80",fontSize:13,marginBottom:20,textAlign:"center"}}>✓ Authenticated</div>
+              <div style={{color:"#94a3b8",fontSize:13,marginBottom:8}}>Match History: <b style={{color:"#e2e8f0"}}>{matchHistory.length} matches</b></div>
+              <button onClick={()=>{
+                if(confirm("Permanently delete all match history? This cannot be undone.")) {
+                  localStorage.removeItem(HIST_KEY);
+                  setMatchHistory([]);
+                  alert("History cleared.");
+                }
+              }}
+                style={{width:"100%",padding:"12px 0",background:"rgba(127,29,29,.2)",border:"1px solid #7f1d1d",borderRadius:10,color:"#fca5a5",fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif",marginBottom:12}}>
+                🗑 Clear All Match History
+              </button>
+              <button onClick={()=>{setScreen("home");setAdminPin("");}}
+                style={{width:"100%",padding:"10px 0",background:"transparent",border:"1px solid #334155",borderRadius:10,color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                Done
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (screen==="setup") {
     var s=setup;
     var STEPS=["Match Details",s.teamAName+" — Batters",s.teamAName+" — Bowlers",s.teamBName+" — Batters",s.teamBName+" — Bowlers"];
-    function NList({names,ph,onUp}) {
+    function NList({names,ph,onUp,min,max}) {
+      function addOne() { if(names.length<max) onUp([...names, ph+" "+(names.length+1)]); }
+      function removeOne() { if(names.length>min) onUp(names.slice(0,-1)); }
       return (
-        <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"52vh",overflowY:"auto"}}>
-          {names.map((nm,i)=>(
-            <div key={i} style={{display:"flex",alignItems:"center",gap:10}}>
-              <span style={{color:"#475569",fontSize:13,minWidth:22,textAlign:"right"}}>{i+1}.</span>
-              <input value={nm} placeholder={ph+" "+(i+1)}
-                onChange={e=>{var u=[...names];u[i]=e.target.value;onUp(u);}}
-                style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:9,padding:"10px 12px",color:"#f1f5f9",fontSize:15,outline:"none",fontFamily:"Georgia,serif"}}
-              />
+        <div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+            <span style={{color:"#64748b",fontSize:11,letterSpacing:1}}>{names.length} {ph.toLowerCase()}s</span>
+            <div style={{display:"flex",gap:6}}>
+              <button onClick={removeOne} disabled={names.length<=min}
+                style={{width:32,height:32,borderRadius:8,border:"1px solid #334155",background:"#0f172a",color:names.length<=min?"#1e293b":"#94a3b8",fontSize:20,cursor:names.length<=min?"not-allowed":"pointer",fontFamily:"Georgia,serif",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+              <button onClick={addOne} disabled={names.length>=max}
+                style={{width:32,height:32,borderRadius:8,border:"1px solid #334155",background:"#0f172a",color:names.length>=max?"#1e293b":"#fbbf24",fontSize:20,cursor:names.length>=max?"not-allowed":"pointer",fontFamily:"Georgia,serif",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
             </div>
-          ))}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"46vh",overflowY:"auto"}}>
+            {names.map((nm,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10}}>
+                <span style={{color:"#475569",fontSize:13,minWidth:22,textAlign:"right"}}>{i+1}.</span>
+                <input value={nm} placeholder={ph+" "+(i+1)}
+                  onChange={e=>{var u=[...names];u[i]=e.target.value;onUp(u);}}
+                  style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:9,padding:"10px 12px",color:"#f1f5f9",fontSize:15,outline:"none",fontFamily:"Georgia,serif"}}
+                />
+              </div>
+            ))}
+          </div>
         </div>
       );
     }
@@ -561,10 +938,10 @@ function App() {
                 </div>
               </div>
             )}
-            {s.step===1&&<NList names={s.teamAPlayers} ph="Player" onUp={v=>setSetup(p=>({...p,teamAPlayers:v}))}/>}
-            {s.step===2&&<NList names={s.teamABowlers} ph="Bowler" onUp={v=>setSetup(p=>({...p,teamABowlers:v}))}/>}
-            {s.step===3&&<NList names={s.teamBPlayers} ph="Player" onUp={v=>setSetup(p=>({...p,teamBPlayers:v}))}/>}
-            {s.step===4&&<NList names={s.teamBBowlers} ph="Bowler" onUp={v=>setSetup(p=>({...p,teamBBowlers:v}))}/>}
+            {s.step===1&&<NList names={s.teamAPlayers} ph="Player" min={2} max={11} onUp={v=>setSetup(p=>({...p,teamAPlayers:v,teamACount:v.length}))}/>}
+            {s.step===2&&<NList names={s.teamABowlers} ph="Bowler" min={1} max={6}  onUp={v=>setSetup(p=>({...p,teamABowlers:v,teamABowlerCount:v.length}))}/>}
+            {s.step===3&&<NList names={s.teamBPlayers} ph="Player" min={2} max={11} onUp={v=>setSetup(p=>({...p,teamBPlayers:v,teamBCount:v.length}))}/>}
+            {s.step===4&&<NList names={s.teamBBowlers} ph="Bowler" min={1} max={6}  onUp={v=>setSetup(p=>({...p,teamBBowlers:v,teamBBowlerCount:v.length}))}/>}
             <div style={{display:"flex",gap:10,marginTop:22}}>
               {s.step>0&&<button onClick={()=>setSetup(p=>({...p,step:p.step-1}))}
                 style={{flex:1,padding:"13px 0",background:"#0f172a",border:"1px solid #334155",borderRadius:12,color:"#94a3b8",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>← Back</button>}
@@ -644,7 +1021,7 @@ function App() {
         </div>
         {[
           {p:striker,    si:match.currentBatsmen[match.striker],   isStriker:true},
-          {p:nonStriker, si:match.currentBatsmen[1-match.striker], isStriker:false},
+          {p:nonStriker && match.currentBatsmen[0]!==match.currentBatsmen[1] ? nonStriker : null, si:match.currentBatsmen[1-match.striker], isStriker:false},
         ].map(({p,si,isStriker})=> p&&(
           <div key={si} style={{display:"grid",gridTemplateColumns:"1fr 32px 32px 32px 32px 44px",gap:4,padding:"7px 0",borderTop:"1px solid #0f172a",alignItems:"center"}}>
             <div style={{display:"flex",alignItems:"center",gap:5,overflow:"hidden"}}>
@@ -759,11 +1136,20 @@ function App() {
             <table style={{width:"100%",borderCollapse:"collapse"}}>
               <thead><tr>{["Batter","R","B","4s","6s","SR"].map(h=><th key={h} style={{padding:"5px 7px",color:"#475569",fontSize:11,textAlign:h==="Batter"?"left":"center",fontWeight:"normal"}}>{h}</th>)}</tr></thead>
               <tbody>
-                {team.players.filter(p=>p.balls>0||p.out).map((p,i)=>(
+                {team.players.filter(p=>p.balls>0||p.out||p.retired).map((p,i)=>(
                   <tr key={i} style={{borderTop:"1px solid #0f172a"}}>
                     <td style={{padding:"7px 8px",minWidth:110}}>
-                      <div style={{color:p.out?"#64748b":"#e2e8f0",fontSize:13}}>{p.name}</div>
-                      {p.out&&<div style={{color:p.howOut===RET_HURT?"#67e8f9":"#475569",fontSize:10}}>{p.howOut}</div>}
+                      <div style={{color:p.out?"#64748b":p.retired?"#67e8f9":"#e2e8f0",fontSize:13}}>{p.name}</div>
+                      {p.out&&<div style={{color:"#475569",fontSize:10}}>
+                        {p.howOut==="Bowled"   ? `b ${p.dismissedBy}` :
+                         p.howOut==="Caught"   ? `c & b ${p.dismissedBy}` :
+                         p.howOut==="LBW"      ? `lbw b ${p.dismissedBy}` :
+                         p.howOut==="Stumped"  ? `st b ${p.dismissedBy}` :
+                         p.howOut==="Hit Wicket"? `hit wkt b ${p.dismissedBy}` :
+                         p.howOut==="Run Out"  ? `run out` :
+                         p.howOut}
+                      </div>}
+                      {p.retired&&<div style={{color:"#0891b2",fontSize:10}}>Retired Hurt</div>}
                     </td>
                     <td style={{textAlign:"center",color:"#fbbf24",fontWeight:"bold",fontSize:14,padding:"7px 4px"}}>{p.runs}</td>
                     <td style={{textAlign:"center",color:"#94a3b8",fontSize:13,padding:"7px 4px"}}>{p.balls}</td>
@@ -820,6 +1206,7 @@ function App() {
       <EditModal editing={editing} editVal={editVal} setEditVal={setEditVal} onCommit={commitEdit} onCancel={cancelEdit}/>
       <PendingExtraModal extra={pendingExtra} onConfirm={confirmExtra} onCancel={()=>setPendingExtra(null)}/>
       {overComplete && <OverCompleteModal match={match} onSelect={selectNewBowler}/>}
+      {recallPrompt && <RecallPromptModal match={match} onRecall={recallRetired} onDecline={declineRecall}/>}
       <div style={S.wrap}>
 
         {/* Top bar */}
@@ -866,6 +1253,10 @@ function App() {
             {match.runs[1]>match.runs[0]?<div style={{color:"#86efac",fontSize:14}}>{match.teamB.name} wins by {10-match.wickets[1]} wickets!</div>
              :match.runs[1]<match.runs[0]?<div style={{color:"#fca5a5",fontSize:14}}>{match.teamA.name} wins by {match.runs[0]-match.runs[1]} runs!</div>
              :<div style={{color:"#fbbf24",fontSize:14}}>Match Tied!</div>}
+            <button onClick={()=>{saveToHistory(match);resetAll();}}
+              style={{marginTop:14,padding:"10px 24px",background:"#fbbf24",color:"#0f172a",border:"none",borderRadius:10,fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+              Save & New Match
+            </button>
           </div>
         )}
 
@@ -923,6 +1314,21 @@ function App() {
                   🩹 Retired Hurt
                 </button>
               </div>
+              {/* Recall retired players */}
+              {bTeam.players.some(p=>p.retired) && (
+                <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #1e3a5a"}}>
+                  <div style={{color:"#0891b2",fontSize:10,letterSpacing:2,marginBottom:8}}>RECALL RETIRED</div>
+                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                    {bTeam.players.map((p,i)=>p.retired?(
+                      <button key={i} onClick={()=>recallRetired(i)}
+                        style={{padding:"10px 14px",borderRadius:10,border:"1px solid #0e7490",background:"rgba(8,145,178,.1)",color:"#67e8f9",fontWeight:"bold",fontSize:13,cursor:"pointer",touchAction:"manipulation",fontFamily:"Georgia,serif",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <span>{p.name}</span>
+                        <span style={{color:"#0891b2",fontSize:11}}>{p.runs} runs · recall →</span>
+                      </button>
+                    ):null)}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* CHANGE BOWLER */}
@@ -946,6 +1352,14 @@ function App() {
                   </div>
                 ))}
               </div>
+            </div>
+
+            {/* END INNINGS */}
+            <div style={{marginTop:4,marginBottom:8}}>
+              <button onClick={()=>{if(confirm("End innings now?"))setMatch(m=>{var n={...m};n.inningsOver=[...m.inningsOver];n.inningsOver[m.batting]=true;return n;})}}
+                style={{width:"100%",padding:"11px 0",borderRadius:12,border:"1px solid #475569",background:"transparent",color:"#64748b",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",letterSpacing:1}}>
+                ⏹ End Innings
+              </button>
             </div>
 
           </div>
