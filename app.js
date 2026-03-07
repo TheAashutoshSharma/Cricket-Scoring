@@ -372,11 +372,33 @@ function App() {
                     />
                   </div>
                 ))}
-                <label style={{color:"#64748b",fontSize:11,display:"block",marginBottom:10,letterSpacing:1}}>OVERS</label>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+                <label style={{color:"#64748b",fontSize:11,display:"block",marginBottom:10,letterSpacing:1}}>OVERS PER INNINGS</label>
+                <div style={{display:"flex",alignItems:"center",gap:0,background:"#0f172a",borderRadius:12,border:"1px solid #334155",overflow:"hidden"}}>
+                  <button
+                    onClick={()=>setSetup(p=>({...p,overs:Math.max(1,p.overs-1)}))}
+                    style={{width:48,height:52,background:"transparent",border:"none",color:"#94a3b8",fontSize:24,cursor:"pointer",fontFamily:"Georgia,serif",flexShrink:0,borderRight:"1px solid #334155"}}>
+                    −
+                  </button>
+                  <input
+                    type="number" min="1" max="100"
+                    value={s.overs}
+                    onChange={e=>{
+                      var v=parseInt(e.target.value,10);
+                      if(!isNaN(v)&&v>=1&&v<=100) setSetup(p=>({...p,overs:v}));
+                      else if(e.target.value==="") setSetup(p=>({...p,overs:1}));
+                    }}
+                    style={{flex:1,background:"transparent",border:"none",color:"#fbbf24",fontSize:26,fontWeight:"bold",textAlign:"center",outline:"none",fontFamily:"Georgia,serif",padding:"0 4px"}}
+                  />
+                  <button
+                    onClick={()=>setSetup(p=>({...p,overs:Math.min(100,p.overs+1)}))}
+                    style={{width:48,height:52,background:"transparent",border:"none",color:"#94a3b8",fontSize:24,cursor:"pointer",fontFamily:"Georgia,serif",flexShrink:0,borderLeft:"1px solid #334155"}}>
+                    +
+                  </button>
+                </div>
+                <div style={{display:"flex",gap:6,marginTop:10}}>
                   {[5,10,20,50].map(o=>(
                     <button key={o} onClick={()=>setSetup(p=>({...p,overs:o}))}
-                      style={{padding:"12px 0",borderRadius:10,border:s.overs===o?"2px solid #fbbf24":"1px solid #334155",background:s.overs===o?"rgba(251,191,36,.12)":"#0f172a",color:s.overs===o?"#fbbf24":"#64748b",fontWeight:"bold",cursor:"pointer",fontSize:15}}>
+                      style={{flex:1,padding:"8px 0",borderRadius:8,border:s.overs===o?"1px solid #fbbf24":"1px solid #334155",background:s.overs===o?"rgba(251,191,36,.12)":"transparent",color:s.overs===o?"#fbbf24":"#475569",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
                       {o}
                     </button>
                   ))}
