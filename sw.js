@@ -1,5 +1,5 @@
 // Cricket Scorer PWA - Service Worker
-const CACHE_NAME = 'cricket-scorer-v2';
+const CACHE_NAME = 'cricket-scorer-v3';
 const ASSETS = [
   '/',
   '/index.html',
@@ -32,17 +32,17 @@ self.addEventListener('activate', (e) => {
   self.clients.claim();
 });
 
-// Fetch — cache-first strategy (works fully offline)
+// Fetch — network-first strategy (always gets latest, falls back to cache offline)
 self.addEventListener('fetch', (e) => {
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(response => {
-        if (!response || response.status !== 200 || response.type === 'opaque') return response;
+    fetch(e.request).then(response => {
+      if (response && response.status === 200) {
         const clone = response.clone();
         caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
-        return response;
-      }).catch(() => caches.match('/index.html'));
+      }
+      return response;
+    }).catch(() => {
+      return caches.match(e.request).then(cached => cached || caches.match('/index.html'));
     })
   );
 });
