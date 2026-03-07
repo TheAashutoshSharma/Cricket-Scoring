@@ -446,9 +446,18 @@ function App() {
     if (!_fbDB) return;
     var ref = _fbDB.ref("matches/"+code);
     listRef.current = ref;
+    // First value: set as viewer and navigate
+    var first = true;
     ref.on("value", snap => {
       var v = snap.val();
-      if (v) { setMatch(v); setIsViewer(true); setScreen("viewer"); }
+      if (!v) return;
+      if (first) {
+        first = false;
+        setMatch(v); setIsViewer(true); setScreen("viewer");
+      } else {
+        // Subsequent updates: only update match data, never touch isViewer or screen
+        setMatch(v);
+      }
     }, err => console.warn("FB listener error:", err.message));
   }
 
@@ -1246,6 +1255,7 @@ function App() {
             <button onClick={()=>setScreen("scorecard")} style={S.btnSm}>📋 Scorecard</button>
             <button onClick={()=>{
               if(confirm("Take over scoring? The previous scorer will lose control.")) {
+                detach(); // stop receiving updates from old scorer
                 setIsViewer(false);
                 setScreen("match");
               }
