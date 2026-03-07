@@ -352,10 +352,28 @@ function App() {
   // ── Match start ──────────────────────────────────────────────
   function startMatch() {
     var code = fbReady ? genCode() : "LOCAL";
-    setMatch(blankMatch(setup, code));
+    var m = blankMatch(setup, code);
+    setMatch(m);
     setHistory([]);
     setIsViewer(false);
     setScreen("match");
+    // Immediately register in liveIndex so it appears in viewer list
+    if (fbReady && code !== "LOCAL" && _fbDB) {
+      _fbDB.ref("liveIndex/"+code).set({
+        code,
+        teamA: m.teamA.name,
+        teamB: m.teamB.name,
+        runs: m.runs,
+        wickets: m.wickets,
+        overs: m.overs,
+        balls: m.balls,
+        batting: 0,
+        totalOvers: m.totalOvers,
+        inningsOver: m.inningsOver,
+        createdAt: m.createdAt,
+        updatedAt: Date.now(),
+      });
+    }
   }
 
   function saveToHistory(m) {
@@ -386,23 +404,28 @@ function App() {
   }
 
   function fetchLiveMatches() {
-    if (!fbReady || !_fbDB) { setLiveError("Firebase not connected"); return; }
+    var db = _fbDB;
+    if (!db) {
+      var ok = initFB();
+      db = _fbDB;
+      if (!ok || !db) { setLiveError("Firebase not connected — check your internet connection"); return; }
+    }
     setLoadingLive(true);
     setLiveError("");
-    _fbDB.ref("liveIndex").once("value", snap => {
+    db.ref("liveIndex").once("value", snap => {
       var val = snap.val();
       if (!val) { setLiveMatches([]); setLoadingLive(false); return; }
       var now = Date.now();
       var list = Object.values(val).filter(m => {
         var fresh = !m.createdAt || (now - m.createdAt) < 24*60*60*1000;
         var ongoing = !(m.inningsOver && m.inningsOver[0] && m.inningsOver[1]);
-        return fresh && ongoing && m.teamA && m.teamB;
+        return fresh && ongoing && m.teamA && m.teamB && m.code;
       });
       list.sort((a,b)=>(b.updatedAt||b.createdAt||0)-(a.updatedAt||a.createdAt||0));
       setLiveMatches(list);
       setLoadingLive(false);
     }, err => {
-      setLiveError("Error: "+err.message);
+      setLiveError("Permission denied — add this to Firebase rules:\n liveIndex: { \".read\": true, \".write\": true }");
       setLoadingLive(false);
     });
   }
@@ -638,40 +661,52 @@ function App() {
 
         {/* Watch Live */}
         <div style={{background:"#1e293b",borderRadius:20,padding:24,border:"1px solid #334155",boxShadow:"0 20px 60px rgba(0,0,0,.5)"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
             <div style={{color:"#64748b",fontSize:11,letterSpacing:2}}>WATCH LIVE</div>
-            <button onClick={fetchLiveMatches} disabled={!fbReady||loadingLive}
-              style={{padding:"5px 12px",background:"transparent",border:"1px solid #334155",borderRadius:8,color:fbReady?"#94a3b8":"#334155",fontSize:12,cursor:fbReady?"pointer":"not-allowed",fontFamily:"Georgia,serif"}}>
-              {loadingLive?"Loading…":"🔄 Refresh"}
-            </button>
+            {liveMatches!==null&&(
+              <button onClick={fetchLiveMatches} disabled={loadingLive}
+                style={{padding:"5px 12px",background:"transparent",border:"1px solid #334155",borderRadius:8,color:"#94a3b8",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                {loadingLive?"…":"🔄 Refresh"}
+              </button>
+            )}
           </div>
           {liveMatches===null&&(
-            <button onClick={fetchLiveMatches} disabled={!fbReady||loadingLive}
-              style={{width:"100%",padding:"13px 0",background:fbReady?"linear-gradient(135deg,#1d4ed8,#1e40af)":"#1e293b",borderRadius:12,border:fbReady?"none":"1px solid #334155",color:fbReady?"#fff":"#475569",fontWeight:"bold",fontSize:14,cursor:fbReady?"pointer":"not-allowed",fontFamily:"Georgia,serif"}}>
-              {loadingLive?"Searching…":fbReady?"📡 Show Live Matches":"Firebase offline"}
+            <button onClick={fetchLiveMatches} disabled={loadingLive}
+              style={{width:"100%",padding:"13px 0",background:"linear-gradient(135deg,#1d4ed8,#1e40af)",borderRadius:12,border:"none",color:"#fff",fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+              {loadingLive?"🔍 Searching…":"📡 Show Live Matches"}
             </button>
           )}
-          {liveError&&<div style={{color:"#f87171",fontSize:12,marginTop:8,textAlign:"center"}}>{liveError}</div>}
-          {liveMatches!==null&&liveMatches.length===0&&(
-            <div style={{textAlign:"center",color:"#475569",fontSize:13,padding:"14px 0"}}>No live matches found</div>
+          {liveError&&(
+            <div style={{background:"rgba(239,68,68,.1)",border:"1px solid #7f1d1d",borderRadius:10,padding:"10px 14px",marginTop:8}}>
+              <div style={{color:"#fca5a5",fontSize:12,marginBottom:6}}>{liveError}</div>
+              <div style={{color:"#64748b",fontSize:11}}>Check your Firebase rules allow reading <code style={{color:"#94a3b8"}}>liveIndex</code>:</div>
+              <pre style={{color:"#4ade80",fontSize:10,marginTop:6,overflowX:"auto"}}>{"liveIndex: { \".read\": true, \".write\": true }"}</pre>
+            </div>
+          )}
+          {liveMatches!==null&&liveMatches.length===0&&!loadingLive&&(
+            <div style={{textAlign:"center",color:"#475569",fontSize:13,padding:"14px 0"}}>No live matches right now</div>
+          )}
+          {loadingLive&&liveMatches!==null&&(
+            <div style={{textAlign:"center",color:"#475569",fontSize:13,padding:"10px 0"}}>Refreshing…</div>
           )}
           {liveMatches!==null&&liveMatches.length>0&&(
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {liveMatches.map(m=>{
                 var bt=m.batting||0;
                 var bName=bt===0?m.teamA:m.teamB;
-                var r=m.runs[bt], w=m.wickets[bt], ov=m.overs[bt], bl=m.balls[bt];
+                var r=(m.runs&&m.runs[bt])||0, w=(m.wickets&&m.wickets[bt])||0;
+                var ov=(m.overs&&m.overs[bt])||0, bl=(m.balls&&m.balls[bt])||0;
                 var inn1Done=m.inningsOver&&m.inningsOver[0];
                 return (
                   <button key={m.code} onClick={()=>joinByCode(m.code)}
                     style={{width:"100%",background:"#0f172a",border:"1px solid #1d4ed8",borderRadius:12,padding:"12px 14px",cursor:"pointer",textAlign:"left",fontFamily:"Georgia,serif"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
                       <span style={{color:"#ef4444",fontSize:11,fontWeight:"bold"}}>● LIVE</span>
                       <span style={{color:"#475569",fontSize:11}}>{m.totalOvers} overs</span>
                     </div>
-                    <div style={{color:"#94a3b8",fontSize:12,marginBottom:4}}>{m.teamA} vs {m.teamB}</div>
-                    {inn1Done&&<div style={{color:"#64748b",fontSize:11,marginBottom:2}}>{m.teamA}: {m.runs[0]}/{m.wickets[0]}</div>}
-                    <div style={{color:"#fbbf24",fontWeight:"bold",fontSize:15}}>{bName}: {r}/{w} <span style={{color:"#475569",fontSize:12}}>({ov}.{bl})</span></div>
+                    <div style={{color:"#94a3b8",fontSize:12,marginBottom:6}}>{m.teamA} vs {m.teamB}</div>
+                    {inn1Done&&<div style={{color:"#64748b",fontSize:11,marginBottom:2}}>{m.teamA}: {(m.runs&&m.runs[0])||0}/{(m.wickets&&m.wickets[0])||0}</div>}
+                    <div style={{color:"#fbbf24",fontWeight:"bold",fontSize:16}}>{bName}: {r}/{w} <span style={{color:"#475569",fontSize:12,fontWeight:"normal"}}>({ov}.{bl} ov)</span></div>
                   </button>
                 );
               })}
