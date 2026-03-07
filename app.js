@@ -1244,6 +1244,12 @@ function App() {
           <span style={{color:"#ef4444",fontSize:13}}>● LIVE</span>
           <div style={{display:"flex",gap:8}}>
             <button onClick={()=>setScreen("scorecard")} style={S.btnSm}>📋 Scorecard</button>
+            <button onClick={()=>{
+              if(confirm("Take over scoring? The previous scorer will lose control.")) {
+                setIsViewer(false);
+                setScreen("match");
+              }
+            }} style={{...S.btnSm,borderColor:"#d97706",color:"#fbbf24"}}>🏏 Score</button>
             <button onClick={resetAll} style={S.btnSm}>✕ Leave</button>
           </div>
         </div>
