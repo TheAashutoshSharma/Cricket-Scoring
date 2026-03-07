@@ -764,6 +764,14 @@ function App() {
           </button>
         </div>
 
+        {/* History button */}
+        {matchHistory.length > 0 && (
+          <button onClick={()=>setScreen("history")}
+            style={{width:"100%",marginBottom:14,padding:"12px 0",background:"transparent",border:"1px solid #334155",borderRadius:12,color:"#64748b",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",letterSpacing:1}}>
+            📚 Match History ({matchHistory.length})
+          </button>
+        )}
+
         {/* Watch Live */}
         <div style={{background:"#1e293b",borderRadius:20,padding:24,border:"1px solid #334155",boxShadow:"0 20px 60px rgba(0,0,0,.5)"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
@@ -818,13 +826,6 @@ function App() {
             </div>
           )}
         </div>
-        {/* History button */}
-        {matchHistory.length > 0 && (
-          <button onClick={()=>setScreen("history")}
-            style={{width:"100%",marginTop:14,padding:"12px 0",background:"transparent",border:"1px solid #334155",borderRadius:12,color:"#64748b",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",letterSpacing:1}}>
-            📚 Match History ({matchHistory.length})
-          </button>
-        )}
         <div style={{textAlign:"center",marginTop:18}}>
           <button onClick={()=>setScreen("admin")}
             style={{background:"none",border:"none",color:"#1e293b",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}>
