@@ -1,151 +1,31 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <meta name="theme-color" content="#0f172a" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Cricket Scorer" />
-  <meta name="description" content="Professional Cricket Scorecard App" />
-
-  <title>Cricket Scorer 🏏</title>
-
-  <!-- PWA Manifest -->
-  <link rel="manifest" href="manifest.json" />
-
-  <!-- Apple Touch Icons -->
-  <link rel="apple-touch-icon" href="icons/icon-192.png" />
-  <link rel="apple-touch-icon" sizes="152x152" href="icons/icon-152.png" />
-  <link rel="apple-touch-icon" sizes="180x180" href="icons/icon-180.png" />
-  <link rel="apple-touch-icon" sizes="167x167" href="icons/icon-167.png" />
-
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png" />
-
-  <!-- Splash screens for iOS -->
-  <meta name="apple-mobile-web-app-status-bar-style" content="black" />
-
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-    body { background: #0f172a; font-family: Georgia, serif; overflow-x: hidden; }
-    #app { min-height: 100vh; min-height: 100dvh; }
-
-    /* Install banner */
-    #install-banner {
-      display: none;
-      position: fixed;
-      bottom: 0; left: 0; right: 0;
-      background: #1e3a5f;
-      border-top: 2px solid #1d4ed8;
-      padding: 14px 20px;
-      z-index: 9999;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
+{
+  "name": "Cricket Scorer",
+  "short_name": "Cricket",
+  "description": "Professional Cricket Scorecard & Live Scoring App",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "categories": ["sports", "utilities"],
+  "icons": [
+    { "src": "icons/icon-32.png",  "sizes": "32x32",   "type": "image/png" },
+    { "src": "icons/icon-72.png",  "sizes": "72x72",   "type": "image/png" },
+    { "src": "icons/icon-96.png",  "sizes": "96x96",   "type": "image/png" },
+    { "src": "icons/icon-128.png", "sizes": "128x128", "type": "image/png" },
+    { "src": "icons/icon-144.png", "sizes": "144x144", "type": "image/png" },
+    { "src": "icons/icon-152.png", "sizes": "152x152", "type": "image/png" },
+    { "src": "icons/icon-167.png", "sizes": "167x167", "type": "image/png" },
+    { "src": "icons/icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "screenshots": [
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "narrow"
     }
-    #install-banner.show { display: flex; }
-    #install-banner p { color: #e2e8f0; font-size: 13px; flex: 1; }
-    #install-banner button {
-      background: #fbbf24; color: #0f172a;
-      border: none; border-radius: 8px;
-      padding: 8px 16px; font-weight: bold;
-      font-size: 13px; cursor: pointer; white-space: nowrap;
-    }
-    #install-banner .dismiss {
-      background: transparent; color: #64748b;
-      border: 1px solid #475569; margin-left: 0;
-    }
-
-    /* iOS install tip */
-    #ios-tip {
-      display: none;
-      position: fixed;
-      bottom: 0; left: 0; right: 0;
-      background: #1e293b;
-      border-top: 2px solid #334155;
-      padding: 16px 20px 28px;
-      z-index: 9999;
-      text-align: center;
-    }
-    #ios-tip.show { display: block; }
-    #ios-tip p { color: #e2e8f0; font-size: 14px; margin-bottom: 8px; }
-    #ios-tip small { color: #64748b; font-size: 12px; }
-    #ios-tip .close-tip {
-      position: absolute; top: 12px; right: 16px;
-      background: none; border: none; color: #64748b;
-      font-size: 20px; cursor: pointer;
-    }
-  </style>
-</head>
-<body>
-  <div id="app"></div>
-
-  <!-- Install Banner (Android/Chrome) -->
-  <div id="install-banner">
-    <p>🏏 Install Cricket Scorer for offline use!</p>
-    <button class="dismiss" onclick="dismissBanner()">✕</button>
-    <button onclick="installApp()">Install</button>
-  </div>
-
-  <!-- iOS Install Tip -->
-  <div id="ios-tip">
-    <button class="close-tip" onclick="document.getElementById('ios-tip').classList.remove('show')">✕</button>
-    <p>📲 Install on iPhone</p>
-    <small>Tap <strong>Share</strong> (□↑) then <strong>"Add to Home Screen"</strong></small>
-  </div>
-
-  <!-- Firebase SDK (v9 compat) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.2/firebase-app-compat.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.2/firebase-database-compat.min.js"></script>
-
-  <!-- React + Babel (no build step needed!) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-
-  <script src="app.js" type="text/babel"></script>
-
-  <script>
-    // ── PWA Install Logic ──
-    let deferredPrompt = null;
-
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      deferredPrompt = e;
-      document.getElementById('install-banner').classList.add('show');
-    });
-
-    function installApp() {
-      if (deferredPrompt) {
-        deferredPrompt.prompt();
-        deferredPrompt.userChoice.then(() => {
-          deferredPrompt = null;
-          dismissBanner();
-        });
-      }
-    }
-
-    function dismissBanner() {
-      document.getElementById('install-banner').classList.remove('show');
-      sessionStorage.setItem('banner-dismissed', '1');
-    }
-
-    window.addEventListener('appinstalled', () => dismissBanner());
-
-    // Show iOS tip if on Safari and not installed
-    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-    if (isIos && !isInStandaloneMode && !sessionStorage.getItem('ios-tip-dismissed')) {
-      setTimeout(() => document.getElementById('ios-tip').classList.add('show'), 2000);
-    }
-
-    // ── Service Worker ──
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js')
-        .then(r => console.log('SW registered:', r.scope))
-        .catch(e => console.error('SW error:', e));
-    }
-  </script>
-</body>
-</html>
+  ]
+}
