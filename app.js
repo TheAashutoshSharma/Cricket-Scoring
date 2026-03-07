@@ -332,6 +332,36 @@ function AdminPanel({matchHistory, setMatchHistory, onDone}) {
   );
 }
 
+// ── NList — player/bowler name entry in setup wizard ─────────────
+function NList({names, ph, onUp, min, max}) {
+  function addOne() { if(names.length<max) onUp([...names, ph+" "+(names.length+1)]); }
+  function removeOne() { if(names.length>min) onUp(names.slice(0,-1)); }
+  return (
+    <div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+        <span style={{color:"#64748b",fontSize:11,letterSpacing:1}}>{names.length} {ph.toLowerCase()}s</span>
+        <div style={{display:"flex",gap:6}}>
+          <button onClick={removeOne} disabled={names.length<=min}
+            style={{width:32,height:32,borderRadius:8,border:"1px solid #334155",background:"#0f172a",color:names.length<=min?"#1e293b":"#94a3b8",fontSize:20,cursor:names.length<=min?"not-allowed":"pointer",fontFamily:"Georgia,serif",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+          <button onClick={addOne} disabled={names.length>=max}
+            style={{width:32,height:32,borderRadius:8,border:"1px solid #334155",background:"#0f172a",color:names.length>=max?"#1e293b":"#fbbf24",fontSize:20,cursor:names.length>=max?"not-allowed":"pointer",fontFamily:"Georgia,serif",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+        </div>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"46vh",overflowY:"auto"}}>
+        {names.map((nm,i)=>(
+          <div key={i} style={{display:"flex",alignItems:"center",gap:10}}>
+            <span style={{color:"#475569",fontSize:13,minWidth:22,textAlign:"right"}}>{i+1}.</span>
+            <input value={nm} placeholder={ph+" "+(i+1)}
+              onChange={e=>{var u=[...names];u[i]=e.target.value;onUp(u);}}
+              style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:9,padding:"10px 12px",color:"#f1f5f9",fontSize:15,outline:"none",fontFamily:"Georgia,serif"}}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [screen,    setScreen]   = useState("home");
   const [setup,     setSetup]    = useState(blankSetup);
@@ -1012,34 +1042,6 @@ function App() {
   if (screen==="setup") {
     var s=setup;
     var STEPS=["Match Details",s.teamAName+" — Batters",s.teamAName+" — Bowlers",s.teamBName+" — Batters",s.teamBName+" — Bowlers"];
-    function NList({names,ph,onUp,min,max}) {
-      function addOne() { if(names.length<max) onUp([...names, ph+" "+(names.length+1)]); }
-      function removeOne() { if(names.length>min) onUp(names.slice(0,-1)); }
-      return (
-        <div>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-            <span style={{color:"#64748b",fontSize:11,letterSpacing:1}}>{names.length} {ph.toLowerCase()}s</span>
-            <div style={{display:"flex",gap:6}}>
-              <button onClick={removeOne} disabled={names.length<=min}
-                style={{width:32,height:32,borderRadius:8,border:"1px solid #334155",background:"#0f172a",color:names.length<=min?"#1e293b":"#94a3b8",fontSize:20,cursor:names.length<=min?"not-allowed":"pointer",fontFamily:"Georgia,serif",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-              <button onClick={addOne} disabled={names.length>=max}
-                style={{width:32,height:32,borderRadius:8,border:"1px solid #334155",background:"#0f172a",color:names.length>=max?"#1e293b":"#fbbf24",fontSize:20,cursor:names.length>=max?"not-allowed":"pointer",fontFamily:"Georgia,serif",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-            </div>
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"46vh",overflowY:"auto"}}>
-            {names.map((nm,i)=>(
-              <div key={i} style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{color:"#475569",fontSize:13,minWidth:22,textAlign:"right"}}>{i+1}.</span>
-                <input value={nm} placeholder={ph+" "+(i+1)}
-                  onChange={e=>{var u=[...names];u[i]=e.target.value;onUp(u);}}
-                  style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:9,padding:"10px 12px",color:"#f1f5f9",fontSize:15,outline:"none",fontFamily:"Georgia,serif"}}
-                />
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-    }
     return (
       <div style={{minHeight:"100dvh",background:"linear-gradient(170deg,#0c1828,#0f172a)",display:"flex",flexDirection:"column",alignItems:"center",padding:"24px 16px 40px",fontFamily:"Georgia,serif"}}>
         <div style={{width:"100%",maxWidth:420}}>
