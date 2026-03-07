@@ -252,6 +252,7 @@ function App() {
   // Live matches list for viewer
   const [liveMatches, setLiveMatches] = useState(null); // null=not loaded, []=empty
   const [loadingLive, setLoadingLive] = useState(false);
+  const [liveError,   setLiveError]   = useState("");
   const listRef = useRef(null);
 
   // Init Firebase
@@ -304,11 +305,35 @@ function App() {
 
   // Sync to Firebase (scorer only)
   useEffect(() => {
-    if (!match || isViewer || !fbReady || !match.matchCode) return;
+    if (!match || isViewer || !fbReady || !match.matchCode || match.matchCode==="LOCAL") return;
     setSyncing(true);
-    _fbDB.ref("matches/"+match.matchCode).set(match)
+    var code = match.matchCode;
+    // Write full match data
+    _fbDB.ref("matches/"+code).set(match)
       .then(()=>setSyncing(false))
       .catch(()=>setSyncing(false));
+    // Write/update live index entry (small summary for listing)
+    var bothOver = match.inningsOver && match.inningsOver[0] && match.inningsOver[1];
+    if (bothOver) {
+      // Remove from live index when match is complete
+      _fbDB.ref("liveIndex/"+code).remove();
+    } else {
+      var bt = match.batting||0;
+      _fbDB.ref("liveIndex/"+code).set({
+        code,
+        teamA: match.teamA.name,
+        teamB: match.teamB.name,
+        runs:  match.runs,
+        wickets: match.wickets,
+        overs: match.overs,
+        balls: match.balls,
+        batting: bt,
+        totalOvers: match.totalOvers,
+        inningsOver: match.inningsOver,
+        createdAt: match.createdAt,
+        updatedAt: Date.now(),
+      });
+    }
   }, [match]);
 
   function attachListener(code) {
@@ -319,7 +344,7 @@ function App() {
     ref.on("value", snap => {
       var v = snap.val();
       if (v) { setMatch(v); setIsViewer(true); setScreen("viewer"); }
-    }, err => setJoinErr("Error: "+err.message));
+    }, err => console.warn("FB listener error:", err.message));
   }
 
   function detach() { if (listRef.current) { listRef.current.off(); listRef.current=null; } }
@@ -361,23 +386,25 @@ function App() {
   }
 
   function fetchLiveMatches() {
-    if (!fbReady) return;
+    if (!fbReady || !_fbDB) { setLiveError("Firebase not connected"); return; }
     setLoadingLive(true);
-    _fbDB.ref("matches").once("value", snap => {
+    setLiveError("");
+    _fbDB.ref("liveIndex").once("value", snap => {
       var val = snap.val();
       if (!val) { setLiveMatches([]); setLoadingLive(false); return; }
       var now = Date.now();
       var list = Object.values(val).filter(m => {
-        // Only show matches created in last 24h and not fully complete
-        var fresh = (now - (m.createdAt||0)) < 24*60*60*1000;
+        var fresh = !m.createdAt || (now - m.createdAt) < 24*60*60*1000;
         var ongoing = !(m.inningsOver && m.inningsOver[0] && m.inningsOver[1]);
-        return fresh && ongoing;
+        return fresh && ongoing && m.teamA && m.teamB;
       });
-      // Sort newest first
-      list.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0));
+      list.sort((a,b)=>(b.updatedAt||b.createdAt||0)-(a.updatedAt||a.createdAt||0));
       setLiveMatches(list);
       setLoadingLive(false);
-    }, ()=>setLoadingLive(false));
+    }, err => {
+      setLiveError("Error: "+err.message);
+      setLoadingLive(false);
+    });
   }
 
   function joinByCode(code) {
@@ -624,6 +651,7 @@ function App() {
               {loadingLive?"Searching…":fbReady?"📡 Show Live Matches":"Firebase offline"}
             </button>
           )}
+          {liveError&&<div style={{color:"#f87171",fontSize:12,marginTop:8,textAlign:"center"}}>{liveError}</div>}
           {liveMatches!==null&&liveMatches.length===0&&(
             <div style={{textAlign:"center",color:"#475569",fontSize:13,padding:"14px 0"}}>No live matches found</div>
           )}
@@ -631,18 +659,18 @@ function App() {
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {liveMatches.map(m=>{
                 var bt=m.batting||0;
-                var bName=bt===0?m.teamA.name:m.teamB.name;
+                var bName=bt===0?m.teamA:m.teamB;
                 var r=m.runs[bt], w=m.wickets[bt], ov=m.overs[bt], bl=m.balls[bt];
                 var inn1Done=m.inningsOver&&m.inningsOver[0];
                 return (
-                  <button key={m.matchCode} onClick={()=>joinByCode(m.matchCode)}
+                  <button key={m.code} onClick={()=>joinByCode(m.code)}
                     style={{width:"100%",background:"#0f172a",border:"1px solid #1d4ed8",borderRadius:12,padding:"12px 14px",cursor:"pointer",textAlign:"left",fontFamily:"Georgia,serif"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                       <span style={{color:"#ef4444",fontSize:11,fontWeight:"bold"}}>● LIVE</span>
                       <span style={{color:"#475569",fontSize:11}}>{m.totalOvers} overs</span>
                     </div>
-                    <div style={{color:"#94a3b8",fontSize:12,marginBottom:4}}>{m.teamA.name} vs {m.teamB.name}</div>
-                    {inn1Done&&<div style={{color:"#64748b",fontSize:11,marginBottom:2}}>{m.teamA.name}: {m.runs[0]}/{m.wickets[0]}</div>}
+                    <div style={{color:"#94a3b8",fontSize:12,marginBottom:4}}>{m.teamA} vs {m.teamB}</div>
+                    {inn1Done&&<div style={{color:"#64748b",fontSize:11,marginBottom:2}}>{m.teamA}: {m.runs[0]}/{m.wickets[0]}</div>}
                     <div style={{color:"#fbbf24",fontWeight:"bold",fontSize:15}}>{bName}: {r}/{w} <span style={{color:"#475569",fontSize:12}}>({ov}.{bl})</span></div>
                   </button>
                 );
