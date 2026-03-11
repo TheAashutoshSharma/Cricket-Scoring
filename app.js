@@ -504,46 +504,6 @@ function AuthGate({children}) {
     return () => { unsub(); clearTimeout(t); };
   }, []);
 
-  async function handleGoogle() {
-    clearForm(); setBusy(true);
-    try {
-      var provider = new firebase.auth.GoogleAuthProvider();
-      provider.addScope('email');
-      provider.addScope('profile');
-      // Try popup first; fall back to redirect on mobile/blocked
-      try {
-        var cred = await _fbAuth.signInWithPopup(provider);
-        var u = cred.user;
-        await _fbDB.ref("users/"+u.uid).set({ name: u.displayName||"", email: u.email||"", createdAt: Date.now() });
-      } catch(popupErr) {
-        if (popupErr.code === "auth/popup-blocked" || popupErr.code === "auth/popup-closed-by-user" || popupErr.code === "auth/cancelled-popup-request") {
-          // Fall back to redirect
-          await _fbAuth.signInWithRedirect(provider);
-          // Page will reload — result handled below
-          return;
-        }
-        throw popupErr;
-      }
-    } catch(e) {
-      var msg = friendlyError(e.code) || e.message || "Google sign-in failed";
-      setErr(msg);
-    }
-    setBusy(false);
-  }
-
-  // Handle redirect result on page load
-  useEffect(() => {
-    if (!_fbAuth) return;
-    _fbAuth.getRedirectResult().then(result => {
-      if (result && result.user) {
-        var u = result.user;
-        if (_fbDB) _fbDB.ref("users/"+u.uid).set({ name: u.displayName||"", email: u.email||"", createdAt: Date.now() });
-      }
-    }).catch(e => {
-      if (e.code !== "auth/no-auth-event") setErr(friendlyError(e.code));
-    });
-  }, []);
-
   function clearForm() { setErr(""); setInfo(""); }
 
   async function handleRegister() {
@@ -599,10 +559,6 @@ function AuthGate({children}) {
       "auth/invalid-credential":      "Incorrect email or password",
       "auth/too-many-requests":       "Too many attempts — try again later",
       "auth/network-request-failed":  "Network error — check your connection",
-      "auth/popup-blocked":           "Popup was blocked — trying redirect instead…",
-      "auth/unauthorized-domain":     "This domain isn't authorised in Firebase Console → Authentication → Settings → Authorised domains",
-      "auth/operation-not-allowed":   "Google sign-in isn't enabled — go to Firebase Console → Authentication → Sign-in method → enable Google",
-      "auth/internal-error":          "Firebase internal error — check your internet connection and try again",
     };
     return map[code] || "Something went wrong. Please try again";
   }
@@ -691,16 +647,6 @@ function AuthGate({children}) {
               </div>
               {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:12,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8}}>{err}</div>}
               <button onClick={handleRegister} disabled={busy} style={btnPrimary}>{busy?"Creating account…":"Create Account"}</button>
-              <div style={{display:"flex",alignItems:"center",gap:10,margin:"18px 0 14px"}}>
-                <div style={{flex:1,height:1,background:"#334155"}}/>
-                <span style={{color:"#475569",fontSize:12}}>or</span>
-                <div style={{flex:1,height:1,background:"#334155"}}/>
-              </div>
-              <button onClick={handleGoogle} disabled={busy}
-                style={{width:"100%",padding:"13px 0",background:"#fff",borderRadius:12,border:"none",color:"#1a1a1a",fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-                <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.7 33.9 29.8 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"/><path fill="#34A853" d="M6.3 14.7l7 5.1C15 16.1 19.2 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 16.3 2 9.6 7.3 6.3 14.7z"/><path fill="#FBBC05" d="M24 46c5.5 0 10.5-1.9 14.3-5l-6.6-5.4C29.8 37 27 38 24 38c-5.7 0-10.6-3.1-13.1-7.6l-7 5.4C7.6 42.3 15.3 46 24 46z"/><path fill="#EA4335" d="M44.5 20H24v8.5h11.8c-.8 2.3-2.3 4.3-4.3 5.7l6.6 5.4c3.8-3.5 6.4-8.7 6.4-15.6 0-1.3-.2-2.7-.5-4z"/></svg>
-                Continue with Google
-              </button>
             </div>
           ) : (
             <div>
@@ -722,16 +668,6 @@ function AuthGate({children}) {
               </div>
               {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:12,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8}}>{err}</div>}
               <button onClick={handleLogin} disabled={busy} style={btnPrimary}>{busy?"Signing in…":"Sign In"}</button>
-              <div style={{display:"flex",alignItems:"center",gap:10,margin:"18px 0 14px"}}>
-                <div style={{flex:1,height:1,background:"#334155"}}/>
-                <span style={{color:"#475569",fontSize:12}}>or</span>
-                <div style={{flex:1,height:1,background:"#334155"}}/>
-              </div>
-              <button onClick={handleGoogle} disabled={busy}
-                style={{width:"100%",padding:"13px 0",background:"#fff",borderRadius:12,border:"none",color:"#1a1a1a",fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
-                <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.7 33.9 29.8 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"/><path fill="#34A853" d="M6.3 14.7l7 5.1C15 16.1 19.2 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 16.3 2 9.6 7.3 6.3 14.7z"/><path fill="#FBBC05" d="M24 46c5.5 0 10.5-1.9 14.3-5l-6.6-5.4C29.8 37 27 38 24 38c-5.7 0-10.6-3.1-13.1-7.6l-7 5.4C7.6 42.3 15.3 46 24 46z"/><path fill="#EA4335" d="M44.5 20H24v8.5h11.8c-.8 2.3-2.3 4.3-4.3 5.7l6.6 5.4c3.8-3.5 6.4-8.7 6.4-15.6 0-1.3-.2-2.7-.5-4z"/></svg>
-                Continue with Google
-              </button>
             </div>
           )}
         </div>
@@ -951,11 +887,25 @@ function App({ currentUser }) {
       var val = snap.val();
       if (!val) { setLiveMatches([]); setLoadingLive(false); return; }
       var now = Date.now();
-      var list = Object.values(val).filter(m => {
-        var fresh = !m.createdAt || (now - m.createdAt) < 24*60*60*1000;
-        var ongoing = !(m.inningsOver && m.inningsOver[0] && m.inningsOver[1]);
-        return fresh && ongoing && m.teamA && m.teamB && m.code;
+      var STALE = 24*60*60*1000; // 24 hours
+      var list = [];
+      var removes = [];
+      Object.values(val).forEach(m => {
+        if (!m.code) return;
+        var age = now - (m.createdAt || now);
+        var isStale = age >= STALE;
+        var isOver  = m.inningsOver && m.inningsOver[0] && m.inningsOver[1];
+        if (isStale || isOver) {
+          // Mark as abandoned in Firebase then remove from liveIndex
+          if (isStale && !isOver) {
+            db.ref("matches/"+m.code+"/abandoned").set(true);
+          }
+          removes.push(db.ref("liveIndex/"+m.code).remove());
+        } else if (m.teamA && m.teamB) {
+          list.push(m);
+        }
       });
+      if (removes.length) Promise.all(removes).catch(()=>{});
       list.sort((a,b)=>(b.updatedAt||b.createdAt||0)-(a.updatedAt||a.createdAt||0));
       setLiveMatches(list);
       setLoadingLive(false);
@@ -1203,15 +1153,6 @@ function App({ currentUser }) {
           </button>
         </div>
 
-        {/* History button */}
-        {matchHistory.length > 0 && (
-          <button onClick={()=>setScreen("history")}
-            style={{width:"100%",marginBottom:14,padding:"12px 0",background:"transparent",border:"1px solid #334155",borderRadius:12,color:"#64748b",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",letterSpacing:1}}>
-            📚 Match History ({matchHistory.length})
-          </button>
-        )}
-
-
         {/* Watch Live — visible to all logged-in users */}
         <div style={{background:"#1e293b",borderRadius:20,padding:24,border:"1px solid #334155",boxShadow:"0 20px 60px rgba(0,0,0,.5)",marginBottom:14}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
@@ -1267,7 +1208,15 @@ function App({ currentUser }) {
           </div>
         </div>
 
-        <div style={{textAlign:"center",marginTop:18}}>
+        {/* History button */}
+        {matchHistory.length > 0 && (
+          <button onClick={()=>setScreen("history")}
+            style={{width:"100%",marginBottom:14,padding:"12px 0",background:"transparent",border:"1px solid #334155",borderRadius:12,color:"#64748b",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",letterSpacing:1}}>
+            📚 Match History ({matchHistory.length})
+          </button>
+        )}
+
+        <div style={{textAlign:"center",marginTop:4}}>
           <button onClick={()=>setScreen("admin")}
             style={{background:"none",border:"none",color:"#1e293b",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}>
             ···
