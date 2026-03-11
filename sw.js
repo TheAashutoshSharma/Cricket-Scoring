@@ -1,23 +1,20 @@
 // Cricket Scorer PWA - Service Worker
-const CACHE_NAME = 'cricket-scorer-v2';
-const ASSETS = [
-  '/',
-  '/index.html',
-  '/app.js',
-  '/manifest.json',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
+const CACHE_NAME = 'cricket-scorer-v3';
+
+// Only cache third-party CDN libraries (they never change)
+const CDN_ASSETS = [
   'https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.2/firebase-app-compat.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.2/firebase-database-compat.min.js'
+  'https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.2/firebase-database-compat.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.2/firebase-auth-compat.min.js'
 ];
 
-// Install — cache all assets
+// Install — only cache CDN libs, NOT app.js / index.html
 self.addEventListener('install', (e) => {
   e.waitUntil(
-    caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS))
+    caches.open(CACHE_NAME).then(cache => cache.addAll(CDN_ASSETS))
   );
   self.skipWaiting();
 });
@@ -32,17 +29,40 @@ self.addEventListener('activate', (e) => {
   self.clients.claim();
 });
 
-// Fetch — cache-first strategy (works fully offline)
+// Fetch strategy:
+// - app.js, index.html, manifest.json → network-first (always get latest)
+// - CDN libs → cache-first (they never change)
 self.addEventListener('fetch', (e) => {
-  e.respondWith(
-    caches.match(e.request).then(cached => {
-      if (cached) return cached;
-      return fetch(e.request).then(response => {
-        if (!response || response.status !== 200 || response.type === 'opaque') return response;
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
-        return response;
-      }).catch(() => caches.match('/index.html'));
-    })
-  );
+  const url = new URL(e.request.url);
+  const isLocal = url.origin === self.location.origin;
+  const isCDN   = url.hostname === 'cdnjs.cloudflare.com';
+
+  if (isLocal) {
+    // Network-first for all local files (app.js, index.html, icons, etc.)
+    e.respondWith(
+      fetch(e.request)
+        .then(response => {
+          // Cache icons locally (they change rarely) but NOT app.js / index.html
+          const path = url.pathname;
+          if (path.startsWith('/icons/')) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(e.request)) // fallback to cache if offline
+    );
+  } else if (isCDN) {
+    // Cache-first for CDN libs
+    e.respondWith(
+      caches.match(e.request).then(cached => {
+        if (cached) return cached;
+        return fetch(e.request).then(response => {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+          return response;
+        });
+      })
+    );
+  }
 });

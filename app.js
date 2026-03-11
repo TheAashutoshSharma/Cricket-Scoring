@@ -366,8 +366,10 @@ function NList({names, ph, onUp, min, max}) {
 
 // ── AuthGate — register / login wall ─────────────────────────────
 function AuthGate({children}) {
-  const [user,     setUser]     = useState(undefined); // undefined=loading
-  const [view,     setView]     = useState("login");   // login | register | forgot
+  // status: "loading" | "guest" | "authed"
+  const [status,   setStatus]   = useState("loading");
+  const [authUser, setAuthUser] = useState(null);
+  const [view,     setView]     = useState("login");
   const [name,     setName]     = useState("");
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
@@ -377,18 +379,15 @@ function AuthGate({children}) {
   const [busy,     setBusy]     = useState(false);
   const [showPw,   setShowPw]   = useState(false);
 
-  const [timedOut, setTimedOut] = useState(false);
-
   useEffect(() => {
-    var ok = initFB();
-    if (!ok || !_fbAuth) {
-      setUser(null);
-      return;
-    }
-    // Safety net: if auth takes >4s, show login form anyway
-    var t = setTimeout(() => setTimedOut(true), 4000);
-    var unsub = _fbAuth.onAuthStateChanged(u => { clearTimeout(t); setUser(u || null); });
-    return () => { clearTimeout(t); unsub(); };
+    initFB();
+    if (!_fbAuth) { setStatus("guest"); return; }
+    var unsub = _fbAuth.onAuthStateChanged(u => {
+      if (u) { setAuthUser(u); setStatus("authed"); }
+      else   { setAuthUser(null); setStatus("guest"); }
+    });
+    var t = setTimeout(() => setStatus(s => s === "loading" ? "guest" : s), 5000);
+    return () => { unsub(); clearTimeout(t); };
   }, []);
 
   function clearForm() { setErr(""); setInfo(""); }
@@ -451,16 +450,16 @@ function AuthGate({children}) {
   }
 
   // Loading state
-  if (user === undefined && !timedOut) return (
+  if (status === "loading") return (
     <div style={{minHeight:"100dvh",background:"#0f172a",display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{color:"#475569",fontSize:14,fontFamily:"Georgia,serif"}}>Loading…</div>
     </div>
   );
 
   // Authenticated — show app
-  if (user && !timedOut) return (
+  if (status === "authed") return (
     <div>
-      {React.cloneElement(children, { currentUser: user })}
+      {React.cloneElement(children, { currentUser: authUser })}
     </div>
   );
 
