@@ -523,13 +523,21 @@ function NList({names, ids, ph, onUp, min, max}) {
     }
   }
   function pickPlayer(i, p) {
+    // Don't allow picking a player already selected at a different slot
+    var curIds = ids || Array(names.length).fill(null);
+    var alreadyAt = curIds.findIndex((id, idx) => id === p.id && idx !== i);
+    if (alreadyAt !== -1) return; // already selected elsewhere, ignore
     var u=[...names]; u[i]=p.name;
-    var uid=[...(ids||Array(names.length).fill(null))]; uid[i]=p.id;
+    var uid=[...curIds]; uid[i]=p.id;
     onUp(u, uid);
     setShowPicker(null);
   }
 
-  var filtered = allPlayers ? allPlayers.filter(p=>p.name.toLowerCase().includes(pSearch.toLowerCase())) : [];
+  // Set of ids already used (excluding the slot being picked for)
+  var usedIds = new Set((ids||[]).filter((id,idx) => id && idx !== showPicker));
+  var filtered = allPlayers
+    ? allPlayers.filter(p=>p.name.toLowerCase().includes(pSearch.toLowerCase()))
+    : [];
 
   return (
     <div>
@@ -575,18 +583,22 @@ function NList({names, ids, ph, onUp, min, max}) {
             <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:6}}>
               {!allPlayers && <div style={{color:"#475569",fontSize:13,textAlign:"center",padding:20}}>Loading…</div>}
               {allPlayers && filtered.length===0 && <div style={{color:"#475569",fontSize:13,textAlign:"center",padding:20}}>No players found</div>}
-              {filtered.map(p=>(
-                <div key={p.id} onClick={()=>pickPlayer(showPicker, p)}
-                  style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:10,border:"1px solid #334155",background:"#0f172a",cursor:"pointer"}}>
-                  <div style={{width:34,height:34,borderRadius:"50%",background:"linear-gradient(135deg,#fbbf24,#d97706)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:"bold",color:"#0f172a",flexShrink:0}}>
-                    {p.name[0].toUpperCase()}
+              {filtered.map(p=>{
+                var taken = usedIds.has(p.id);
+                return (
+                  <div key={p.id} onClick={()=>!taken&&pickPlayer(showPicker, p)}
+                    style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:10,border:taken?"1px solid #1e293b":"1px solid #334155",background:taken?"#0a1120":"#0f172a",cursor:taken?"not-allowed":"pointer",opacity:taken?0.4:1}}>
+                    <div style={{width:34,height:34,borderRadius:"50%",background:taken?"#1e293b":"linear-gradient(135deg,#fbbf24,#d97706)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:"bold",color:taken?"#475569":"#0f172a",flexShrink:0}}>
+                      {p.name[0].toUpperCase()}
+                    </div>
+                    <div style={{flex:1}}>
+                      <div style={{color:taken?"#334155":"#e2e8f0",fontSize:14}}>{p.name}</div>
+                      <div style={{color:"#475569",fontSize:11}}>{p.role}{taken?" · already selected":""}</div>
+                    </div>
+                    {taken && <span style={{color:"#334155",fontSize:11}}>✓</span>}
                   </div>
-                  <div>
-                    <div style={{color:"#e2e8f0",fontSize:14}}>{p.name}</div>
-                    <div style={{color:"#475569",fontSize:11}}>{p.role}</div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>
@@ -1694,10 +1706,10 @@ function App({ currentUser }) {
                 </div>
               </div>
             )}
-            {s.step===1&&<NList names={s.teamAPlayers} ids={s.teamAPlayerIds} ph="Player" min={2} max={11} onUp={(v,vids)=>setSetup(p=>({...p,teamAPlayers:v,teamACount:v.length,teamAPlayerIds:vids||p.teamAPlayerIds}))}/>}
-            {s.step===2&&<NList names={s.teamABowlers} ids={s.teamABowlerIds} ph="Bowler" min={1} max={6}  onUp={(v,vids)=>setSetup(p=>({...p,teamABowlers:v,teamABowlerCount:v.length,teamABowlerIds:vids||p.teamABowlerIds}))}/>}
-            {s.step===3&&<NList names={s.teamBPlayers} ids={s.teamBPlayerIds} ph="Player" min={2} max={11} onUp={(v,vids)=>setSetup(p=>({...p,teamBPlayers:v,teamBCount:v.length,teamBPlayerIds:vids||p.teamBPlayerIds}))}/>}
-            {s.step===4&&<NList names={s.teamBBowlers} ids={s.teamBBowlerIds} ph="Bowler" min={1} max={6}  onUp={(v,vids)=>setSetup(p=>({...p,teamBBowlers:v,teamBBowlerCount:v.length,teamBBowlerIds:vids||p.teamBBowlerIds}))}/>}
+            {s.step===1&&<NList names={s.teamAPlayers} ids={s.teamAPlayerIds} ph="Player" min={2} max={25} onUp={(v,vids)=>setSetup(p=>({...p,teamAPlayers:v,teamACount:v.length,teamAPlayerIds:vids||p.teamAPlayerIds}))}/>}
+            {s.step===2&&<NList names={s.teamABowlers} ids={s.teamABowlerIds} ph="Bowler" min={1} max={15} onUp={(v,vids)=>setSetup(p=>({...p,teamABowlers:v,teamABowlerCount:v.length,teamABowlerIds:vids||p.teamABowlerIds}))}/>}
+            {s.step===3&&<NList names={s.teamBPlayers} ids={s.teamBPlayerIds} ph="Player" min={2} max={25} onUp={(v,vids)=>setSetup(p=>({...p,teamBPlayers:v,teamBCount:v.length,teamBPlayerIds:vids||p.teamBPlayerIds}))}/>}
+            {s.step===4&&<NList names={s.teamBBowlers} ids={s.teamBBowlerIds} ph="Bowler" min={1} max={15} onUp={(v,vids)=>setSetup(p=>({...p,teamBBowlers:v,teamBBowlerCount:v.length,teamBBowlerIds:vids||p.teamBBowlerIds}))}/>}
             <div style={{display:"flex",gap:10,marginTop:22}}>
               {s.step>0&&<button onClick={()=>setSetup(p=>({...p,step:p.step-1}))}
                 style={{flex:1,padding:"13px 0",background:"#0f172a",border:"1px solid #334155",borderRadius:12,color:"#94a3b8",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>← Back</button>}
