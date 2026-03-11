@@ -24,15 +24,17 @@ const HIST_KEY  = "cricket-history-v1";
 const MAX_HIST  = 30;
 
 // ── Firebase ─────────────────────────────────────────────────────
-var _fbApp = null, _fbDB = null;
+var _fbApp = null, _fbDB = null, _fbAuth = null;
 function initFB() {
   if (_fbApp) return true;
   try {
-    _fbApp = firebase.initializeApp(FIREBASE_CONFIG);
-    _fbDB  = firebase.database();
+    _fbApp  = firebase.initializeApp(FIREBASE_CONFIG);
+    _fbDB   = firebase.database();
+    _fbAuth = firebase.auth();
     return true;
   } catch(e) { console.warn("Firebase:", e); return false; }
 }
+function getAuth() { return _fbAuth; }
 function genCode() {
   var c = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789", s = "";
   for (var i = 0; i < 6; i++) s += c[Math.floor(Math.random()*c.length)];
@@ -362,7 +364,199 @@ function NList({names, ph, onUp, min, max}) {
   );
 }
 
-function App() {
+// ── AuthGate — register / login wall ─────────────────────────────
+function AuthGate({children}) {
+  const [user,     setUser]     = useState(undefined); // undefined=loading
+  const [view,     setView]     = useState("login");   // login | register | forgot
+  const [name,     setName]     = useState("");
+  const [email,    setEmail]    = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm,  setConfirm]  = useState("");
+  const [err,      setErr]      = useState("");
+  const [info,     setInfo]     = useState("");
+  const [busy,     setBusy]     = useState(false);
+  const [showPw,   setShowPw]   = useState(false);
+
+  useEffect(() => {
+    initFB();
+    if (!_fbAuth) return;
+    var unsub = _fbAuth.onAuthStateChanged(u => setUser(u || null));
+    return () => unsub();
+  }, []);
+
+  function clearForm() { setErr(""); setInfo(""); }
+
+  async function handleRegister() {
+    clearForm();
+    if (!name.trim())              return setErr("Please enter your name");
+    if (!email.trim())             return setErr("Please enter your email");
+    if (password.length < 6)       return setErr("Password must be at least 6 characters");
+    if (password !== confirm)      return setErr("Passwords do not match");
+    setBusy(true);
+    try {
+      var cred = await _fbAuth.createUserWithEmailAndPassword(email.trim(), password);
+      await cred.user.updateProfile({ displayName: name.trim() });
+      // Store name in DB too
+      await _fbDB.ref("users/"+cred.user.uid).set({ name: name.trim(), email: email.trim(), createdAt: Date.now() });
+    } catch(e) {
+      setErr(friendlyError(e.code));
+    }
+    setBusy(false);
+  }
+
+  async function handleLogin() {
+    clearForm();
+    if (!email.trim() || !password) return setErr("Please enter email and password");
+    setBusy(true);
+    try {
+      await _fbAuth.signInWithEmailAndPassword(email.trim(), password);
+    } catch(e) {
+      setErr(friendlyError(e.code));
+    }
+    setBusy(false);
+  }
+
+  async function handleForgot() {
+    clearForm();
+    if (!email.trim()) return setErr("Enter your email address first");
+    setBusy(true);
+    try {
+      await _fbAuth.sendPasswordResetEmail(email.trim());
+      setInfo("Password reset email sent — check your inbox");
+    } catch(e) {
+      setErr(friendlyError(e.code));
+    }
+    setBusy(false);
+  }
+
+  function friendlyError(code) {
+    var map = {
+      "auth/email-already-in-use":    "An account with this email already exists",
+      "auth/invalid-email":           "Invalid email address",
+      "auth/weak-password":           "Password is too weak",
+      "auth/user-not-found":          "No account found with this email",
+      "auth/wrong-password":          "Incorrect password",
+      "auth/invalid-credential":      "Incorrect email or password",
+      "auth/too-many-requests":       "Too many attempts — try again later",
+      "auth/network-request-failed":  "Network error — check your connection",
+    };
+    return map[code] || "Something went wrong. Please try again";
+  }
+
+  // Loading state
+  if (user === undefined) return (
+    <div style={{minHeight:"100dvh",background:"#0f172a",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{color:"#475569",fontSize:14,fontFamily:"Georgia,serif"}}>Loading…</div>
+    </div>
+  );
+
+  // Authenticated — show app
+  if (user) return (
+    <div>
+      {React.cloneElement(children, { currentUser: user })}
+    </div>
+  );
+
+  // ── Shared styles ──
+  var inputStyle = {width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:10,padding:"13px 14px",color:"#f1f5f9",fontSize:15,outline:"none",boxSizing:"border-box",fontFamily:"Georgia,serif"};
+  var btnPrimary = {width:"100%",padding:"14px 0",background:"linear-gradient(135deg,#fbbf24,#d97706)",borderRadius:12,border:"none",color:"#0f172a",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif",letterSpacing:1,marginTop:4};
+  var btnSecondary = {background:"none",border:"none",color:"#60a5fa",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",padding:"4px 0"};
+
+  return (
+    <div style={{minHeight:"100dvh",background:"linear-gradient(170deg,#0c1828,#0f172a)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px 16px 40px",fontFamily:"Georgia,serif"}}>
+      <div style={{width:"100%",maxWidth:400}}>
+
+        {/* Logo */}
+        <div style={{textAlign:"center",marginBottom:24}}>
+          <img src="icons/icon-192.png" alt="Cricket Scorer" style={{width:110,height:110,borderRadius:24,marginBottom:10,boxShadow:"0 8px 32px rgba(0,0,0,.4)"}}/>
+          <h1 style={{color:"#fbbf24",fontSize:22,fontWeight:"bold",letterSpacing:3,margin:"0 0 4px",textTransform:"uppercase"}}>Cricket Scorer</h1>
+          <p style={{color:"#475569",fontSize:11,letterSpacing:2,margin:0}}>LIVE MATCH BROADCASTING</p>
+        </div>
+
+        {/* Card */}
+        <div style={{background:"#1e293b",borderRadius:20,padding:26,border:"1px solid #334155",boxShadow:"0 20px 60px rgba(0,0,0,.5)"}}>
+
+          {/* Tab switcher */}
+          <div style={{display:"flex",background:"#0f172a",borderRadius:10,padding:3,marginBottom:22,gap:3}}>
+            {["login","register"].map(v=>(
+              <button key={v} onClick={()=>{setView(v);clearForm();}}
+                style={{flex:1,padding:"9px 0",borderRadius:8,border:"none",background:view===v?"#1e293b":"transparent",color:view===v?"#fbbf24":"#475569",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",transition:"all .2s",textTransform:"capitalize"}}>
+                {v==="login"?"Sign In":"Register"}
+              </button>
+            ))}
+          </div>
+
+          {view==="forgot" ? (
+            <div>
+              <div style={{color:"#94a3b8",fontSize:13,marginBottom:16,lineHeight:1.6}}>Enter your email and we'll send a reset link.</div>
+              <div style={{marginBottom:14}}>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>EMAIL</label>
+                <input value={email} onChange={e=>{setEmail(e.target.value);clearForm();}} type="email" placeholder="you@example.com" style={inputStyle}/>
+              </div>
+              {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8}}>{err}</div>}
+              {info&&<div style={{color:"#4ade80",fontSize:12,marginBottom:10,padding:"8px 12px",background:"rgba(74,222,128,.1)",borderRadius:8}}>{info}</div>}
+              <button onClick={handleForgot} disabled={busy} style={btnPrimary}>{busy?"Sending…":"Send Reset Email"}</button>
+              <div style={{textAlign:"center",marginTop:14}}>
+                <button onClick={()=>{setView("login");clearForm();}} style={btnSecondary}>← Back to Sign In</button>
+              </div>
+            </div>
+          ) : view==="register" ? (
+            <div>
+              <div style={{marginBottom:14}}>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>YOUR NAME</label>
+                <input value={name} onChange={e=>{setName(e.target.value);clearForm();}} type="text" placeholder="e.g. Arjun Patel" style={inputStyle}
+                  onKeyDown={e=>{if(e.key==="Enter")handleRegister();}}/>
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>EMAIL ADDRESS</label>
+                <input value={email} onChange={e=>{setEmail(e.target.value);clearForm();}} type="email" placeholder="you@example.com" style={inputStyle}
+                  onKeyDown={e=>{if(e.key==="Enter")handleRegister();}}/>
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>PASSWORD</label>
+                <div style={{position:"relative"}}>
+                  <input value={password} onChange={e=>{setPassword(e.target.value);clearForm();}} type={showPw?"text":"password"} placeholder="Min 6 characters" style={{...inputStyle,paddingRight:44}}
+                    onKeyDown={e=>{if(e.key==="Enter")handleRegister();}}/>
+                  <button onClick={()=>setShowPw(p=>!p)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#475569",fontSize:16,cursor:"pointer",padding:0}}>{showPw?"🙈":"👁"}</button>
+                </div>
+              </div>
+              <div style={{marginBottom:18}}>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>CONFIRM PASSWORD</label>
+                <input value={confirm} onChange={e=>{setConfirm(e.target.value);clearForm();}} type={showPw?"text":"password"} placeholder="Repeat password" style={inputStyle}
+                  onKeyDown={e=>{if(e.key==="Enter")handleRegister();}}/>
+              </div>
+              {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:12,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8}}>{err}</div>}
+              <button onClick={handleRegister} disabled={busy} style={btnPrimary}>{busy?"Creating account…":"Create Account"}</button>
+            </div>
+          ) : (
+            <div>
+              <div style={{marginBottom:14}}>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>EMAIL ADDRESS</label>
+                <input value={email} onChange={e=>{setEmail(e.target.value);clearForm();}} type="email" placeholder="you@example.com" style={inputStyle}
+                  onKeyDown={e=>{if(e.key==="Enter")handleLogin();}}/>
+              </div>
+              <div style={{marginBottom:6}}>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>PASSWORD</label>
+                <div style={{position:"relative"}}>
+                  <input value={password} onChange={e=>{setPassword(e.target.value);clearForm();}} type={showPw?"text":"password"} placeholder="Your password" style={{...inputStyle,paddingRight:44}}
+                    onKeyDown={e=>{if(e.key==="Enter")handleLogin();}}/>
+                  <button onClick={()=>setShowPw(p=>!p)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#475569",fontSize:16,cursor:"pointer",padding:0}}>{showPw?"🙈":"👁"}</button>
+                </div>
+              </div>
+              <div style={{textAlign:"right",marginBottom:16}}>
+                <button onClick={()=>{setView("forgot");clearForm();}} style={btnSecondary}>Forgot password?</button>
+              </div>
+              {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:12,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8}}>{err}</div>}
+              <button onClick={handleLogin} disabled={busy} style={btnPrimary}>{busy?"Signing in…":"Sign In"}</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App({ currentUser }) {
   const [screen,    setScreen]   = useState("home");
   const [setup,     setSetup]    = useState(blankSetup);
   const [match,     setMatch]    = useState(null);
@@ -780,11 +974,20 @@ function App() {
   if (screen==="home") return (
     <div style={{minHeight:"100dvh",background:"linear-gradient(170deg,#0c1828,#0f172a)",display:"flex",flexDirection:"column",alignItems:"center",padding:"28px 16px 40px",fontFamily:"Georgia,serif",overflowY:"auto"}}>
       <div style={{width:"100%",maxWidth:420}}>
-        <div style={{textAlign:"center",marginBottom:32}}>
-          <div style={{fontSize:52}}>🏏</div>
-          <h1 style={{color:"#fbbf24",fontSize:24,fontWeight:"bold",letterSpacing:3,margin:"10px 0 4px",textTransform:"uppercase"}}>Cricket Scorer</h1>
-          <p style={{color:"#475569",fontSize:11,letterSpacing:2,margin:0}}>LIVE MATCH BROADCASTING</p>
-          <div style={{marginTop:10}}>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <img src="icons/icon-192.png" alt="Cricket Scorer" style={{width:100,height:100,borderRadius:22,marginBottom:10,boxShadow:"0 8px 32px rgba(0,0,0,.4)"}}/>
+          <h1 style={{color:"#fbbf24",fontSize:24,fontWeight:"bold",letterSpacing:3,margin:"8px 0 4px",textTransform:"uppercase"}}>Cricket Scorer</h1>
+          <p style={{color:"#475569",fontSize:11,letterSpacing:2,margin:"0 0 8px"}}>LIVE MATCH BROADCASTING</p>
+          {currentUser && (
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginTop:6}}>
+              <span style={{color:"#94a3b8",fontSize:13}}>👋 {currentUser.displayName || currentUser.email}</span>
+              <button onClick={()=>{initFB();_fbAuth&&_fbAuth.signOut();}}
+                style={{background:"none",border:"1px solid #334155",borderRadius:8,padding:"3px 10px",color:"#64748b",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                Sign out
+              </button>
+            </div>
+          )}
+          <div style={{marginTop:8}}>
             {fbReady
               ? <span style={{color:"#4ade80",fontSize:12}}>● Firebase connected</span>
               : <span style={{color:"#f59e0b",fontSize:12}}>⚠ Firebase offline</span>}
@@ -1539,4 +1742,6 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("app")).render(React.createElement(App));
+ReactDOM.createRoot(document.getElementById("app")).render(
+  React.createElement(AuthGate, null, React.createElement(App))
+);
