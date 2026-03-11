@@ -377,11 +377,18 @@ function AuthGate({children}) {
   const [busy,     setBusy]     = useState(false);
   const [showPw,   setShowPw]   = useState(false);
 
+  const [timedOut, setTimedOut] = useState(false);
+
   useEffect(() => {
-    initFB();
-    if (!_fbAuth) return;
-    var unsub = _fbAuth.onAuthStateChanged(u => setUser(u || null));
-    return () => unsub();
+    var ok = initFB();
+    if (!ok || !_fbAuth) {
+      setUser(null);
+      return;
+    }
+    // Safety net: if auth takes >4s, show login form anyway
+    var t = setTimeout(() => setTimedOut(true), 4000);
+    var unsub = _fbAuth.onAuthStateChanged(u => { clearTimeout(t); setUser(u || null); });
+    return () => { clearTimeout(t); unsub(); };
   }, []);
 
   function clearForm() { setErr(""); setInfo(""); }
@@ -444,14 +451,14 @@ function AuthGate({children}) {
   }
 
   // Loading state
-  if (user === undefined) return (
+  if (user === undefined && !timedOut) return (
     <div style={{minHeight:"100dvh",background:"#0f172a",display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{color:"#475569",fontSize:14,fontFamily:"Georgia,serif"}}>Loading…</div>
     </div>
   );
 
   // Authenticated — show app
-  if (user) return (
+  if (user && !timedOut) return (
     <div>
       {React.cloneElement(children, { currentUser: user })}
     </div>
