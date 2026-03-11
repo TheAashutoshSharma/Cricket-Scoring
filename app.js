@@ -60,22 +60,18 @@ const blankSetup = () => ({
   teamACount:11, teamBCount:11,
   teamABowlerCount:6, teamBBowlerCount:6,
   teamAPlayerIds:[], teamBPlayerIds:[],
+  teamABowlerIds:[], teamBBowlerIds:[],
 });
 
 const blankMatch = (setup, code) => {
-  var aPIds = setup.teamAPlayerIds || [];
-  var bPIds = setup.teamBPlayerIds || [];
+  var aPIds  = setup.teamAPlayerIds  || [];
+  var bPIds  = setup.teamBPlayerIds  || [];
+  var aBIds  = setup.teamABowlerIds  || [];
+  var bBIds  = setup.teamBBowlerIds  || [];
   var aPlayers = setup.teamAPlayers.slice(0,setup.teamACount||11).map((n,i)=>({...mkP(n), playerId: aPIds[i]||null}));
-  var aBowlers = setup.teamABowlers.slice(0,setup.teamABowlerCount||6).map((n,i)=>{
-    // Try to find matching playerId by name index from full squad
-    var idx = setup.teamAPlayers.indexOf(n);
-    return {...mkB(n), playerId: idx>=0&&aPIds[idx] ? aPIds[idx] : null};
-  });
+  var aBowlers = setup.teamABowlers.slice(0,setup.teamABowlerCount||6).map((n,i)=>({...mkB(n), playerId: aBIds[i]||null}));
   var bPlayers = setup.teamBPlayers.slice(0,setup.teamBCount||11).map((n,i)=>({...mkP(n), playerId: bPIds[i]||null}));
-  var bBowlers = setup.teamBBowlers.slice(0,setup.teamBBowlerCount||6).map((n,i)=>{
-    var idx = setup.teamBPlayers.indexOf(n);
-    return {...mkB(n), playerId: idx>=0&&bPIds[idx] ? bPIds[idx] : null};
-  });
+  var bBowlers = setup.teamBBowlers.slice(0,setup.teamBBowlerCount||6).map((n,i)=>({...mkB(n), playerId: bBIds[i]||null}));
   return {
     matchCode: code, createdAt: Date.now(),
     totalOvers: setup.overs,
@@ -495,9 +491,46 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
 }
 
 // ── NList — player/bowler name entry in setup wizard ─────────────
-function NList({names, ph, onUp, min, max}) {
-  function addOne() { if(names.length<max) onUp([...names, ph+" "+(names.length+1)]); }
-  function removeOne() { if(names.length>min) onUp(names.slice(0,-1)); }
+function NList({names, ids, ph, onUp, min, max}) {
+  // ids: array of playerIds parallel to names (null if not from saved players)
+  const [showPicker, setShowPicker] = React.useState(null); // index to pick for
+  const [allPlayers, setAllPlayers] = React.useState(null); // null=not loaded
+  const [pSearch,    setPSearch]    = React.useState("");
+
+  function addOne() {
+    if(names.length<max) {
+      onUp([...names, ph+" "+(names.length+1)], [...(ids||[]), null]);
+    }
+  }
+  function removeOne() {
+    if(names.length>min) {
+      onUp(names.slice(0,-1), (ids||[]).slice(0,-1));
+    }
+  }
+  function updateName(i, val) {
+    var u=[...names]; u[i]=val;
+    var uid=[...(ids||Array(names.length).fill(null))]; uid[i]=null; // clear id if manually typed
+    onUp(u, uid);
+  }
+  function openPicker(i) {
+    setShowPicker(i);
+    setPSearch("");
+    if (!allPlayers && _fbDB) {
+      _fbDB.ref("players").once("value", snap => {
+        var val = snap.val()||{};
+        setAllPlayers(Object.values(val).sort((a,b)=>a.name.localeCompare(b.name)));
+      });
+    }
+  }
+  function pickPlayer(i, p) {
+    var u=[...names]; u[i]=p.name;
+    var uid=[...(ids||Array(names.length).fill(null))]; uid[i]=p.id;
+    onUp(u, uid);
+    setShowPicker(null);
+  }
+
+  var filtered = allPlayers ? allPlayers.filter(p=>p.name.toLowerCase().includes(pSearch.toLowerCase())) : [];
+
   return (
     <div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
@@ -510,16 +543,54 @@ function NList({names, ph, onUp, min, max}) {
         </div>
       </div>
       <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"46vh",overflowY:"auto"}}>
-        {names.map((nm,i)=>(
-          <div key={i} style={{display:"flex",alignItems:"center",gap:10}}>
-            <span style={{color:"#475569",fontSize:13,minWidth:22,textAlign:"right"}}>{i+1}.</span>
-            <input value={nm} placeholder={ph+" "+(i+1)}
-              onChange={e=>{var u=[...names];u[i]=e.target.value;onUp(u);}}
-              style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:9,padding:"10px 12px",color:"#f1f5f9",fontSize:15,outline:"none",fontFamily:"Georgia,serif"}}
-            />
-          </div>
-        ))}
+        {names.map((nm,i)=>{
+          var hasId = ids && ids[i];
+          return (
+            <div key={i} style={{display:"flex",alignItems:"center",gap:6}}>
+              <span style={{color:"#475569",fontSize:13,minWidth:22,textAlign:"right"}}>{i+1}.</span>
+              <input value={nm} placeholder={ph+" "+(i+1)}
+                onChange={e=>updateName(i, e.target.value)}
+                style={{flex:1,background:"#0f172a",border:hasId?"1px solid rgba(251,191,36,.4)":"1px solid #334155",borderRadius:9,padding:"10px 10px",color:hasId?"#fbbf24":"#f1f5f9",fontSize:14,outline:"none",fontFamily:"Georgia,serif"}}
+              />
+              <button onClick={()=>openPicker(i)}
+                title="Pick from saved players"
+                style={{width:32,height:38,borderRadius:8,border:"1px solid #334155",background:"#0f172a",color:"#475569",fontSize:14,cursor:"pointer",flexShrink:0,fontFamily:"Georgia,serif",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                👤
+              </button>
+            </div>
+          );
+        })}
       </div>
+
+      {/* Player picker modal */}
+      {showPicker !== null && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:3000,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+          <div style={{background:"#1e293b",borderRadius:"20px 20px 0 0",padding:"20px 18px 36px",width:"100%",maxWidth:480,maxHeight:"70vh",display:"flex",flexDirection:"column"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{color:"#fbbf24",fontSize:14,fontWeight:"bold"}}>Pick {ph} {showPicker+1}</div>
+              <button onClick={()=>setShowPicker(null)} style={{background:"none",border:"1px solid #334155",borderRadius:8,padding:"4px 10px",color:"#64748b",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>✕</button>
+            </div>
+            <input value={pSearch} onChange={e=>setPSearch(e.target.value)} placeholder="Search players…" autoFocus
+              style={{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:9,padding:"10px 12px",color:"#f1f5f9",fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:"Georgia,serif",marginBottom:10}}/>
+            <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:6}}>
+              {!allPlayers && <div style={{color:"#475569",fontSize:13,textAlign:"center",padding:20}}>Loading…</div>}
+              {allPlayers && filtered.length===0 && <div style={{color:"#475569",fontSize:13,textAlign:"center",padding:20}}>No players found</div>}
+              {filtered.map(p=>(
+                <div key={p.id} onClick={()=>pickPlayer(showPicker, p)}
+                  style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:10,border:"1px solid #334155",background:"#0f172a",cursor:"pointer"}}>
+                  <div style={{width:34,height:34,borderRadius:"50%",background:"linear-gradient(135deg,#fbbf24,#d97706)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:"bold",color:"#0f172a",flexShrink:0}}>
+                    {p.name[0].toUpperCase()}
+                  </div>
+                  <div>
+                    <div style={{color:"#e2e8f0",fontSize:14}}>{p.name}</div>
+                    <div style={{color:"#475569",fontSize:11}}>{p.role}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1623,10 +1694,10 @@ function App({ currentUser }) {
                 </div>
               </div>
             )}
-            {s.step===1&&<NList names={s.teamAPlayers} ph="Player" min={2} max={11} onUp={v=>setSetup(p=>({...p,teamAPlayers:v,teamACount:v.length}))}/>}
-            {s.step===2&&<NList names={s.teamABowlers} ph="Bowler" min={1} max={6}  onUp={v=>setSetup(p=>({...p,teamABowlers:v,teamABowlerCount:v.length}))}/>}
-            {s.step===3&&<NList names={s.teamBPlayers} ph="Player" min={2} max={11} onUp={v=>setSetup(p=>({...p,teamBPlayers:v,teamBCount:v.length}))}/>}
-            {s.step===4&&<NList names={s.teamBBowlers} ph="Bowler" min={1} max={6}  onUp={v=>setSetup(p=>({...p,teamBBowlers:v,teamBBowlerCount:v.length}))}/>}
+            {s.step===1&&<NList names={s.teamAPlayers} ids={s.teamAPlayerIds} ph="Player" min={2} max={11} onUp={(v,vids)=>setSetup(p=>({...p,teamAPlayers:v,teamACount:v.length,teamAPlayerIds:vids||p.teamAPlayerIds}))}/>}
+            {s.step===2&&<NList names={s.teamABowlers} ids={s.teamABowlerIds} ph="Bowler" min={1} max={6}  onUp={(v,vids)=>setSetup(p=>({...p,teamABowlers:v,teamABowlerCount:v.length,teamABowlerIds:vids||p.teamABowlerIds}))}/>}
+            {s.step===3&&<NList names={s.teamBPlayers} ids={s.teamBPlayerIds} ph="Player" min={2} max={11} onUp={(v,vids)=>setSetup(p=>({...p,teamBPlayers:v,teamBCount:v.length,teamBPlayerIds:vids||p.teamBPlayerIds}))}/>}
+            {s.step===4&&<NList names={s.teamBBowlers} ids={s.teamBBowlerIds} ph="Bowler" min={1} max={6}  onUp={(v,vids)=>setSetup(p=>({...p,teamBBowlers:v,teamBBowlerCount:v.length,teamBBowlerIds:vids||p.teamBBowlerIds}))}/>}
             <div style={{display:"flex",gap:10,marginTop:22}}>
               {s.step>0&&<button onClick={()=>setSetup(p=>({...p,step:p.step-1}))}
                 style={{flex:1,padding:"13px 0",background:"#0f172a",border:"1px solid #334155",borderRadius:12,color:"#94a3b8",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>← Back</button>}
@@ -1646,26 +1717,22 @@ function App({ currentUser }) {
           onCancel={()=>setTeamPickerSlot(null)}
           onConfirm={picked => {
             var playerNames  = picked.players.map(p=>p.name);
-            var bowlerNames  = picked.players.filter(p=>p.role==="Bowler"||p.role==="All-rounder").map(p=>p.name);
-            if (bowlerNames.length===0) bowlerNames = playerNames.slice(0,Math.min(6,playerNames.length));
             var playerIds    = picked.players.map(p=>p.id);
+            var bowlerPool   = picked.players.filter(p=>p.role==="Bowler"||p.role==="All-rounder");
+            if (bowlerPool.length===0) bowlerPool = picked.players.slice(0,Math.min(6,picked.players.length));
+            var bowlerNames  = bowlerPool.map(p=>p.name);
+            var bowlerIds    = bowlerPool.map(p=>p.id);
             if (teamPickerSlot==="A") {
               setSetup(p=>({...p,
                 teamAName: picked.teamName,
-                teamAPlayers: playerNames,
-                teamABowlers: bowlerNames,
-                teamACount: playerNames.length,
-                teamABowlerCount: bowlerNames.length,
-                teamAPlayerIds: playerIds,
+                teamAPlayers: playerNames, teamACount: playerNames.length, teamAPlayerIds: playerIds,
+                teamABowlers: bowlerNames, teamABowlerCount: bowlerNames.length, teamABowlerIds: bowlerIds,
               }));
             } else {
               setSetup(p=>({...p,
                 teamBName: picked.teamName,
-                teamBPlayers: playerNames,
-                teamBBowlers: bowlerNames,
-                teamBCount: playerNames.length,
-                teamBBowlerCount: bowlerNames.length,
-                teamBPlayerIds: playerIds,
+                teamBPlayers: playerNames, teamBCount: playerNames.length, teamBPlayerIds: playerIds,
+                teamBBowlers: bowlerNames, teamBBowlerCount: bowlerNames.length, teamBBowlerIds: bowlerIds,
               }));
             }
             setTeamPickerSlot(null);
