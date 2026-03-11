@@ -22,6 +22,11 @@ const RET_HURT  = "Retired Hurt";
 const LOCAL_KEY = "cricket-v5";
 const HIST_KEY  = "cricket-history-v1";
 const MAX_HIST  = 30;
+const ADMIN_EMAILS = [
+  "aashutosh.sharma@live.in",
+  "aashuitdude@gmail.com",
+  "aashutosh22@gmail.com",
+];
 
 // ── Firebase ─────────────────────────────────────────────────────
 var _fbApp = null, _fbDB = null, _fbAuth = null;
@@ -251,27 +256,39 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
   function loadUserMatches() {
     if (!_fbDB) { setMsg("Firebase not connected"); return; }
     setLoadingUM(true); setMsg("");
-    // Read userMatches/ and users/ in parallel
     Promise.all([
       _fbDB.ref("userMatches").once("value"),
       _fbDB.ref("users").once("value"),
     ]).then(([umSnap, usersSnap]) => {
       var umVal    = umSnap.val()    || {};
       var usersVal = usersSnap.val() || {};
-      // Build grouped structure: { uid: { name, email, matches:[] } }
+      console.log("userMatches raw:", JSON.stringify(umVal));
+      console.log("users raw:", JSON.stringify(usersVal));
       var grouped = {};
       Object.entries(umVal).forEach(([uid, matchMap]) => {
+        if (!matchMap || typeof matchMap !== "object") return;
         var userInfo = usersVal[uid] || {};
+        var matchList = Object.values(matchMap).filter(m => m && m.code);
+        if (!matchList.length) return;
         grouped[uid] = {
           uid,
           name:    userInfo.name  || "Unknown",
           email:   userInfo.email || uid,
-          matches: Object.values(matchMap).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)),
+          matches: matchList.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)),
         };
       });
+      console.log("grouped:", JSON.stringify(Object.keys(grouped)));
       setUserMatches(grouped);
       setLoadingUM(false);
-    }).catch(err => { setMsg("Error: "+err.message); setLoadingUM(false); });
+    }).catch(err => {
+      setLoadingUM(false);
+      console.error("loadUserMatches error:", err);
+      if (err.code === "PERMISSION_DENIED" || err.message.includes("permission")) {
+        setMsg("RULES_ERROR");
+      } else {
+        setMsg("Error: "+err.message);
+      }
+    });
   }
 
   function deleteUserMatch(uid, code) {
@@ -325,6 +342,20 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
         ✓ Admin — {currentUser ? (currentUser.displayName||currentUser.email) : ""}
       </div>
 
+      {/* ── Firebase Rules reminder ── */}
+      <div style={{background:"rgba(251,191,36,.07)",borderRadius:14,padding:16,border:"1px solid rgba(251,191,36,.25)",marginBottom:12}}>
+        <div style={{color:"#fbbf24",fontSize:12,fontWeight:"bold",marginBottom:8}}>⚙️ Required Firebase Rules</div>
+        <pre style={{color:"#94a3b8",fontSize:10,lineHeight:1.7,margin:0,overflowX:"auto",whiteSpace:"pre-wrap"}}>{`{
+  "rules": {
+    "matches":     { "$c": { ".read": true, ".write": true } },
+    "liveIndex":   { ".read": true, ".write": true },
+    "userMatches": { ".read": true, ".write": true },
+    "users":       { ".read": true, ".write": true }
+  }
+}`}</pre>
+        <div style={{color:"#64748b",fontSize:10,marginTop:8}}>Firebase Console → Realtime Database → Rules</div>
+      </div>
+
       {/* ── Matches by User ── */}
       <div style={{background:"#1e293b",borderRadius:14,padding:18,border:"1px solid #334155",marginBottom:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
@@ -334,11 +365,20 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
             {loadingUM?"…":userMatches===null?"Load":"Refresh"}
           </button>
         </div>
-        {userMatches===null&&!loadingUM&&(
+        {msg==="RULES_ERROR" && (
+          <div style={{color:"#fbbf24",fontSize:12,padding:"10px 12px",background:"rgba(251,191,36,.08)",borderRadius:8,marginBottom:10,lineHeight:1.6}}>
+            ⚠️ Permission denied — update your Firebase Rules using the box above, then try again.
+          </div>
+        )}
+        {msg&&msg!=="RULES_ERROR"&&<div style={{color:"#f87171",fontSize:12,marginBottom:8}}>{msg}</div>}
+        {userMatches===null&&!loadingUM&&msg!=="RULES_ERROR"&&(
           <div style={{color:"#475569",fontSize:12,textAlign:"center",padding:"8px 0"}}>Tap Load to fetch all users' matches</div>
         )}
         {userMatches!==null&&Object.keys(userMatches).length===0&&(
-          <div style={{color:"#475569",fontSize:12,textAlign:"center",padding:"8px 0"}}>No matches found</div>
+          <div style={{color:"#475569",fontSize:12,textAlign:"center",padding:"10px 0",lineHeight:1.8}}>
+            No matches found in Firebase.<br/>
+            <span style={{color:"#334155",fontSize:11}}>Matches are saved when a scorer creates and starts a match while logged in. Check browser console (F12) for debug info.</span>
+          </div>
         )}
         {userMatches!==null&&Object.values(userMatches).map(u=>(
           <div key={u.uid} style={{marginBottom:8,border:"1px solid #334155",borderRadius:10,overflow:"hidden"}}>
@@ -430,7 +470,7 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
         )}
       </div>
 
-      {msg&&<div style={{color:"#4ade80",fontSize:12,textAlign:"center",marginBottom:12}}>{msg}</div>}
+      {msg&&msg!=="RULES_ERROR"&&<div style={{color:"#4ade80",fontSize:12,textAlign:"center",marginBottom:12}}>{msg}</div>}
 
       <button onClick={onDone}
         style={{width:"100%",padding:"11px 0",background:"transparent",border:"1px solid #334155",borderRadius:10,color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
@@ -784,11 +824,12 @@ function App({ currentUser }) {
     } else {
       _fbDB.ref("liveIndex/"+code).set(summary);
     }
-    // Always keep userMatches in sync (including completed matches)
-    if (currentUser) {
-      _fbDB.ref("userMatches/"+currentUser.uid+"/"+code).set({...summary, complete: !!bothOver});
+    // Always keep userMatches in sync — use uid from match.createdBy as fallback
+    var uid = currentUser ? currentUser.uid : (match.createdBy ? match.createdBy.uid : null);
+    if (uid) {
+      _fbDB.ref("userMatches/"+uid+"/"+code).set({...summary, complete: !!bothOver});
     }
-  }, [match]);
+  }, [match, currentUser]);
 
   function attachListener(code) {
     if (listRef.current) listRef.current.off();
@@ -1218,7 +1259,7 @@ function App({ currentUser }) {
 
         <div style={{textAlign:"center",marginTop:4}}>
           <button onClick={()=>setScreen("admin")}
-            style={{background:"none",border:"none",color:"#1e293b",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            style={{background:"none",border:"none",color:currentUser&&ADMIN_EMAILS.includes(currentUser.email)?"#475569":"#1e293b",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}>
             ···
           </button>
         </div>
@@ -1272,7 +1313,7 @@ function App({ currentUser }) {
               </div>
             </div>
           ))}
-          {matchHistory.length > 0 && currentUser && currentUser.email === "admin@cricket.com" && (
+          {matchHistory.length > 0 && currentUser && ADMIN_EMAILS.includes(currentUser.email) && (
             <button onClick={()=>setScreen("admin")}
               style={{width:"100%",marginTop:4,marginBottom:20,padding:"10px 0",background:"transparent",border:"1px solid #475569",borderRadius:10,color:"#64748b",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
               🔒 Admin — Manage History
@@ -1363,7 +1404,8 @@ function App({ currentUser }) {
   // ADMIN
   if (screen==="admin") {
     const ADMIN_PIN = "1989";
-    var pinOk = adminPin===ADMIN_PIN;
+    var isAdminUser = currentUser && ADMIN_EMAILS.includes(currentUser.email);
+    var pinOk = isAdminUser || adminPin===ADMIN_PIN;
     return (
       <div style={S.page}>
         <div style={{...S.wrap,padding:"0 12px"}}>
