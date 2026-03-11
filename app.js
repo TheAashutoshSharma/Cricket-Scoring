@@ -1555,6 +1555,7 @@ function App({ currentUser }) {
     var s=setup;
     var STEPS=["Match Details",s.teamAName+" — Batters",s.teamAName+" — Bowlers",s.teamBName+" — Batters",s.teamBName+" — Bowlers"];
     return (
+      <React.Fragment>
       <div style={{minHeight:"100dvh",background:"linear-gradient(170deg,#0c1828,#0f172a)",display:"flex",flexDirection:"column",alignItems:"center",padding:"24px 16px 40px",fontFamily:"Georgia,serif"}}>
         <div style={{width:"100%",maxWidth:420}}>
           <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18}}>
@@ -1648,7 +1649,6 @@ function App({ currentUser }) {
             var bowlerNames  = picked.players.filter(p=>p.role==="Bowler"||p.role==="All-rounder").map(p=>p.name);
             if (bowlerNames.length===0) bowlerNames = playerNames.slice(0,Math.min(6,playerNames.length));
             var playerIds    = picked.players.map(p=>p.id);
-            // Store playerIds in setup so they can be written to match for stats tracking
             if (teamPickerSlot==="A") {
               setSetup(p=>({...p,
                 teamAName: picked.teamName,
@@ -1672,6 +1672,7 @@ function App({ currentUser }) {
           }}
         />
       )}
+      </React.Fragment>
     );
   }
 
