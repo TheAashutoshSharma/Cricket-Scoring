@@ -169,6 +169,53 @@ function PendingExtraModal({extra, onConfirm, onCancel}) {
   );
 }
 
+// ── NextBatterModal — pick the next batsman after wicket/retirement ──
+function NextBatterModal({match, onSelect}) {
+  if (!match) return null;
+  var bt = match.batting;
+  var bTeam = bt===0 ? match.teamA : match.teamB;
+  var inUse = new Set(match.currentBatsmen);
+  // Players available: not out, not retired, not currently at crease
+  var available = bTeam.players.map((p,i)=>({...p,i})).filter(p=>!p.out && !p.retired && !inUse.has(p.i));
+  var lastOut = bTeam.players[match.currentBatsmen[match.striker]];
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.88)",zIndex:1100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+      <div style={{background:"#1e293b",borderRadius:"20px 20px 0 0",padding:"24px 20px 36px",width:"100%",maxWidth:480,border:"1px solid #334155",borderBottom:"none"}}>
+        <div style={{textAlign:"center",marginBottom:18}}>
+          <div style={{fontSize:26,marginBottom:6}}>🏏</div>
+          <div style={{color:"#fbbf24",fontSize:14,fontWeight:"bold",letterSpacing:1,marginBottom:4}}>NEXT BATSMAN IN</div>
+          {lastOut && (
+            <div style={{color:"#64748b",fontSize:12,marginBottom:2}}>
+              {lastOut.name} — {lastOut.out ? lastOut.howOut : "Retired"} · {lastOut.runs} ({lastOut.balls})
+            </div>
+          )}
+          <div style={{color:"#94a3b8",fontSize:13}}>Select who comes in next</div>
+        </div>
+        {available.length === 0 ? (
+          <div style={{color:"#475569",fontSize:13,textAlign:"center",padding:16}}>No batters available</div>
+        ) : (
+          <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"50vh",overflowY:"auto"}}>
+            {available.map(p=>{
+              var sr = p.balls>0 ? ((p.runs/p.balls)*100).toFixed(0) : null;
+              return (
+                <button key={p.i} onClick={()=>onSelect(p.i)}
+                  style={{padding:"13px 16px",borderRadius:12,border:"1px solid #334155",background:"#0f172a",color:"#e2e8f0",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif",display:"flex",justifyContent:"space-between",alignItems:"center",textAlign:"left"}}>
+                  <div>
+                    <div style={{fontWeight:"bold",marginBottom:2}}>{p.name}</div>
+                    {p.balls > 0 && <div style={{color:"#475569",fontSize:11}}>{p.runs} runs · {p.balls} balls · SR {sr}</div>}
+                    {p.balls === 0 && <div style={{color:"#475569",fontSize:11}}>Yet to bat</div>}
+                  </div>
+                  <span style={{color:"#fbbf24",fontSize:18}}>→</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── RecallPromptModal — offer to bring back retired hurt players ──
 function RecallPromptModal({match, onRecall, onDecline}) {
   if (!match) return null;
@@ -846,6 +893,8 @@ function App({ currentUser }) {
   const [overComplete, setOverComplete] = useState(false);
   // Recall prompt: retired hurt players available when last batter falls
   const [recallPrompt, setRecallPrompt] = useState(false);
+  // Next batter picker: shown after wicket or retirement
+  const [nextBatterPick, setNextBatterPick] = useState(false);
   // Match history
   const [matchHistory, setMatchHistory] = useState([]);
   // Admin
@@ -899,6 +948,13 @@ function App({ currentUser }) {
       setRecallPrompt(true);
     }
   }, [match ? match.needsRecall : null]);
+
+  // Show next batter picker after wicket or retirement
+  useEffect(() => {
+    if (match && match.needsNextBatter && !isViewer) {
+      setNextBatterPick(true);
+    }
+  }, [match ? match.needsNextBatter : null]);
 
   // Persist locally
   useEffect(() => {
@@ -1261,12 +1317,17 @@ function App({ currentUser }) {
       bT.players[b1].out=false; bT.players[b1].retired=true; bT.players[b1].howOut=how;
       if (how===RET_HURT) {
         m.ballLog[bt].push({r:0,retired:true});
+        // Prompt to pick next batter rather than auto-select
         var inUse = [m.currentBatsmen[0], m.currentBatsmen[1]];
-        var nextRH = -1;
-        for (var pi=0; pi<bT.players.length; pi++) {
-          if (!bT.players[pi].out && !bT.players[pi].retired && inUse.indexOf(pi)===-1) { nextRH=pi; break; }
+        var anyAvail = bT.players.some((p,pi) => !p.out && !p.retired && inUse.indexOf(pi)===-1);
+        if (anyAvail) {
+          m.needsNextBatter = true;
+        } else {
+          // No one left — last man or innings over
+          var hasRetiredRH = bT.players.some(p=>p.retired);
+          if (hasRetiredRH) m.needsRecall = true;
+          else m.inningsOver[bt] = true;
         }
-        if (nextRH !== -1) m.currentBatsmen[m.striker] = nextRH;
         return m;
       }
       bT.players[b1].out=true; bT.players[b1].retired=false;
@@ -1280,22 +1341,19 @@ function App({ currentUser }) {
         if (!(m.wickets[bt]>=maxWkts(m,bt)||m.overs[bt]>=m.totalOvers||chaseWon(m))) m.needsBowler = true;
       }
       m.ballLog[bt].push({r:0,wicket:how});
-      // Find next available batter (not out, not retired, not currently at crease)
+      // Check who is still available
       var inUse2 = [m.currentBatsmen[0], m.currentBatsmen[1]];
       var nextBatter = -1;
       for (var ni=0; ni<bT.players.length; ni++) {
         if (!bT.players[ni].out && !bT.players[ni].retired && inUse2.indexOf(ni)===-1) { nextBatter=ni; break; }
       }
-      if (nextBatter !== -1) m.currentBatsmen[m.striker] = nextBatter;
       var noMoreBatters = nextBatter === -1;
       var hasRetired = bT.players.some(p=>p.retired);
       var mx = maxWkts(m, bt);
-      // Innings over when all wickets gone
       var inningsNowOver = m.wickets[bt] >= mx;
-      // Last man: penultimate wicket just fell — new batter bats alone
+      // Last man: penultimate wicket — surviving batter bats alone
       var isLastManIn = !inningsNowOver && noMoreBatters && !hasRetired;
       if (isLastManIn) {
-        // Point both slots at the surviving batter so they bat alone
         m.currentBatsmen[m.striker] = m.currentBatsmen[1-m.striker];
       }
       if (chaseWon(m) || m.overs[bt]>=m.totalOvers || inningsNowOver) {
@@ -1306,9 +1364,22 @@ function App({ currentUser }) {
         } else {
           m.inningsOver[bt]=true;
         }
+      } else if (!inningsNowOver && !isLastManIn) {
+        // Prompt scorer to pick next batter
+        m.needsNextBatter = true;
       }
       return m;
     });
+  }
+
+  function selectNextBatter(playerIdx) {
+    setMatch(prev => {
+      var m = JSON.parse(JSON.stringify(prev));
+      m.currentBatsmen[m.striker] = playerIdx;
+      m.needsNextBatter = false;
+      return m;
+    });
+    setNextBatterPick(false);
   }
 
   function recallRetired(playerIdx) {
@@ -2011,6 +2082,7 @@ function App({ currentUser }) {
       <EditModal editing={editing} editVal={editVal} setEditVal={setEditVal} onCommit={commitEdit} onCancel={cancelEdit}/>
       <PendingExtraModal extra={pendingExtra} onConfirm={confirmExtra} onCancel={()=>setPendingExtra(null)}/>
       {overComplete && <OverCompleteModal match={match} onSelect={selectNewBowler}/>}
+      {nextBatterPick && <NextBatterModal match={match} onSelect={selectNextBatter}/>}
       {recallPrompt && <RecallPromptModal match={match} onRecall={recallRetired} onDecline={declineRecall}/>}
       <div style={S.wrap}>
 
