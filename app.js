@@ -656,28 +656,37 @@ function NList({names, ids, ph, onUp, min, max}) {
 
 // ── AuthGate — register / login wall ─────────────────────────────
 function AuthGate({children}) {
-  // status: "loading" | "guest" | "authed"
+  // status: "loading" | "login" | "authed" | "guest"
   const [status,   setStatus]   = useState("loading");
   const [authUser, setAuthUser] = useState(null);
   const [view,     setView]     = useState("login");
+  // Shared fields
   const [name,     setName]     = useState("");
   const [email,    setEmail]    = useState("");
   const [password, setPassword] = useState("");
   const [confirm,  setConfirm]  = useState("");
+  const [showPw,   setShowPw]   = useState(false);
+  // Registration type
+  const [regType,  setRegType]  = useState("player"); // "player" | "viewer"
+  // Player-only fields
+  const [role,     setRole]     = useState("Batsman");
+  const [batStyle, setBatStyle] = useState("Right-hand");
+  const [bowlStyle,setBowlStyle]= useState("Right-arm Medium");
+  const [dob,      setDob]      = useState("");
   const [err,      setErr]      = useState("");
   const [info,     setInfo]     = useState("");
   const [busy,     setBusy]     = useState(false);
-  const [showPw,   setShowPw]   = useState(false);
+
+  const ROLES      = ["Batsman","Bowler","All-rounder","Wicket-keeper"];
+  const BAT_STYLES = ["Right-hand","Left-hand"];
+  const BOWL_STYLES= ["Right-arm Fast","Right-arm Medium","Right-arm Off-spin","Left-arm Fast","Left-arm Medium","Left-arm Spin","N/A"];
 
   useEffect(() => {
     initFB();
     if (!_fbAuth) { setStatus("login"); return; }
     var unsub = _fbAuth.onAuthStateChanged(u => {
-      if (u) {
-        setAuthUser(u); setStatus("authed");
-      } else {
-        setAuthUser(null); setStatus("login");
-      }
+      if (u) { setAuthUser(u); setStatus("authed"); }
+      else   { setAuthUser(null); setStatus("login"); }
     });
     var t = setTimeout(() => setStatus(s => s === "loading" ? "login" : s), 5000);
     return () => { unsub(); clearTimeout(t); };
@@ -687,16 +696,37 @@ function AuthGate({children}) {
 
   async function handleRegister() {
     clearForm();
-    if (!name.trim())              return setErr("Please enter your name");
-    if (!email.trim())             return setErr("Please enter your email");
-    if (password.length < 6)       return setErr("Password must be at least 6 characters");
-    if (password !== confirm)      return setErr("Passwords do not match");
+    if (!name.trim())         return setErr("Please enter your name");
+    if (!email.trim())        return setErr("Please enter your email");
+    if (password.length < 6)  return setErr("Password must be at least 6 characters");
+    if (password !== confirm)  return setErr("Passwords do not match");
     setBusy(true);
     try {
       var cred = await _fbAuth.createUserWithEmailAndPassword(email.trim(), password);
       await cred.user.updateProfile({ displayName: name.trim() });
-      // Store name in DB too
-      await _fbDB.ref("users/"+cred.user.uid).set({ name: name.trim(), email: email.trim(), createdAt: Date.now() });
+      var uid = cred.user.uid;
+      var now = Date.now();
+      // Write user record
+      var userRecord = {
+        name: name.trim(), email: email.trim(),
+        type: regType, createdAt: now,
+      };
+      await _fbDB.ref("users/"+uid).set(userRecord);
+      // If registering as player, also create a player profile
+      if (regType === "player") {
+        var playerId = "P_" + now + "_" + Math.random().toString(36).slice(2,6);
+        var playerRecord = {
+          id: playerId, uid,
+          name: name.trim(), role, batStyle, bowlStyle,
+          dob: dob || null,
+          createdBy: uid, createdAt: now,
+          batting:  { matches:0, innings:0, runs:0, balls:0, outs:0, fours:0, sixes:0, highScore:0, fifties:0, hundreds:0 },
+          bowling:  { overs:0, balls:0, runs:0, wickets:0, maidens:0, bestWickets:0, bestRuns:999 },
+        };
+        await _fbDB.ref("players/"+playerId).set(playerRecord);
+        // Store playerId on user record for easy lookup
+        await _fbDB.ref("users/"+uid+"/playerId").set(playerId);
+      }
     } catch(e) {
       setErr(friendlyError(e.code));
     }
@@ -808,17 +838,75 @@ function AuthGate({children}) {
             </div>
           ) : view==="register" ? (
             <div>
-              <div style={{marginBottom:14}}>
-                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>YOUR NAME</label>
-                <input value={name} onChange={e=>{setName(e.target.value);clearForm();}} type="text" placeholder="e.g. Arjun Patel" style={inputStyle}
+              {/* Player / Viewer toggle */}
+              <div style={{marginBottom:18}}>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:8}}>I AM REGISTERING AS</label>
+                <div style={{display:"flex",gap:8}}>
+                  {[["player","🏏 Player"],["viewer","👁 Viewer"]].map(([t,lbl])=>(
+                    <button key={t} onClick={()=>{setRegType(t);clearForm();}}
+                      style={{flex:1,padding:"12px 0",borderRadius:12,border:regType===t?"2px solid #fbbf24":"1px solid #334155",background:regType===t?"rgba(251,191,36,.1)":"transparent",color:regType===t?"#fbbf24":"#64748b",fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+                <div style={{color:"#334155",fontSize:11,marginTop:8,lineHeight:1.5,textAlign:"center"}}>
+                  {regType==="player"
+                    ? "Your profile will be linked to a player card with stats"
+                    : "You can watch matches and manage scorecards"}
+                </div>
+              </div>
+
+              {/* Common fields */}
+              <div style={{marginBottom:12}}>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>{regType==="player"?"PLAYER NAME":"YOUR NAME"}</label>
+                <input value={name} onChange={e=>{setName(e.target.value);clearForm();}} type="text" placeholder={regType==="player"?"e.g. Rohit Sharma":"e.g. Arjun Patel"} style={inputStyle}
                   onKeyDown={e=>{if(e.key==="Enter")handleRegister();}}/>
               </div>
-              <div style={{marginBottom:14}}>
+
+              {/* Player-only fields */}
+              {regType==="player" && (
+                <div>
+                  <div style={{marginBottom:12}}>
+                    <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:8}}>ROLE</label>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                      {ROLES.map(r=>(
+                        <button key={r} onClick={()=>setRole(r)}
+                          style={{padding:"7px 12px",borderRadius:9,border:role===r?"1px solid #fbbf24":"1px solid #334155",background:role===r?"rgba(251,191,36,.1)":"transparent",color:role===r?"#fbbf24":"#94a3b8",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                          {r}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+                    <div>
+                      <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>BATTING</label>
+                      <select value={batStyle} onChange={e=>setBatStyle(e.target.value)}
+                        style={{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:10,padding:"10px 10px",color:"#f1f5f9",fontSize:13,outline:"none",fontFamily:"Georgia,serif"}}>
+                        {BAT_STYLES.map(s=><option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>BOWLING</label>
+                      <select value={bowlStyle} onChange={e=>setBowlStyle(e.target.value)}
+                        style={{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:10,padding:"10px 10px",color:"#f1f5f9",fontSize:13,outline:"none",fontFamily:"Georgia,serif"}}>
+                        {BOWL_STYLES.map(s=><option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div style={{marginBottom:12}}>
+                    <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>DATE OF BIRTH <span style={{color:"#334155"}}>(optional)</span></label>
+                    <input value={dob} onChange={e=>setDob(e.target.value)} type="date"
+                      style={{...inputStyle,colorScheme:"dark"}}/>
+                  </div>
+                </div>
+              )}
+
+              <div style={{marginBottom:12}}>
                 <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>EMAIL ADDRESS</label>
                 <input value={email} onChange={e=>{setEmail(e.target.value);clearForm();}} type="email" placeholder="you@example.com" style={inputStyle}
                   onKeyDown={e=>{if(e.key==="Enter")handleRegister();}}/>
               </div>
-              <div style={{marginBottom:14}}>
+              <div style={{marginBottom:12}}>
                 <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>PASSWORD</label>
                 <div style={{position:"relative"}}>
                   <input value={password} onChange={e=>{setPassword(e.target.value);clearForm();}} type={showPw?"text":"password"} placeholder="Min 6 characters" style={{...inputStyle,paddingRight:44}}
@@ -832,7 +920,9 @@ function AuthGate({children}) {
                   onKeyDown={e=>{if(e.key==="Enter")handleRegister();}}/>
               </div>
               {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:12,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8}}>{err}</div>}
-              <button onClick={handleRegister} disabled={busy} style={btnPrimary}>{busy?"Creating account…":"Create Account"}</button>
+              <button onClick={handleRegister} disabled={busy} style={btnPrimary}>
+                {busy?"Creating account…":regType==="player"?"🏏 Register as Player":"👁 Register as Viewer"}
+              </button>
             </div>
           ) : (
             <div>
@@ -2257,14 +2347,27 @@ function PlayerStatsCard({ p, onClick }) {
   var avg = bat.innings > 0 ? (bat.runs / Math.max(bat.outs,1)).toFixed(1) : "-";
   var sr  = bat.balls  > 0 ? ((bat.runs / bat.balls)*100).toFixed(1) : "-";
   var eco = (bowl.overs + (bowl.balls||0)/6) > 0 ? (bowl.runs / (bowl.overs + (bowl.balls||0)/6)).toFixed(2) : "-";
+  var age = null;
+  if (p.dob) {
+    var diff = Date.now() - new Date(p.dob).getTime();
+    age = Math.floor(diff / (365.25*24*3600*1000));
+  }
   return (
     <div onClick={onClick} style={{background:"#1e293b",borderRadius:14,padding:"14px 16px",marginBottom:10,border:"1px solid #334155",cursor:onClick?"pointer":"default"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
         <div>
           <div style={{color:"#f1f5f9",fontSize:15,fontWeight:"bold"}}>{p.name}</div>
-          {p.role && <div style={{color:"#64748b",fontSize:11,marginTop:2}}>{p.role}</div>}
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:3}}>
+            {p.role && <span style={{color:"#64748b",fontSize:11}}>{p.role}</span>}
+            {p.batStyle && <span style={{color:"#475569",fontSize:11}}>· {p.batStyle} bat</span>}
+            {p.bowlStyle && p.bowlStyle!=="N/A" && <span style={{color:"#475569",fontSize:11}}>· {p.bowlStyle}</span>}
+            {age && <span style={{color:"#475569",fontSize:11}}>· Age {age}</span>}
+          </div>
         </div>
-        <div style={{background:"rgba(251,191,36,.1)",border:"1px solid rgba(251,191,36,.2)",borderRadius:8,padding:"2px 8px",color:"#fbbf24",fontSize:10}}>{bat.matches||0} matches</div>
+        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+          <div style={{background:"rgba(251,191,36,.1)",border:"1px solid rgba(251,191,36,.2)",borderRadius:8,padding:"2px 8px",color:"#fbbf24",fontSize:10}}>{bat.matches||0} matches</div>
+          {p.uid && <div style={{background:"rgba(74,222,128,.08)",border:"1px solid rgba(74,222,128,.2)",borderRadius:8,padding:"2px 8px",color:"#4ade80",fontSize:10}}>✓ Registered</div>}
+        </div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
         <div style={{background:"#0f172a",borderRadius:10,padding:"10px 12px"}}>
