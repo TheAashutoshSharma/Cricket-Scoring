@@ -22,17 +22,24 @@ const RET_HURT  = "Retired Hurt";
 const LOCAL_KEY = "cricket-v5";
 const HIST_KEY  = "cricket-history-v1";
 const MAX_HIST  = 30;
+const ADMIN_EMAILS = [
+  "aashutosh.sharma@live.in",
+  "aashuitdude@gmail.com",
+  "aashutosh22@gmail.com",
+];
 
 // ── Firebase ─────────────────────────────────────────────────────
-var _fbApp = null, _fbDB = null;
+var _fbApp = null, _fbDB = null, _fbAuth = null;
 function initFB() {
   if (_fbApp) return true;
   try {
-    _fbApp = firebase.initializeApp(FIREBASE_CONFIG);
-    _fbDB  = firebase.database();
+    _fbApp  = firebase.initializeApp(FIREBASE_CONFIG);
+    _fbDB   = firebase.database();
+    _fbAuth = firebase.auth();
     return true;
   } catch(e) { console.warn("Firebase:", e); return false; }
 }
+function getAuth() { return _fbAuth; }
 function genCode() {
   var c = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789", s = "";
   for (var i = 0; i < 6; i++) s += c[Math.floor(Math.random()*c.length)];
@@ -52,26 +59,38 @@ const blankSetup = () => ({
   teamBBowlers: Array.from({length:6}, (_,i)=>"Bowler "+(i+1)),
   teamACount:11, teamBCount:11,
   teamABowlerCount:6, teamBBowlerCount:6,
+  teamAPlayerIds:[], teamBPlayerIds:[],
 });
 
-const blankMatch = (setup, code) => ({
-  matchCode: code, createdAt: Date.now(),
-  totalOvers: setup.overs,
-  batting:0, striker:0,
-  currentBatsmen:[0,1], currentBowler:0,
-  runs:[0,0], wickets:[0,0], overs:[0,0], balls:[0,0],
-  extras:[0,0],
-  extrasBreakdown:[{wide:0,noBall:0,bye:0,legBye:0},{wide:0,noBall:0,bye:0,legBye:0}],
-  ballLog:[[],[]],
-  inningsOver:[false,false],
-  numPlayers:[setup.teamACount||11, setup.teamBCount||11],
-  teamA:{ name:setup.teamAName||"Team A",
-    players:setup.teamAPlayers.slice(0,setup.teamACount||11).map(n=>mkP(n)),
-    bowlers:setup.teamABowlers.slice(0,setup.teamABowlerCount||6).map(n=>mkB(n)) },
-  teamB:{ name:setup.teamBName||"Team B",
-    players:setup.teamBPlayers.slice(0,setup.teamBCount||11).map(n=>mkP(n)),
-    bowlers:setup.teamBBowlers.slice(0,setup.teamBBowlerCount||6).map(n=>mkB(n)) },
-});
+const blankMatch = (setup, code) => {
+  var aPIds = setup.teamAPlayerIds || [];
+  var bPIds = setup.teamBPlayerIds || [];
+  var aPlayers = setup.teamAPlayers.slice(0,setup.teamACount||11).map((n,i)=>({...mkP(n), playerId: aPIds[i]||null}));
+  var aBowlers = setup.teamABowlers.slice(0,setup.teamABowlerCount||6).map((n,i)=>{
+    // Try to find matching playerId by name index from full squad
+    var idx = setup.teamAPlayers.indexOf(n);
+    return {...mkB(n), playerId: idx>=0&&aPIds[idx] ? aPIds[idx] : null};
+  });
+  var bPlayers = setup.teamBPlayers.slice(0,setup.teamBCount||11).map((n,i)=>({...mkP(n), playerId: bPIds[i]||null}));
+  var bBowlers = setup.teamBBowlers.slice(0,setup.teamBBowlerCount||6).map((n,i)=>{
+    var idx = setup.teamBPlayers.indexOf(n);
+    return {...mkB(n), playerId: idx>=0&&bPIds[idx] ? bPIds[idx] : null};
+  });
+  return {
+    matchCode: code, createdAt: Date.now(),
+    totalOvers: setup.overs,
+    batting:0, striker:0,
+    currentBatsmen:[0,1], currentBowler:0,
+    runs:[0,0], wickets:[0,0], overs:[0,0], balls:[0,0],
+    extras:[0,0],
+    extrasBreakdown:[{wide:0,noBall:0,bye:0,legBye:0},{wide:0,noBall:0,bye:0,legBye:0}],
+    ballLog:[[],[]],
+    inningsOver:[false,false],
+    numPlayers:[setup.teamACount||11, setup.teamBCount||11],
+    teamA:{ name:setup.teamAName||"Team A", players:aPlayers, bowlers:aBowlers },
+    teamB:{ name:setup.teamBName||"Team B", players:bPlayers, bowlers:bBowlers },
+  };
+};
 
 // ── Helpers ──────────────────────────────────────────────────────
 const srFn  = p => (!p||p.balls===0)?"-":((p.runs/p.balls)*100).toFixed(1);
@@ -228,10 +247,13 @@ const S = {
 
 // ════════════════════════════════════════════════════════════════
 // ── AdminPanel — live index management + history clear ────────────
-function AdminPanel({matchHistory, setMatchHistory, onDone}) {
-  const [liveEntries, setLiveEntries] = React.useState(null); // null=not loaded
-  const [loading, setLoading] = React.useState(false);
-  const [msg, setMsg] = React.useState("");
+function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
+  const [liveEntries,  setLiveEntries]  = React.useState(null);
+  const [userMatches,  setUserMatches]  = React.useState(null); // {uid: {name, email, matches:[]}}
+  const [loading,      setLoading]      = React.useState(false);
+  const [loadingUM,    setLoadingUM]    = React.useState(false);
+  const [msg,          setMsg]          = React.useState("");
+  const [expandedUser, setExpandedUser] = React.useState(null);
 
   function loadLiveIndex() {
     if (!_fbDB) { setMsg("Firebase not connected"); return; }
@@ -241,6 +263,61 @@ function AdminPanel({matchHistory, setMatchHistory, onDone}) {
       setLiveEntries(val ? Object.values(val) : []);
       setLoading(false);
     }, err => { setMsg("Error: "+err.message); setLoading(false); });
+  }
+
+  function loadUserMatches() {
+    if (!_fbDB) { setMsg("Firebase not connected"); return; }
+    setLoadingUM(true); setMsg("");
+    Promise.all([
+      _fbDB.ref("userMatches").once("value"),
+      _fbDB.ref("users").once("value"),
+    ]).then(([umSnap, usersSnap]) => {
+      var umVal    = umSnap.val()    || {};
+      var usersVal = usersSnap.val() || {};
+      console.log("userMatches raw:", JSON.stringify(umVal));
+      console.log("users raw:", JSON.stringify(usersVal));
+      var grouped = {};
+      Object.entries(umVal).forEach(([uid, matchMap]) => {
+        if (!matchMap || typeof matchMap !== "object") return;
+        var userInfo = usersVal[uid] || {};
+        var matchList = Object.values(matchMap).filter(m => m && m.code);
+        if (!matchList.length) return;
+        grouped[uid] = {
+          uid,
+          name:    userInfo.name  || "Unknown",
+          email:   userInfo.email || uid,
+          matches: matchList.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)),
+        };
+      });
+      console.log("grouped:", JSON.stringify(Object.keys(grouped)));
+      setUserMatches(grouped);
+      setLoadingUM(false);
+    }).catch(err => {
+      setLoadingUM(false);
+      console.error("loadUserMatches error:", err);
+      if (err.code === "PERMISSION_DENIED" || err.message.includes("permission")) {
+        setMsg("RULES_ERROR");
+      } else {
+        setMsg("Error: "+err.message);
+      }
+    });
+  }
+
+  function deleteUserMatch(uid, code) {
+    if (!_fbDB) return;
+    Promise.all([
+      _fbDB.ref("userMatches/"+uid+"/"+code).remove(),
+      _fbDB.ref("liveIndex/"+code).remove(),
+      _fbDB.ref("matches/"+code).remove(),
+    ]).then(() => {
+      setUserMatches(prev => {
+        var next = {...prev};
+        next[uid] = {...next[uid], matches: next[uid].matches.filter(m=>m.code!==code)};
+        if (!next[uid].matches.length) delete next[uid];
+        return next;
+      });
+      setMsg("Match "+code+" deleted");
+    }).catch(err => setMsg("Error: "+err.message));
   }
 
   function deleteEntry(code) {
@@ -258,17 +335,101 @@ function AdminPanel({matchHistory, setMatchHistory, onDone}) {
   }
 
   function fmtAge(ts) {
-    if (!ts) return "unknown age";
+    if (!ts) return "—";
     var mins = Math.round((Date.now()-ts)/60000);
     if (mins < 60) return mins+"m ago";
-    return Math.round(mins/60)+"h ago";
+    if (mins < 1440) return Math.round(mins/60)+"h ago";
+    return Math.round(mins/1440)+"d ago";
+  }
+
+  function fmtScore(m) {
+    var bt = m.batting||0;
+    if (!m.runs) return "—";
+    return m.runs[0]+"/"+m.wickets[0]+" vs "+m.runs[1]+"/"+m.wickets[1];
   }
 
   return (
     <div style={{paddingBottom:24}}>
-      <div style={{color:"#4ade80",fontSize:13,marginBottom:20,textAlign:"center"}}>✓ Authenticated</div>
+      <div style={{color:"#4ade80",fontSize:13,marginBottom:20,textAlign:"center"}}>
+        ✓ Admin — {currentUser ? (currentUser.displayName||currentUser.email) : ""}
+      </div>
 
-      {/* Local match history */}
+      {/* ── Firebase Rules reminder ── */}
+      <div style={{background:"rgba(251,191,36,.07)",borderRadius:14,padding:16,border:"1px solid rgba(251,191,36,.25)",marginBottom:12}}>
+        <div style={{color:"#fbbf24",fontSize:12,fontWeight:"bold",marginBottom:8}}>⚙️ Required Firebase Rules</div>
+        <pre style={{color:"#94a3b8",fontSize:10,lineHeight:1.7,margin:0,overflowX:"auto",whiteSpace:"pre-wrap"}}>{`{
+  "rules": {
+    "matches":     { "$c": { ".read": true, ".write": true } },
+    "liveIndex":   { ".read": true, ".write": true },
+    "userMatches": { ".read": true, ".write": true },
+    "users":       { ".read": true, ".write": true },
+    "players":     { ".read": true, ".write": true },
+    "teams":       { ".read": true, ".write": true }
+  }
+}`}</pre>
+        <div style={{color:"#64748b",fontSize:10,marginTop:8}}>Firebase Console → Realtime Database → Rules</div>
+      </div>
+
+      {/* ── Matches by User ── */}
+      <div style={{background:"#1e293b",borderRadius:14,padding:18,border:"1px solid #334155",marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div style={{color:"#94a3b8",fontSize:13}}>👤 Matches by User</div>
+          <button onClick={loadUserMatches} disabled={loadingUM}
+            style={{padding:"5px 12px",background:"transparent",border:"1px solid #334155",borderRadius:8,color:"#94a3b8",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            {loadingUM?"…":userMatches===null?"Load":"Refresh"}
+          </button>
+        </div>
+        {msg==="RULES_ERROR" && (
+          <div style={{color:"#fbbf24",fontSize:12,padding:"10px 12px",background:"rgba(251,191,36,.08)",borderRadius:8,marginBottom:10,lineHeight:1.6}}>
+            ⚠️ Permission denied — update your Firebase Rules using the box above, then try again.
+          </div>
+        )}
+        {msg&&msg!=="RULES_ERROR"&&<div style={{color:"#f87171",fontSize:12,marginBottom:8}}>{msg}</div>}
+        {userMatches===null&&!loadingUM&&msg!=="RULES_ERROR"&&(
+          <div style={{color:"#475569",fontSize:12,textAlign:"center",padding:"8px 0"}}>Tap Load to fetch all users' matches</div>
+        )}
+        {userMatches!==null&&Object.keys(userMatches).length===0&&(
+          <div style={{color:"#475569",fontSize:12,textAlign:"center",padding:"10px 0",lineHeight:1.8}}>
+            No matches found in Firebase.<br/>
+            <span style={{color:"#334155",fontSize:11}}>Matches are saved when a scorer creates and starts a match while logged in. Check browser console (F12) for debug info.</span>
+          </div>
+        )}
+        {userMatches!==null&&Object.values(userMatches).map(u=>(
+          <div key={u.uid} style={{marginBottom:8,border:"1px solid #334155",borderRadius:10,overflow:"hidden"}}>
+            {/* User header */}
+            <div onClick={()=>setExpandedUser(expandedUser===u.uid?null:u.uid)}
+              style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"#0f172a",cursor:"pointer"}}>
+              <div>
+                <div style={{color:"#e2e8f0",fontSize:13,fontWeight:"bold"}}>{u.name}</div>
+                <div style={{color:"#475569",fontSize:11}}>{u.email} · {u.matches.length} match{u.matches.length!==1?"es":""}</div>
+              </div>
+              <div style={{color:"#475569",fontSize:14}}>{expandedUser===u.uid?"▲":"▼"}</div>
+            </div>
+            {/* Match list for this user */}
+            {expandedUser===u.uid&&(
+              <div style={{padding:"8px 12px",display:"flex",flexDirection:"column",gap:6}}>
+                {u.matches.map(m=>(
+                  <div key={m.code} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#1e293b",borderRadius:8,padding:"8px 10px",border:"1px solid #334155"}}>
+                    <div>
+                      <div style={{color:"#e2e8f0",fontSize:12}}>{m.teamA} vs {m.teamB}</div>
+                      <div style={{color:"#475569",fontSize:10}}>
+                        {m.code} · {fmtAge(m.updatedAt||m.createdAt)} · {m.complete?"✓ Complete":"🔴 Live"}
+                      </div>
+                      <div style={{color:"#64748b",fontSize:10}}>{fmtScore(m)}</div>
+                    </div>
+                    <button onClick={()=>{ if(confirm("Delete match "+m.code+"?")) deleteUserMatch(u.uid, m.code); }}
+                      style={{padding:"5px 10px",background:"rgba(127,29,29,.2)",border:"1px solid #7f1d1d",borderRadius:8,color:"#fca5a5",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Local match history ── */}
       <div style={{background:"#1e293b",borderRadius:14,padding:18,border:"1px solid #334155",marginBottom:12}}>
         <div style={{color:"#94a3b8",fontSize:13,marginBottom:12}}>
           Local Match History: <b style={{color:"#e2e8f0"}}>{matchHistory.length} matches</b>
@@ -285,7 +446,7 @@ function AdminPanel({matchHistory, setMatchHistory, onDone}) {
         </button>
       </div>
 
-      {/* Firebase live index */}
+      {/* ── Firebase live index ── */}
       <div style={{background:"#1e293b",borderRadius:14,padding:18,border:"1px solid #334155",marginBottom:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <div style={{color:"#94a3b8",fontSize:13}}>🔴 Live Index (Firebase)</div>
@@ -307,6 +468,7 @@ function AdminPanel({matchHistory, setMatchHistory, onDone}) {
                 <div>
                   <div style={{color:"#e2e8f0",fontSize:13}}>{e.teamA} vs {e.teamB}</div>
                   <div style={{color:"#475569",fontSize:11}}>{e.code} · {fmtAge(e.updatedAt||e.createdAt)}</div>
+                  {e.createdBy&&<div style={{color:"#475569",fontSize:10}}>by {e.createdBy.name||e.createdBy.email}</div>}
                 </div>
                 <button onClick={()=>deleteEntry(e.code)}
                   style={{padding:"6px 12px",background:"rgba(127,29,29,.2)",border:"1px solid #7f1d1d",borderRadius:8,color:"#fca5a5",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
@@ -322,7 +484,7 @@ function AdminPanel({matchHistory, setMatchHistory, onDone}) {
         )}
       </div>
 
-      {msg&&<div style={{color:"#4ade80",fontSize:12,textAlign:"center",marginBottom:12}}>{msg}</div>}
+      {msg&&msg!=="RULES_ERROR"&&<div style={{color:"#4ade80",fontSize:12,textAlign:"center",marginBottom:12}}>{msg}</div>}
 
       <button onClick={onDone}
         style={{width:"100%",padding:"11px 0",background:"transparent",border:"1px solid #334155",borderRadius:10,color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
@@ -362,7 +524,228 @@ function NList({names, ph, onUp, min, max}) {
   );
 }
 
-function App() {
+// ── AuthGate — register / login wall ─────────────────────────────
+function AuthGate({children}) {
+  // status: "loading" | "guest" | "authed"
+  const [status,   setStatus]   = useState("loading");
+  const [authUser, setAuthUser] = useState(null);
+  const [view,     setView]     = useState("login");
+  const [name,     setName]     = useState("");
+  const [email,    setEmail]    = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm,  setConfirm]  = useState("");
+  const [err,      setErr]      = useState("");
+  const [info,     setInfo]     = useState("");
+  const [busy,     setBusy]     = useState(false);
+  const [showPw,   setShowPw]   = useState(false);
+
+  useEffect(() => {
+    initFB();
+    if (!_fbAuth) { setStatus("login"); return; }
+    var unsub = _fbAuth.onAuthStateChanged(u => {
+      if (u) {
+        setAuthUser(u); setStatus("authed");
+      } else {
+        setAuthUser(null); setStatus("login");
+      }
+    });
+    var t = setTimeout(() => setStatus(s => s === "loading" ? "login" : s), 5000);
+    return () => { unsub(); clearTimeout(t); };
+  }, []);
+
+  function clearForm() { setErr(""); setInfo(""); }
+
+  async function handleRegister() {
+    clearForm();
+    if (!name.trim())              return setErr("Please enter your name");
+    if (!email.trim())             return setErr("Please enter your email");
+    if (password.length < 6)       return setErr("Password must be at least 6 characters");
+    if (password !== confirm)      return setErr("Passwords do not match");
+    setBusy(true);
+    try {
+      var cred = await _fbAuth.createUserWithEmailAndPassword(email.trim(), password);
+      await cred.user.updateProfile({ displayName: name.trim() });
+      // Store name in DB too
+      await _fbDB.ref("users/"+cred.user.uid).set({ name: name.trim(), email: email.trim(), createdAt: Date.now() });
+    } catch(e) {
+      setErr(friendlyError(e.code));
+    }
+    setBusy(false);
+  }
+
+  async function handleLogin() {
+    clearForm();
+    if (!email.trim() || !password) return setErr("Please enter email and password");
+    setBusy(true);
+    try {
+      await _fbAuth.signInWithEmailAndPassword(email.trim(), password);
+    } catch(e) {
+      setErr(friendlyError(e.code));
+    }
+    setBusy(false);
+  }
+
+  async function handleForgot() {
+    clearForm();
+    if (!email.trim()) return setErr("Enter your email address first");
+    setBusy(true);
+    try {
+      await _fbAuth.sendPasswordResetEmail(email.trim());
+      setInfo("Password reset email sent — check your inbox");
+    } catch(e) {
+      setErr(friendlyError(e.code));
+    }
+    setBusy(false);
+  }
+
+  function friendlyError(code) {
+    var map = {
+      "auth/email-already-in-use":    "An account with this email already exists",
+      "auth/invalid-email":           "Invalid email address",
+      "auth/weak-password":           "Password is too weak",
+      "auth/user-not-found":          "No account found with this email",
+      "auth/wrong-password":          "Incorrect password",
+      "auth/invalid-credential":      "Incorrect email or password",
+      "auth/too-many-requests":       "Too many attempts — try again later",
+      "auth/network-request-failed":  "Network error — check your connection",
+    };
+    return map[code] || "Something went wrong. Please try again";
+  }
+
+  // Loading state
+  if (status === "loading") return (
+    <div style={{minHeight:"100dvh",background:"#0f172a",display:"flex",alignItems:"center",justifyContent:"center"}}>
+      <div style={{color:"#475569",fontSize:14,fontFamily:"Georgia,serif"}}>Loading…</div>
+    </div>
+  );
+
+  // Authenticated — show app
+  if (status === "authed") return (
+    <div>
+      {React.cloneElement(children, { currentUser: authUser })}
+    </div>
+  );
+
+  // Guest — show app with no user
+  if (status === "guest") return (
+    <div>
+      {React.cloneElement(children, { currentUser: null })}
+    </div>
+  );
+
+  // ── Shared styles ──
+  var inputStyle = {width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:10,padding:"13px 14px",color:"#f1f5f9",fontSize:15,outline:"none",boxSizing:"border-box",fontFamily:"Georgia,serif"};
+  var btnPrimary = {width:"100%",padding:"14px 0",background:"linear-gradient(135deg,#fbbf24,#d97706)",borderRadius:12,border:"none",color:"#0f172a",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif",letterSpacing:1,marginTop:4};
+  var btnSecondary = {background:"none",border:"none",color:"#60a5fa",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",padding:"4px 0"};
+
+  return (
+    <div style={{minHeight:"100dvh",background:"linear-gradient(170deg,#0c1828,#0f172a)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"24px 16px 40px",fontFamily:"Georgia,serif"}}>
+      <div style={{width:"100%",maxWidth:400}}>
+
+        {/* Logo */}
+        <div style={{textAlign:"center",marginBottom:24}}>
+          <img src="icons/icon-192.png" alt="Cricket Scorer" style={{width:110,height:110,borderRadius:24,marginBottom:10,boxShadow:"0 8px 32px rgba(0,0,0,.4)"}}/>
+          <h1 style={{color:"#fbbf24",fontSize:22,fontWeight:"bold",letterSpacing:3,margin:"0 0 4px",textTransform:"uppercase"}}>Cricket Scorer</h1>
+          <p style={{color:"#475569",fontSize:11,letterSpacing:2,margin:0}}>LIVE MATCH BROADCASTING</p>
+        </div>
+
+        {/* Card */}
+        <div style={{background:"#1e293b",borderRadius:20,padding:26,border:"1px solid #334155",boxShadow:"0 20px 60px rgba(0,0,0,.5)"}}>
+
+          {/* Tab switcher */}
+          <div style={{display:"flex",background:"#0f172a",borderRadius:10,padding:3,marginBottom:22,gap:3}}>
+            {["login","register"].map(v=>(
+              <button key={v} onClick={()=>{setView(v);clearForm();}}
+                style={{flex:1,padding:"9px 0",borderRadius:8,border:"none",background:view===v?"#1e293b":"transparent",color:view===v?"#fbbf24":"#475569",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",transition:"all .2s",textTransform:"capitalize"}}>
+                {v==="login"?"Sign In":"Register"}
+              </button>
+            ))}
+          </div>
+
+          {view==="forgot" ? (
+            <div>
+              <div style={{color:"#94a3b8",fontSize:13,marginBottom:16,lineHeight:1.6}}>Enter your email and we'll send a reset link.</div>
+              <div style={{marginBottom:14}}>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>EMAIL</label>
+                <input value={email} onChange={e=>{setEmail(e.target.value);clearForm();}} type="email" placeholder="you@example.com" style={inputStyle}/>
+              </div>
+              {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:10,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8}}>{err}</div>}
+              {info&&<div style={{color:"#4ade80",fontSize:12,marginBottom:10,padding:"8px 12px",background:"rgba(74,222,128,.1)",borderRadius:8}}>{info}</div>}
+              <button onClick={handleForgot} disabled={busy} style={btnPrimary}>{busy?"Sending…":"Send Reset Email"}</button>
+              <div style={{textAlign:"center",marginTop:14}}>
+                <button onClick={()=>{setView("login");clearForm();}} style={btnSecondary}>← Back to Sign In</button>
+              </div>
+            </div>
+          ) : view==="register" ? (
+            <div>
+              <div style={{marginBottom:14}}>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>YOUR NAME</label>
+                <input value={name} onChange={e=>{setName(e.target.value);clearForm();}} type="text" placeholder="e.g. Arjun Patel" style={inputStyle}
+                  onKeyDown={e=>{if(e.key==="Enter")handleRegister();}}/>
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>EMAIL ADDRESS</label>
+                <input value={email} onChange={e=>{setEmail(e.target.value);clearForm();}} type="email" placeholder="you@example.com" style={inputStyle}
+                  onKeyDown={e=>{if(e.key==="Enter")handleRegister();}}/>
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>PASSWORD</label>
+                <div style={{position:"relative"}}>
+                  <input value={password} onChange={e=>{setPassword(e.target.value);clearForm();}} type={showPw?"text":"password"} placeholder="Min 6 characters" style={{...inputStyle,paddingRight:44}}
+                    onKeyDown={e=>{if(e.key==="Enter")handleRegister();}}/>
+                  <button onClick={()=>setShowPw(p=>!p)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#475569",fontSize:16,cursor:"pointer",padding:0}}>{showPw?"🙈":"👁"}</button>
+                </div>
+              </div>
+              <div style={{marginBottom:18}}>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>CONFIRM PASSWORD</label>
+                <input value={confirm} onChange={e=>{setConfirm(e.target.value);clearForm();}} type={showPw?"text":"password"} placeholder="Repeat password" style={inputStyle}
+                  onKeyDown={e=>{if(e.key==="Enter")handleRegister();}}/>
+              </div>
+              {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:12,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8}}>{err}</div>}
+              <button onClick={handleRegister} disabled={busy} style={btnPrimary}>{busy?"Creating account…":"Create Account"}</button>
+            </div>
+          ) : (
+            <div>
+              <div style={{marginBottom:14}}>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>EMAIL ADDRESS</label>
+                <input value={email} onChange={e=>{setEmail(e.target.value);clearForm();}} type="email" placeholder="you@example.com" style={inputStyle}
+                  onKeyDown={e=>{if(e.key==="Enter")handleLogin();}}/>
+              </div>
+              <div style={{marginBottom:6}}>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>PASSWORD</label>
+                <div style={{position:"relative"}}>
+                  <input value={password} onChange={e=>{setPassword(e.target.value);clearForm();}} type={showPw?"text":"password"} placeholder="Your password" style={{...inputStyle,paddingRight:44}}
+                    onKeyDown={e=>{if(e.key==="Enter")handleLogin();}}/>
+                  <button onClick={()=>setShowPw(p=>!p)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",color:"#475569",fontSize:16,cursor:"pointer",padding:0}}>{showPw?"🙈":"👁"}</button>
+                </div>
+              </div>
+              <div style={{textAlign:"right",marginBottom:16}}>
+                <button onClick={()=>{setView("forgot");clearForm();}} style={btnSecondary}>Forgot password?</button>
+              </div>
+              {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:12,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8}}>{err}</div>}
+              <button onClick={handleLogin} disabled={busy} style={btnPrimary}>{busy?"Signing in…":"Sign In"}</button>
+            </div>
+          )}
+        </div>
+
+        {/* Guest option */}
+        <div style={{textAlign:"center",marginTop:20}}>
+          <div style={{color:"#334155",fontSize:12,marginBottom:10}}>— or —</div>
+          <button onClick={()=>setStatus("guest")}
+            style={{background:"none",border:"1px solid #334155",borderRadius:10,padding:"11px 32px",color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",width:"100%"}}>
+            Continue as Guest
+          </button>
+          <p style={{color:"#475569",fontSize:11,marginTop:10,lineHeight:1.5}}>
+            Guests can score & watch live matches.<br/>Register to track player stats &amp; teams.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+function App({ currentUser }) {
   const [screen,    setScreen]   = useState("home");
   const [setup,     setSetup]    = useState(blankSetup);
   const [match,     setMatch]    = useState(null);
@@ -389,6 +772,10 @@ function App() {
   const [loadingLive, setLoadingLive] = useState(false);
   const [liveError,   setLiveError]   = useState("");
   const listRef = useRef(null);
+  // Players & Teams
+  const [showPlayers,    setShowPlayers]    = useState(false);
+  const [showTeams,      setShowTeams]      = useState(false);
+  const [teamPickerSlot, setTeamPickerSlot] = useState(null); // "A"|"B"|null
 
   // Init Firebase
   useEffect(() => { setFbReady(initFB()); }, []);
@@ -449,27 +836,33 @@ function App() {
       .catch(()=>setSyncing(false));
     // Write/update live index entry (small summary for listing)
     var bothOver = match.inningsOver && match.inningsOver[0] && match.inningsOver[1];
+    var bt = match.batting||0;
+    var summary = {
+      code,
+      teamA: match.teamA.name,
+      teamB: match.teamB.name,
+      runs:  match.runs,
+      wickets: match.wickets,
+      overs: match.overs,
+      balls: match.balls,
+      batting: bt,
+      totalOvers: match.totalOvers,
+      inningsOver: match.inningsOver,
+      createdAt: match.createdAt,
+      updatedAt: Date.now(),
+      createdBy: match.createdBy || null,
+    };
     if (bothOver) {
-      // Remove from live index when match is complete
       _fbDB.ref("liveIndex/"+code).remove();
     } else {
-      var bt = match.batting||0;
-      _fbDB.ref("liveIndex/"+code).set({
-        code,
-        teamA: match.teamA.name,
-        teamB: match.teamB.name,
-        runs:  match.runs,
-        wickets: match.wickets,
-        overs: match.overs,
-        balls: match.balls,
-        batting: bt,
-        totalOvers: match.totalOvers,
-        inningsOver: match.inningsOver,
-        createdAt: match.createdAt,
-        updatedAt: Date.now(),
-      });
+      _fbDB.ref("liveIndex/"+code).set(summary);
     }
-  }, [match]);
+    // Always keep userMatches in sync — use uid from match.createdBy as fallback
+    var uid = currentUser ? currentUser.uid : (match.createdBy ? match.createdBy.uid : null);
+    if (uid) {
+      _fbDB.ref("userMatches/"+uid+"/"+code).set({...summary, complete: !!bothOver});
+    }
+  }, [match, currentUser]);
 
   function attachListener(code) {
     if (listRef.current) listRef.current.off();
@@ -497,13 +890,17 @@ function App() {
   function startMatch() {
     var code = fbReady ? genCode() : "LOCAL";
     var m = blankMatch(setup, code);
+    // Tag match with creator info
+    if (currentUser) {
+      m.createdBy = { uid: currentUser.uid, name: currentUser.displayName||"", email: currentUser.email||"" };
+    }
     setMatch(m);
     setHistory([]);
     setIsViewer(false);
     setScreen("match");
     // Immediately register in liveIndex so it appears in viewer list
     if (fbReady && code !== "LOCAL" && _fbDB) {
-      _fbDB.ref("liveIndex/"+code).set({
+      var entry = {
         code,
         teamA: m.teamA.name,
         teamB: m.teamB.name,
@@ -516,7 +913,11 @@ function App() {
         inningsOver: m.inningsOver,
         createdAt: m.createdAt,
         updatedAt: Date.now(),
-      });
+        createdBy: m.createdBy || null,
+      };
+      _fbDB.ref("liveIndex/"+code).set(entry);
+      // Also write to user-scoped path
+      if (currentUser) _fbDB.ref("userMatches/"+currentUser.uid+"/"+code).set(entry);
     }
   }
 
@@ -533,11 +934,74 @@ function App() {
         totalOvers: m.totalOvers,
         snapshot: m
       };
-      hist.unshift(entry); // newest first
+      hist.unshift(entry);
       if (hist.length > 50) hist = hist.slice(0, 50);
       localStorage.setItem(HIST_KEY, JSON.stringify(hist));
       setMatchHistory(hist);
     } catch(e) {}
+    // Also push player stats to Firebase
+    updatePlayerStats(m);
+  }
+
+  function updatePlayerStats(m) {
+    if (!_fbDB) return;
+    // For each team, for each player/bowler that has a registered player id, update stats
+    [0,1].forEach(ti => {
+      var team = ti===0 ? m.teamA : m.teamB;
+      var oppTeam = ti===0 ? m.teamB : m.teamA;
+      // Batting stats
+      (team.players||[]).forEach(p => {
+        if (!p.playerId) return;
+        var ref = _fbDB.ref("players/"+p.playerId);
+        ref.once("value").then(snap => {
+          var cur = snap.val();
+          if (!cur) return;
+          var bat = cur.batting || {};
+          var isOut = p.out;
+          var newRuns = (bat.runs||0) + (p.runs||0);
+          var newBalls = (bat.balls||0) + (p.balls||0);
+          var newOuts = (bat.outs||0) + (isOut?1:0);
+          var newInnings = (bat.innings||0) + (p.balls>0||p.out?1:0);
+          var newFours = (bat.fours||0) + (p.fours||0);
+          var newSixes = (bat.sixes||0) + (p.sixes||0);
+          var newHS = Math.max(bat.highScore||0, p.runs||0);
+          var newFifties = (bat.fifties||0) + ((p.runs||0)>=50&&(p.runs||0)<100?1:0);
+          var newHundreds = (bat.hundreds||0) + ((p.runs||0)>=100?1:0);
+          var newMatches = (bat.matches||0) + 1;
+          ref.update({ batting: {
+            matches:newMatches, innings:newInnings, runs:newRuns, balls:newBalls,
+            outs:newOuts, fours:newFours, sixes:newSixes,
+            highScore:newHS, fifties:newFifties, hundreds:newHundreds
+          }});
+        }).catch(()=>{});
+      });
+      // Bowling stats — bowlers bowl against the opposing team's innings
+      (oppTeam.bowlers||[]).forEach(b => {
+        if (!b.playerId) return;
+        var ref = _fbDB.ref("players/"+b.playerId);
+        ref.once("value").then(snap => {
+          var cur = snap.val();
+          if (!cur) return;
+          var bowl = cur.bowling || {};
+          var newWkts = (bowl.wickets||0) + (b.wickets||0);
+          var newRuns2 = (bowl.runs||0) + (b.runs||0);
+          var newOvers2 = (bowl.overs||0) + (b.overs||0);
+          var newBalls2 = (bowl.balls||0) + (b.balls||0);
+          var newMaidens = (bowl.maidens||0) + (b.maidens||0);
+          // Best bowling: most wickets, fewest runs for same wickets
+          var curBestW = bowl.bestWickets||0, curBestR = bowl.bestRuns||999;
+          var newBestW = curBestW, newBestR = curBestR;
+          if ((b.wickets||0) > curBestW || ((b.wickets||0)===curBestW && (b.runs||0)<curBestR)) {
+            newBestW = b.wickets||0; newBestR = b.runs||0;
+          }
+          ref.update({ bowling: {
+            overs:newOvers2, balls:newBalls2, runs:newRuns2,
+            wickets:newWkts, maidens:newMaidens,
+            bestWickets:newBestW, bestRuns:newBestR
+          }});
+        }).catch(()=>{});
+      });
+    });
   }
 
   function resetAll() {
@@ -560,11 +1024,25 @@ function App() {
       var val = snap.val();
       if (!val) { setLiveMatches([]); setLoadingLive(false); return; }
       var now = Date.now();
-      var list = Object.values(val).filter(m => {
-        var fresh = !m.createdAt || (now - m.createdAt) < 24*60*60*1000;
-        var ongoing = !(m.inningsOver && m.inningsOver[0] && m.inningsOver[1]);
-        return fresh && ongoing && m.teamA && m.teamB && m.code;
+      var STALE = 24*60*60*1000; // 24 hours
+      var list = [];
+      var removes = [];
+      Object.values(val).forEach(m => {
+        if (!m.code) return;
+        var age = now - (m.createdAt || now);
+        var isStale = age >= STALE;
+        var isOver  = m.inningsOver && m.inningsOver[0] && m.inningsOver[1];
+        if (isStale || isOver) {
+          // Mark as abandoned in Firebase then remove from liveIndex
+          if (isStale && !isOver) {
+            db.ref("matches/"+m.code+"/abandoned").set(true);
+          }
+          removes.push(db.ref("liveIndex/"+m.code).remove());
+        } else if (m.teamA && m.teamB) {
+          list.push(m);
+        }
       });
+      if (removes.length) Promise.all(removes).catch(()=>{});
       list.sort((a,b)=>(b.updatedAt||b.createdAt||0)-(a.updatedAt||a.createdAt||0));
       setLiveMatches(list);
       setLoadingLive(false);
@@ -777,14 +1255,34 @@ function App() {
   }
 
 
+  if (showPlayers) return <PlayersScreen currentUser={currentUser} onBack={()=>setShowPlayers(false)}/>;
+  if (showTeams)   return <TeamsScreen   currentUser={currentUser} onBack={()=>setShowTeams(false)}/>;
+
   if (screen==="home") return (
     <div style={{minHeight:"100dvh",background:"linear-gradient(170deg,#0c1828,#0f172a)",display:"flex",flexDirection:"column",alignItems:"center",padding:"28px 16px 40px",fontFamily:"Georgia,serif",overflowY:"auto"}}>
       <div style={{width:"100%",maxWidth:420}}>
-        <div style={{textAlign:"center",marginBottom:32}}>
-          <div style={{fontSize:52}}>🏏</div>
-          <h1 style={{color:"#fbbf24",fontSize:24,fontWeight:"bold",letterSpacing:3,margin:"10px 0 4px",textTransform:"uppercase"}}>Cricket Scorer</h1>
-          <p style={{color:"#475569",fontSize:11,letterSpacing:2,margin:0}}>LIVE MATCH BROADCASTING</p>
-          <div style={{marginTop:10}}>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <img src="icons/icon-192.png" alt="Cricket Scorer" style={{width:100,height:100,borderRadius:22,marginBottom:10,boxShadow:"0 8px 32px rgba(0,0,0,.4)"}}/>
+          <h1 style={{color:"#fbbf24",fontSize:24,fontWeight:"bold",letterSpacing:3,margin:"8px 0 4px",textTransform:"uppercase"}}>Cricket Scorer</h1>
+          <p style={{color:"#475569",fontSize:11,letterSpacing:2,margin:"0 0 8px"}}>LIVE MATCH BROADCASTING</p>
+          {currentUser ? (
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginTop:6}}>
+              <span style={{color:"#94a3b8",fontSize:13}}>👋 {currentUser.displayName || currentUser.email}</span>
+              <button onClick={()=>{initFB();_fbAuth&&_fbAuth.signOut();}}
+                style={{background:"none",border:"1px solid #334155",borderRadius:8,padding:"3px 10px",color:"#64748b",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:8}}>
+              <span style={{color:"#475569",fontSize:12}}>Browsing as guest</span>
+              <button onClick={()=>{initFB();_fbAuth&&_fbAuth.signOut();window.location.reload();}}
+                style={{background:"none",border:"1px solid rgba(251,191,36,.35)",borderRadius:8,padding:"4px 12px",color:"#fbbf24",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                Sign In / Register
+              </button>
+            </div>
+          )}
+          <div style={{marginTop:8}}>
             {fbReady
               ? <span style={{color:"#4ade80",fontSize:12}}>● Firebase connected</span>
               : <span style={{color:"#f59e0b",fontSize:12}}>⚠ Firebase offline</span>}
@@ -803,6 +1301,73 @@ function App() {
           </button>
         </div>
 
+        {/* Players & Teams */}
+        <div style={{display:"flex",gap:10,marginBottom:14}}>
+          <button onClick={()=>setShowPlayers(true)}
+            style={{flex:1,padding:"12px 0",background:"#1e293b",border:"1px solid #334155",borderRadius:12,color:"#94a3b8",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            🏏 Players
+          </button>
+          <button onClick={()=>setShowTeams(true)}
+            style={{flex:1,padding:"12px 0",background:"#1e293b",border:"1px solid #334155",borderRadius:12,color:"#94a3b8",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            👥 Teams
+          </button>
+        </div>
+
+        {/* Watch Live — visible to all logged-in users */}
+        <div style={{background:"#1e293b",borderRadius:20,padding:24,border:"1px solid #334155",boxShadow:"0 20px 60px rgba(0,0,0,.5)",marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <div>
+              <div style={{color:"#64748b",fontSize:11,letterSpacing:2,marginBottom:2}}>WATCH LIVE</div>
+              <div style={{color:"#94a3b8",fontSize:12}}>Join a match in progress</div>
+            </div>
+            <button onClick={fetchLiveMatches} disabled={loadingLive}
+              style={{padding:"8px 16px",background:"rgba(251,191,36,.12)",border:"1px solid rgba(251,191,36,.3)",borderRadius:10,color:"#fbbf24",fontSize:13,cursor:loadingLive?"not-allowed":"pointer",fontFamily:"Georgia,serif",fontWeight:"bold"}}>
+              {loadingLive ? "Loading…" : liveMatches===null ? "🔍 Find Matches" : "↻ Refresh"}
+            </button>
+          </div>
+
+          {liveError && (
+            <div style={{color:"#f87171",fontSize:12,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8,marginBottom:10,whiteSpace:"pre-wrap"}}>{liveError}</div>
+          )}
+
+          {liveMatches !== null && (
+            liveMatches.length === 0
+              ? <div style={{color:"#475569",fontSize:13,textAlign:"center",padding:"12px 0"}}>No live matches right now</div>
+              : liveMatches.map(m => (
+                <div key={m.code} onClick={()=>joinByCode(m.code)}
+                  style={{background:"#0f172a",borderRadius:12,padding:"12px 14px",marginBottom:8,border:"1px solid #334155",cursor:"pointer"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                    <span style={{color:"#4ade80",fontSize:10,letterSpacing:1}}>● LIVE</span>
+                    <span style={{color:"#475569",fontSize:11}}>{m.totalOvers} overs</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <div style={{color:m.batting===0?"#fbbf24":"#94a3b8",fontSize:14,fontWeight:"bold"}}>{m.teamA}</div>
+                      <div style={{color:"#f1f5f9",fontSize:15,fontWeight:"bold"}}>{m.runs&&m.runs[0]!==undefined?m.runs[0]:0}/{m.wickets&&m.wickets[0]!==undefined?m.wickets[0]:0}</div>
+                    </div>
+                    <div style={{color:"#475569",fontSize:12}}>vs</div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{color:m.batting===1?"#fbbf24":"#94a3b8",fontSize:14,fontWeight:"bold"}}>{m.teamB}</div>
+                      <div style={{color:"#f1f5f9",fontSize:15,fontWeight:"bold"}}>{m.runs&&m.runs[1]!==undefined?m.runs[1]:0}/{m.wickets&&m.wickets[1]!==undefined?m.wickets[1]:0}</div>
+                    </div>
+                  </div>
+                </div>
+              ))
+          )}
+
+          {/* Join by code */}
+          <div style={{marginTop:liveMatches!==null?10:0,display:"flex",gap:8}}>
+            <input id="join-code-input" placeholder="Have a match code? Enter it"
+              style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:10,padding:"10px 12px",color:"#f1f5f9",fontSize:14,outline:"none",fontFamily:"Georgia,serif",textTransform:"uppercase",letterSpacing:2}}
+              onKeyDown={e=>{if(e.key==="Enter"){var v=e.target.value.trim().toUpperCase();if(v.length>=4)joinByCode(v);}}}
+            />
+            <button onClick={()=>{var el=document.getElementById("join-code-input");if(el&&el.value.trim().length>=4)joinByCode(el.value.trim().toUpperCase());}}
+              style={{padding:"10px 16px",background:"#1e3a5f",border:"1px solid #1d4ed8",borderRadius:10,color:"#60a5fa",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+              Join
+            </button>
+          </div>
+        </div>
+
         {/* History button */}
         {matchHistory.length > 0 && (
           <button onClick={()=>setScreen("history")}
@@ -811,63 +1376,9 @@ function App() {
           </button>
         )}
 
-        {/* Watch Live */}
-        <div style={{background:"#1e293b",borderRadius:20,padding:24,border:"1px solid #334155",boxShadow:"0 20px 60px rgba(0,0,0,.5)"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-            <div style={{color:"#64748b",fontSize:11,letterSpacing:2}}>WATCH LIVE</div>
-            {liveMatches!==null&&(
-              <button onClick={fetchLiveMatches} disabled={loadingLive}
-                style={{padding:"5px 12px",background:"transparent",border:"1px solid #334155",borderRadius:8,color:"#94a3b8",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-                {loadingLive?"…":"🔄 Refresh"}
-              </button>
-            )}
-          </div>
-          {liveMatches===null&&(
-            <button onClick={fetchLiveMatches} disabled={loadingLive}
-              style={{width:"100%",padding:"13px 0",background:"linear-gradient(135deg,#1d4ed8,#1e40af)",borderRadius:12,border:"none",color:"#fff",fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-              {loadingLive?"🔍 Searching…":"📡 Show Live Matches"}
-            </button>
-          )}
-          {liveError&&(
-            <div style={{background:"rgba(239,68,68,.1)",border:"1px solid #7f1d1d",borderRadius:10,padding:"10px 14px",marginTop:8}}>
-              <div style={{color:"#fca5a5",fontSize:12,marginBottom:6}}>{liveError}</div>
-              <div style={{color:"#64748b",fontSize:11}}>Check your Firebase rules allow reading <code style={{color:"#94a3b8"}}>liveIndex</code>:</div>
-              <pre style={{color:"#4ade80",fontSize:10,marginTop:6,overflowX:"auto"}}>{"liveIndex: { \".read\": true, \".write\": true }"}</pre>
-            </div>
-          )}
-          {liveMatches!==null&&liveMatches.length===0&&!loadingLive&&(
-            <div style={{textAlign:"center",color:"#475569",fontSize:13,padding:"14px 0"}}>No live matches right now</div>
-          )}
-          {loadingLive&&liveMatches!==null&&(
-            <div style={{textAlign:"center",color:"#475569",fontSize:13,padding:"10px 0"}}>Refreshing…</div>
-          )}
-          {liveMatches!==null&&liveMatches.length>0&&(
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {liveMatches.map(m=>{
-                var bt=m.batting||0;
-                var bName=bt===0?m.teamA:m.teamB;
-                var r=(m.runs&&m.runs[bt])||0, w=(m.wickets&&m.wickets[bt])||0;
-                var ov=(m.overs&&m.overs[bt])||0, bl=(m.balls&&m.balls[bt])||0;
-                var inn1Done=m.inningsOver&&m.inningsOver[0];
-                return (
-                  <button key={m.code} onClick={()=>joinByCode(m.code)}
-                    style={{width:"100%",background:"#0f172a",border:"1px solid #1d4ed8",borderRadius:12,padding:"12px 14px",cursor:"pointer",textAlign:"left",fontFamily:"Georgia,serif"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                      <span style={{color:"#ef4444",fontSize:11,fontWeight:"bold"}}>● LIVE</span>
-                      <span style={{color:"#475569",fontSize:11}}>{m.totalOvers} overs</span>
-                    </div>
-                    <div style={{color:"#94a3b8",fontSize:12,marginBottom:6}}>{m.teamA} vs {m.teamB}</div>
-                    {inn1Done&&<div style={{color:"#64748b",fontSize:11,marginBottom:2}}>{m.teamA}: {(m.runs&&m.runs[0])||0}/{(m.wickets&&m.wickets[0])||0}</div>}
-                    <div style={{color:"#fbbf24",fontWeight:"bold",fontSize:16}}>{bName}: {r}/{w} <span style={{color:"#475569",fontSize:12,fontWeight:"normal"}}>({ov}.{bl} ov)</span></div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        <div style={{textAlign:"center",marginTop:18}}>
+        <div style={{textAlign:"center",marginTop:4}}>
           <button onClick={()=>setScreen("admin")}
-            style={{background:"none",border:"none",color:"#1e293b",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            style={{background:"none",border:"none",color:currentUser&&ADMIN_EMAILS.includes(currentUser.email)?"#475569":"#1e293b",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}>
             ···
           </button>
         </div>
@@ -921,7 +1432,7 @@ function App() {
               </div>
             </div>
           ))}
-          {matchHistory.length > 0 && (
+          {matchHistory.length > 0 && currentUser && ADMIN_EMAILS.includes(currentUser.email) && (
             <button onClick={()=>setScreen("admin")}
               style={{width:"100%",marginTop:4,marginBottom:20,padding:"10px 0",background:"transparent",border:"1px solid #475569",borderRadius:10,color:"#64748b",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
               🔒 Admin — Manage History
@@ -1012,7 +1523,8 @@ function App() {
   // ADMIN
   if (screen==="admin") {
     const ADMIN_PIN = "1989";
-    var pinOk = adminPin===ADMIN_PIN;
+    var isAdminUser = currentUser && ADMIN_EMAILS.includes(currentUser.email);
+    var pinOk = isAdminUser || adminPin===ADMIN_PIN;
     return (
       <div style={S.page}>
         <div style={{...S.wrap,padding:"0 12px"}}>
@@ -1032,7 +1544,7 @@ function App() {
               {adminPin.length>0&&!pinOk&&<div style={{color:"#f87171",fontSize:12,marginTop:10}}>Incorrect PIN</div>}
             </div>
           ) : (
-            <AdminPanel matchHistory={matchHistory} setMatchHistory={setMatchHistory} onDone={()=>{setScreen("home");setAdminPin("");}}/>
+            <AdminPanel matchHistory={matchHistory} setMatchHistory={setMatchHistory} currentUser={currentUser} onDone={()=>{setScreen("home");setAdminPin("");}}/>
           )}
         </div>
       </div>
@@ -1043,6 +1555,7 @@ function App() {
     var s=setup;
     var STEPS=["Match Details",s.teamAName+" — Batters",s.teamAName+" — Bowlers",s.teamBName+" — Batters",s.teamBName+" — Bowlers"];
     return (
+      <React.Fragment>
       <div style={{minHeight:"100dvh",background:"linear-gradient(170deg,#0c1828,#0f172a)",display:"flex",flexDirection:"column",alignItems:"center",padding:"24px 16px 40px",fontFamily:"Georgia,serif"}}>
         <div style={{width:"100%",maxWidth:420}}>
           <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:18}}>
@@ -1060,6 +1573,15 @@ function App() {
           <div style={{background:"#1e293b",borderRadius:20,padding:22,border:"1px solid #334155",boxShadow:"0 20px 60px rgba(0,0,0,.6)"}}>
             {s.step===0&&(
               <div>
+                {/* Quick team picker buttons */}
+                <div style={{display:"flex",gap:8,marginBottom:16}}>
+                  {["A","B"].map(slot=>(
+                    <button key={slot} onClick={()=>setTeamPickerSlot(slot)}
+                      style={{flex:1,padding:"9px 0",background:"rgba(251,191,36,.08)",border:"1px solid rgba(251,191,36,.25)",borderRadius:10,color:"#fbbf24",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif",fontWeight:"bold"}}>
+                      👥 Pick Team {slot} from Saved
+                    </button>
+                  ))}
+                </div>
                 {[["TEAM 1 NAME","teamAName"],["TEAM 2 NAME","teamBName"]].map(([lbl,key])=>(
                   <div key={key} style={{marginBottom:14}}>
                     <label style={{color:"#64748b",fontSize:11,display:"block",marginBottom:6,letterSpacing:1}}>{lbl}</label>
@@ -1117,6 +1639,40 @@ function App() {
           </div>
         </div>
       </div>
+      {/* Team Picker Modal */}
+      {teamPickerSlot && (
+        <TeamPickerModal
+          slot={teamPickerSlot}
+          onCancel={()=>setTeamPickerSlot(null)}
+          onConfirm={picked => {
+            var playerNames  = picked.players.map(p=>p.name);
+            var bowlerNames  = picked.players.filter(p=>p.role==="Bowler"||p.role==="All-rounder").map(p=>p.name);
+            if (bowlerNames.length===0) bowlerNames = playerNames.slice(0,Math.min(6,playerNames.length));
+            var playerIds    = picked.players.map(p=>p.id);
+            if (teamPickerSlot==="A") {
+              setSetup(p=>({...p,
+                teamAName: picked.teamName,
+                teamAPlayers: playerNames,
+                teamABowlers: bowlerNames,
+                teamACount: playerNames.length,
+                teamABowlerCount: bowlerNames.length,
+                teamAPlayerIds: playerIds,
+              }));
+            } else {
+              setSetup(p=>({...p,
+                teamBName: picked.teamName,
+                teamBPlayers: playerNames,
+                teamBBowlers: bowlerNames,
+                teamBCount: playerNames.length,
+                teamBBowlerCount: bowlerNames.length,
+                teamBPlayerIds: playerIds,
+              }));
+            }
+            setTeamPickerSlot(null);
+          }}
+        />
+      )}
+      </React.Fragment>
     );
   }
 
@@ -1539,4 +2095,472 @@ function App() {
   );
 }
 
-ReactDOM.createRoot(document.getElementById("app")).render(React.createElement(App));
+// ════════════════════════════════════════════════════════════
+// PLAYER & TEAM MANAGEMENT COMPONENTS
+// ════════════════════════════════════════════════════════════
+
+// ── PlayerStatsCard ──────────────────────────────────────────
+function PlayerStatsCard({ p, onClick }) {
+  var bat = p.batting || {};
+  var bowl = p.bowling || {};
+  var avg = bat.innings > 0 ? (bat.runs / Math.max(bat.outs,1)).toFixed(1) : "-";
+  var sr  = bat.balls  > 0 ? ((bat.runs / bat.balls)*100).toFixed(1) : "-";
+  var eco = (bowl.overs + (bowl.balls||0)/6) > 0 ? (bowl.runs / (bowl.overs + (bowl.balls||0)/6)).toFixed(2) : "-";
+  return (
+    <div onClick={onClick} style={{background:"#1e293b",borderRadius:14,padding:"14px 16px",marginBottom:10,border:"1px solid #334155",cursor:onClick?"pointer":"default"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+        <div>
+          <div style={{color:"#f1f5f9",fontSize:15,fontWeight:"bold"}}>{p.name}</div>
+          {p.role && <div style={{color:"#64748b",fontSize:11,marginTop:2}}>{p.role}</div>}
+        </div>
+        <div style={{background:"rgba(251,191,36,.1)",border:"1px solid rgba(251,191,36,.2)",borderRadius:8,padding:"2px 8px",color:"#fbbf24",fontSize:10}}>{bat.matches||0} matches</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+        <div style={{background:"#0f172a",borderRadius:10,padding:"10px 12px"}}>
+          <div style={{color:"#64748b",fontSize:10,letterSpacing:1,marginBottom:6}}>BATTING</div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+            <span style={{color:"#94a3b8",fontSize:11}}>Runs</span>
+            <span style={{color:"#fbbf24",fontWeight:"bold",fontSize:13}}>{bat.runs||0}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+            <span style={{color:"#94a3b8",fontSize:11}}>Avg</span>
+            <span style={{color:"#e2e8f0",fontSize:12}}>{avg}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+            <span style={{color:"#94a3b8",fontSize:11}}>SR</span>
+            <span style={{color:"#e2e8f0",fontSize:12}}>{sr}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+            <span style={{color:"#94a3b8",fontSize:11}}>50s/100s</span>
+            <span style={{color:"#e2e8f0",fontSize:12}}>{bat.fifties||0}/{bat.hundreds||0}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <span style={{color:"#94a3b8",fontSize:11}}>HS</span>
+            <span style={{color:"#e2e8f0",fontSize:12}}>{bat.highScore||0}</span>
+          </div>
+        </div>
+        <div style={{background:"#0f172a",borderRadius:10,padding:"10px 12px"}}>
+          <div style={{color:"#64748b",fontSize:10,letterSpacing:1,marginBottom:6}}>BOWLING</div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+            <span style={{color:"#94a3b8",fontSize:11}}>Wickets</span>
+            <span style={{color:"#a78bfa",fontWeight:"bold",fontSize:13}}>{bowl.wickets||0}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+            <span style={{color:"#94a3b8",fontSize:11}}>Econ</span>
+            <span style={{color:"#e2e8f0",fontSize:12}}>{eco}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+            <span style={{color:"#94a3b8",fontSize:11}}>Runs</span>
+            <span style={{color:"#e2e8f0",fontSize:12}}>{bowl.runs||0}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+            <span style={{color:"#94a3b8",fontSize:11}}>Maidens</span>
+            <span style={{color:"#e2e8f0",fontSize:12}}>{bowl.maidens||0}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between"}}>
+            <span style={{color:"#94a3b8",fontSize:11}}>Best</span>
+            <span style={{color:"#e2e8f0",fontSize:12}}>{bowl.bestWickets||0}/{bowl.bestRuns||0}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── PlayersScreen — register/view players ────────────────────
+function PlayersScreen({ currentUser, onBack }) {
+  const [players, setPlayers] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [view,    setView]    = React.useState("list"); // list | add | detail
+  const [sel,     setSel]     = React.useState(null);
+  const [form,    setForm]    = React.useState({ name:"", role:"Batsman" });
+  const [saving,  setSaving]  = React.useState(false);
+  const [err,     setErr]     = React.useState("");
+  const [search,  setSearch]  = React.useState("");
+  const ROLES = ["Batsman","Bowler","All-rounder","Wicket-keeper"];
+
+  React.useEffect(() => { loadPlayers(); }, []);
+
+  function loadPlayers() {
+    if (!_fbDB) return;
+    setLoading(true);
+    _fbDB.ref("players").once("value", snap => {
+      var val = snap.val() || {};
+      var list = Object.values(val).sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+      setPlayers(list);
+      setLoading(false);
+    }, () => setLoading(false));
+  }
+
+  function savePlayer() {
+    if (!form.name.trim()) return setErr("Name is required");
+    setSaving(true); setErr("");
+    var id = "P_" + Date.now() + "_" + Math.random().toString(36).slice(2,6);
+    var p = {
+      id, name: form.name.trim(), role: form.role,
+      createdBy: currentUser ? currentUser.uid : null,
+      createdAt: Date.now(),
+      batting:  { matches:0, innings:0, runs:0, balls:0, outs:0, fours:0, sixes:0, highScore:0, fifties:0, hundreds:0 },
+      bowling:  { overs:0, balls:0, runs:0, wickets:0, maidens:0, bestWickets:0, bestRuns:999 },
+    };
+    _fbDB.ref("players/"+id).set(p).then(() => {
+      setPlayers(ps => [...ps, p].sort((a,b)=>a.name.localeCompare(b.name)));
+      setForm({ name:"", role:"Batsman" });
+      setView("list");
+      setSaving(false);
+    }).catch(e => { setErr(e.message); setSaving(false); });
+  }
+
+  var filtered = players.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+
+  if (view === "add") return (
+    <div style={{...S.page}}>
+      <div style={{...S.wrap, padding:"0 16px"}}>
+        <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={()=>{setView("list");setErr("");}} style={S.btnSm}>← Back</button>
+          <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>ADD PLAYER</h2>
+        </div>
+        <div style={{background:"#1e293b",borderRadius:16,padding:22,border:"1px solid #334155"}}>
+          <div style={{marginBottom:14}}>
+            <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>PLAYER NAME</label>
+            <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}
+              placeholder="e.g. Rohit Sharma" autoFocus
+              style={{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:10,padding:"12px 14px",color:"#f1f5f9",fontSize:15,outline:"none",boxSizing:"border-box",fontFamily:"Georgia,serif"}}
+              onKeyDown={e=>{if(e.key==="Enter")savePlayer();}}/>
+          </div>
+          <div style={{marginBottom:20}}>
+            <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:8}}>ROLE</label>
+            <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+              {ROLES.map(r=>(
+                <button key={r} onClick={()=>setForm(f=>({...f,role:r}))}
+                  style={{padding:"8px 14px",borderRadius:10,border:form.role===r?"1px solid #fbbf24":"1px solid #334155",background:form.role===r?"rgba(251,191,36,.12)":"transparent",color:form.role===r?"#fbbf24":"#94a3b8",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                  {r}
+                </button>
+              ))}
+            </div>
+          </div>
+          {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:12,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8}}>{err}</div>}
+          <button onClick={savePlayer} disabled={saving}
+            style={{width:"100%",padding:"13px 0",background:"linear-gradient(135deg,#fbbf24,#d97706)",borderRadius:12,border:"none",color:"#0f172a",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            {saving ? "Saving…" : "Register Player"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  if (view === "detail" && sel) return (
+    <div style={S.page}>
+      <div style={{...S.wrap, padding:"0 16px"}}>
+        <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={()=>setView("list")} style={S.btnSm}>← Back</button>
+          <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>PLAYER PROFILE</h2>
+        </div>
+        <div style={{background:"#1e293b",borderRadius:16,padding:22,border:"1px solid #334155",textAlign:"center",marginBottom:14}}>
+          <div style={{width:64,height:64,borderRadius:"50%",background:"linear-gradient(135deg,#fbbf24,#d97706)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,fontWeight:"bold",color:"#0f172a",margin:"0 auto 12px"}}>
+            {sel.name[0].toUpperCase()}
+          </div>
+          <div style={{color:"#f1f5f9",fontSize:20,fontWeight:"bold"}}>{sel.name}</div>
+          <div style={{color:"#64748b",fontSize:12,marginTop:4}}>{sel.role}</div>
+        </div>
+        <PlayerStatsCard p={sel} />
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={S.page}>
+      <div style={{...S.wrap, padding:"0 16px"}}>
+        <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <button onClick={onBack} style={S.btnSm}>← Back</button>
+            <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>🏏 PLAYERS</h2>
+          </div>
+          <button onClick={()=>setView("add")}
+            style={{padding:"7px 14px",background:"linear-gradient(135deg,#fbbf24,#d97706)",border:"none",borderRadius:10,color:"#0f172a",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            + Add
+          </button>
+        </div>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search players…"
+          style={{width:"100%",background:"#1e293b",border:"1px solid #334155",borderRadius:10,padding:"10px 14px",color:"#f1f5f9",fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:"Georgia,serif",marginBottom:14}}/>
+        {loading && <div style={{color:"#475569",textAlign:"center",padding:40}}>Loading…</div>}
+        {!loading && filtered.length===0 && (
+          <div style={{color:"#475569",textAlign:"center",padding:40,lineHeight:1.8}}>
+            No players registered yet.<br/><span style={{fontSize:12}}>Tap + Add to register a player.</span>
+          </div>
+        )}
+        {filtered.map(p=>(
+          <PlayerStatsCard key={p.id} p={p} onClick={()=>{setSel(p);setView("detail");}}/>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── TeamsScreen — create/manage teams ────────────────────────
+function TeamsScreen({ currentUser, onBack }) {
+  const [teams,   setTeams]   = React.useState([]);
+  const [players, setPlayers] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [view,    setView]    = React.useState("list"); // list | create | detail
+  const [sel,     setSel]     = React.useState(null);
+  const [form,    setForm]    = React.useState({ name:"", playerIds:[] });
+  const [saving,  setSaving]  = React.useState(false);
+  const [err,     setErr]     = React.useState("");
+  const [search,  setSearch]  = React.useState("");
+
+  React.useEffect(() => {
+    if (!_fbDB) return;
+    setLoading(true);
+    Promise.all([
+      _fbDB.ref("teams").once("value"),
+      _fbDB.ref("players").once("value"),
+    ]).then(([tSnap, pSnap]) => {
+      var tVal = tSnap.val() || {};
+      var pVal = pSnap.val() || {};
+      setTeams(Object.values(tVal).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+      setPlayers(Object.values(pVal).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+      setLoading(false);
+    }).catch(()=>setLoading(false));
+  }, []);
+
+  function togglePlayer(id) {
+    setForm(f => ({
+      ...f,
+      playerIds: f.playerIds.includes(id) ? f.playerIds.filter(x=>x!==id) : [...f.playerIds, id]
+    }));
+  }
+
+  function saveTeam() {
+    if (!form.name.trim()) return setErr("Team name is required");
+    if (form.playerIds.length < 2) return setErr("Add at least 2 players to the team");
+    setSaving(true); setErr("");
+    var id = "T_" + Date.now() + "_" + Math.random().toString(36).slice(2,6);
+    var t = {
+      id, name: form.name.trim(),
+      playerIds: form.playerIds,
+      createdBy: currentUser ? currentUser.uid : null,
+      createdAt: Date.now(),
+    };
+    _fbDB.ref("teams/"+id).set(t).then(() => {
+      setTeams(ts => [...ts, t].sort((a,b)=>a.name.localeCompare(b.name)));
+      setForm({ name:"", playerIds:[] });
+      setView("list");
+      setSaving(false);
+    }).catch(e => { setErr(e.message); setSaving(false); });
+  }
+
+  var inputSt = {width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:10,padding:"12px 14px",color:"#f1f5f9",fontSize:15,outline:"none",boxSizing:"border-box",fontFamily:"Georgia,serif"};
+
+  if (view === "create") return (
+    <div style={S.page}>
+      <div style={{...S.wrap, padding:"0 16px"}}>
+        <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",gap:12}}>
+          <button onClick={()=>{setView("list");setErr("");}} style={S.btnSm}>← Back</button>
+          <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>CREATE TEAM</h2>
+        </div>
+        <div style={{background:"#1e293b",borderRadius:16,padding:22,border:"1px solid #334155",marginBottom:14}}>
+          <div style={{marginBottom:18}}>
+            <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>TEAM NAME</label>
+            <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Mumbai Warriors" style={inputSt}/>
+          </div>
+          <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:10}}>SELECT PLAYERS ({form.playerIds.length} selected)</label>
+          {players.length===0 && <div style={{color:"#475569",fontSize:13,marginBottom:14}}>No players registered yet — add players first.</div>}
+          <div style={{maxHeight:"40vh",overflowY:"auto",display:"flex",flexDirection:"column",gap:6}}>
+            {players.map(p=>{
+              var sel2 = form.playerIds.includes(p.id);
+              return (
+                <div key={p.id} onClick={()=>togglePlayer(p.id)}
+                  style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:10,border:sel2?"1px solid #fbbf24":"1px solid #334155",background:sel2?"rgba(251,191,36,.08)":"#0f172a",cursor:"pointer"}}>
+                  <div style={{width:20,height:20,borderRadius:5,border:sel2?"2px solid #fbbf24":"1px solid #475569",background:sel2?"#fbbf24":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    {sel2&&<span style={{color:"#0f172a",fontSize:13,fontWeight:"bold"}}>✓</span>}
+                  </div>
+                  <div>
+                    <div style={{color:sel2?"#fbbf24":"#e2e8f0",fontSize:14}}>{p.name}</div>
+                    <div style={{color:"#475569",fontSize:11}}>{p.role}</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:12,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8}}>{err}</div>}
+        <button onClick={saveTeam} disabled={saving}
+          style={{width:"100%",padding:"13px 0",background:"linear-gradient(135deg,#fbbf24,#d97706)",borderRadius:12,border:"none",color:"#0f172a",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+          {saving?"Saving…":"Save Team"}
+        </button>
+      </div>
+    </div>
+  );
+
+  if (view==="detail" && sel) {
+    var teamPlayers = players.filter(p=>sel.playerIds&&sel.playerIds.includes(p.id));
+    return (
+      <div style={S.page}>
+        <div style={{...S.wrap, padding:"0 16px"}}>
+          <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",gap:12}}>
+            <button onClick={()=>setView("list")} style={S.btnSm}>← Back</button>
+            <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>{sel.name.toUpperCase()}</h2>
+          </div>
+          <div style={{color:"#64748b",fontSize:12,marginBottom:14}}>{teamPlayers.length} players</div>
+          {teamPlayers.map(p=><PlayerStatsCard key={p.id} p={p}/>)}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={S.page}>
+      <div style={{...S.wrap, padding:"0 16px"}}>
+        <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <button onClick={onBack} style={S.btnSm}>← Back</button>
+            <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>👥 TEAMS</h2>
+          </div>
+          <button onClick={()=>setView("create")}
+            style={{padding:"7px 14px",background:"linear-gradient(135deg,#fbbf24,#d97706)",border:"none",borderRadius:10,color:"#0f172a",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            + Create
+          </button>
+        </div>
+        {loading && <div style={{color:"#475569",textAlign:"center",padding:40}}>Loading…</div>}
+        {!loading && teams.length===0 && (
+          <div style={{color:"#475569",textAlign:"center",padding:40,lineHeight:1.8}}>
+            No teams yet.<br/><span style={{fontSize:12}}>Create a team to save your squad.</span>
+          </div>
+        )}
+        {teams.map(t=>(
+          <div key={t.id} onClick={()=>{setSel(t);setView("detail");}}
+            style={{background:"#1e293b",borderRadius:14,padding:"14px 16px",marginBottom:10,border:"1px solid #334155",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{color:"#f1f5f9",fontSize:15,fontWeight:"bold"}}>{t.name}</div>
+              <div style={{color:"#64748b",fontSize:12,marginTop:3}}>{(t.playerIds||[]).length} players</div>
+            </div>
+            <span style={{color:"#475569",fontSize:18}}>›</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── TeamPickerModal — pick a saved team + select playing XI ──
+function TeamPickerModal({ slot, onConfirm, onCancel }) {
+  // slot: "A" | "B"
+  const [teams,   setTeams]   = React.useState([]);
+  const [players, setPlayers] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [step,    setStep]    = React.useState("pick"); // pick | squad | name
+  const [selTeam, setSelTeam] = React.useState(null);
+  const [selIds,  setSelIds]  = React.useState([]);
+  const [teamName, setTeamName] = React.useState("");
+  const [err, setErr] = React.useState("");
+
+  React.useEffect(() => {
+    if (!_fbDB) { setLoading(false); return; }
+    Promise.all([
+      _fbDB.ref("teams").once("value"),
+      _fbDB.ref("players").once("value"),
+    ]).then(([tSnap, pSnap]) => {
+      var tVal = tSnap.val() || {};
+      var pVal = pSnap.val() || {};
+      setTeams(Object.values(tVal).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+      setPlayers(Object.values(pVal).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+      setLoading(false);
+    }).catch(()=>setLoading(false));
+  }, []);
+
+  function pickTeam(t) {
+    setSelTeam(t);
+    setSelIds([...(t.playerIds||[])]);
+    setTeamName(t.name);
+    setStep("squad");
+  }
+
+  function toggleSel(id) {
+    setSelIds(ids => ids.includes(id) ? ids.filter(x=>x!==id) : [...ids, id]);
+  }
+
+  function confirm() {
+    if (selIds.length < 2) return setErr("Select at least 2 players");
+    var squadPlayers = players.filter(p=>selIds.includes(p.id));
+    // Return: teamName, list of {id, name} for batters AND bowlers
+    onConfirm({
+      teamName: teamName||selTeam?.name||"Team",
+      players: squadPlayers.map(p=>({id:p.id, name:p.name, role:p.role})),
+    });
+  }
+
+  var squadPool = selTeam ? players.filter(p=>(selTeam.playerIds||[]).includes(p.id)) : [];
+  var ov = { position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:2000,display:"flex",alignItems:"flex-end",justifyContent:"center" };
+  var box = { background:"#1e293b",borderRadius:"20px 20px 0 0",padding:"22px 20px 36px",width:"100%",maxWidth:480,maxHeight:"85vh",overflowY:"auto" };
+
+  if (loading) return <div style={ov}><div style={box}><div style={{color:"#475569",textAlign:"center",padding:30}}>Loading…</div></div></div>;
+
+  if (step==="pick") return (
+    <div style={ov}>
+      <div style={box}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:18}}>
+          <div style={{color:"#fbbf24",fontSize:15,fontWeight:"bold"}}>Pick Team {slot}</div>
+          <button onClick={onCancel} style={{...S.btnSm}}>✕ Cancel</button>
+        </div>
+        {teams.length===0 && <div style={{color:"#475569",fontSize:13,textAlign:"center",padding:20}}>No saved teams — enter names manually in the setup wizard.</div>}
+        {teams.map(t=>(
+          <div key={t.id} onClick={()=>pickTeam(t)}
+            style={{background:"#0f172a",borderRadius:12,padding:"12px 14px",marginBottom:8,border:"1px solid #334155",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{color:"#e2e8f0",fontSize:14,fontWeight:"bold"}}>{t.name}</div>
+              <div style={{color:"#475569",fontSize:12}}>{(t.playerIds||[]).length} players in squad</div>
+            </div>
+            <span style={{color:"#fbbf24",fontSize:18}}>›</span>
+          </div>
+        ))}
+        <button onClick={onCancel} style={{width:"100%",marginTop:12,padding:"11px 0",background:"transparent",border:"1px solid #334155",borderRadius:10,color:"#64748b",fontFamily:"Georgia,serif",fontSize:13,cursor:"pointer"}}>
+          Enter names manually instead
+        </button>
+      </div>
+    </div>
+  );
+
+  if (step==="squad") return (
+    <div style={ov}>
+      <div style={box}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+          <div style={{color:"#fbbf24",fontSize:15,fontWeight:"bold"}}>Select Playing XI</div>
+          <button onClick={()=>setStep("pick")} style={S.btnSm}>← Back</button>
+        </div>
+        <div style={{color:"#64748b",fontSize:12,marginBottom:14}}>Tap players to include/exclude · {selIds.length} selected</div>
+        <div style={{marginBottom:14}}>
+          <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>TEAM NAME</label>
+          <input value={teamName} onChange={e=>setTeamName(e.target.value)}
+            style={{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:10,padding:"10px 12px",color:"#f1f5f9",fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:"Georgia,serif"}}/>
+        </div>
+        {squadPool.map(p=>{
+          var on = selIds.includes(p.id);
+          return (
+            <div key={p.id} onClick={()=>toggleSel(p.id)}
+              style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:10,marginBottom:6,border:on?"1px solid #fbbf24":"1px solid #334155",background:on?"rgba(251,191,36,.08)":"#0f172a",cursor:"pointer"}}>
+              <div style={{width:22,height:22,borderRadius:6,border:on?"2px solid #fbbf24":"1px solid #475569",background:on?"#fbbf24":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                {on&&<span style={{color:"#0f172a",fontSize:13,fontWeight:"bold"}}>✓</span>}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{color:on?"#fbbf24":"#e2e8f0",fontSize:14}}>{p.name}</div>
+                <div style={{color:"#475569",fontSize:11}}>{p.role}</div>
+              </div>
+            </div>
+          );
+        })}
+        {err&&<div style={{color:"#f87171",fontSize:12,margin:"8px 0",padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8}}>{err}</div>}
+        <button onClick={confirm}
+          style={{width:"100%",marginTop:14,padding:"13px 0",background:"linear-gradient(135deg,#fbbf24,#d97706)",borderRadius:12,border:"none",color:"#0f172a",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+          Confirm Team ({selIds.length})
+        </button>
+      </div>
+    </div>
+  );
+
+  return null;
+}
+
+ReactDOM.createRoot(document.getElementById("app")).render(
+  React.createElement(AuthGate, null, React.createElement(App))
+);
