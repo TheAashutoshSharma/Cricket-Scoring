@@ -230,10 +230,13 @@ const S = {
 
 // ════════════════════════════════════════════════════════════════
 // ── AdminPanel — live index management + history clear ────────────
-function AdminPanel({matchHistory, setMatchHistory, onDone}) {
-  const [liveEntries, setLiveEntries] = React.useState(null); // null=not loaded
-  const [loading, setLoading] = React.useState(false);
-  const [msg, setMsg] = React.useState("");
+function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
+  const [liveEntries,  setLiveEntries]  = React.useState(null);
+  const [userMatches,  setUserMatches]  = React.useState(null); // {uid: {name, email, matches:[]}}
+  const [loading,      setLoading]      = React.useState(false);
+  const [loadingUM,    setLoadingUM]    = React.useState(false);
+  const [msg,          setMsg]          = React.useState("");
+  const [expandedUser, setExpandedUser] = React.useState(null);
 
   function loadLiveIndex() {
     if (!_fbDB) { setMsg("Firebase not connected"); return; }
@@ -243,6 +246,49 @@ function AdminPanel({matchHistory, setMatchHistory, onDone}) {
       setLiveEntries(val ? Object.values(val) : []);
       setLoading(false);
     }, err => { setMsg("Error: "+err.message); setLoading(false); });
+  }
+
+  function loadUserMatches() {
+    if (!_fbDB) { setMsg("Firebase not connected"); return; }
+    setLoadingUM(true); setMsg("");
+    // Read userMatches/ and users/ in parallel
+    Promise.all([
+      _fbDB.ref("userMatches").once("value"),
+      _fbDB.ref("users").once("value"),
+    ]).then(([umSnap, usersSnap]) => {
+      var umVal    = umSnap.val()    || {};
+      var usersVal = usersSnap.val() || {};
+      // Build grouped structure: { uid: { name, email, matches:[] } }
+      var grouped = {};
+      Object.entries(umVal).forEach(([uid, matchMap]) => {
+        var userInfo = usersVal[uid] || {};
+        grouped[uid] = {
+          uid,
+          name:    userInfo.name  || "Unknown",
+          email:   userInfo.email || uid,
+          matches: Object.values(matchMap).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)),
+        };
+      });
+      setUserMatches(grouped);
+      setLoadingUM(false);
+    }).catch(err => { setMsg("Error: "+err.message); setLoadingUM(false); });
+  }
+
+  function deleteUserMatch(uid, code) {
+    if (!_fbDB) return;
+    Promise.all([
+      _fbDB.ref("userMatches/"+uid+"/"+code).remove(),
+      _fbDB.ref("liveIndex/"+code).remove(),
+      _fbDB.ref("matches/"+code).remove(),
+    ]).then(() => {
+      setUserMatches(prev => {
+        var next = {...prev};
+        next[uid] = {...next[uid], matches: next[uid].matches.filter(m=>m.code!==code)};
+        if (!next[uid].matches.length) delete next[uid];
+        return next;
+      });
+      setMsg("Match "+code+" deleted");
+    }).catch(err => setMsg("Error: "+err.message));
   }
 
   function deleteEntry(code) {
@@ -260,17 +306,76 @@ function AdminPanel({matchHistory, setMatchHistory, onDone}) {
   }
 
   function fmtAge(ts) {
-    if (!ts) return "unknown age";
+    if (!ts) return "—";
     var mins = Math.round((Date.now()-ts)/60000);
     if (mins < 60) return mins+"m ago";
-    return Math.round(mins/60)+"h ago";
+    if (mins < 1440) return Math.round(mins/60)+"h ago";
+    return Math.round(mins/1440)+"d ago";
+  }
+
+  function fmtScore(m) {
+    var bt = m.batting||0;
+    if (!m.runs) return "—";
+    return m.runs[0]+"/"+m.wickets[0]+" vs "+m.runs[1]+"/"+m.wickets[1];
   }
 
   return (
     <div style={{paddingBottom:24}}>
-      <div style={{color:"#4ade80",fontSize:13,marginBottom:20,textAlign:"center"}}>✓ Authenticated</div>
+      <div style={{color:"#4ade80",fontSize:13,marginBottom:20,textAlign:"center"}}>
+        ✓ Admin — {currentUser ? (currentUser.displayName||currentUser.email) : ""}
+      </div>
 
-      {/* Local match history */}
+      {/* ── Matches by User ── */}
+      <div style={{background:"#1e293b",borderRadius:14,padding:18,border:"1px solid #334155",marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div style={{color:"#94a3b8",fontSize:13}}>👤 Matches by User</div>
+          <button onClick={loadUserMatches} disabled={loadingUM}
+            style={{padding:"5px 12px",background:"transparent",border:"1px solid #334155",borderRadius:8,color:"#94a3b8",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            {loadingUM?"…":userMatches===null?"Load":"Refresh"}
+          </button>
+        </div>
+        {userMatches===null&&!loadingUM&&(
+          <div style={{color:"#475569",fontSize:12,textAlign:"center",padding:"8px 0"}}>Tap Load to fetch all users' matches</div>
+        )}
+        {userMatches!==null&&Object.keys(userMatches).length===0&&(
+          <div style={{color:"#475569",fontSize:12,textAlign:"center",padding:"8px 0"}}>No matches found</div>
+        )}
+        {userMatches!==null&&Object.values(userMatches).map(u=>(
+          <div key={u.uid} style={{marginBottom:8,border:"1px solid #334155",borderRadius:10,overflow:"hidden"}}>
+            {/* User header */}
+            <div onClick={()=>setExpandedUser(expandedUser===u.uid?null:u.uid)}
+              style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",background:"#0f172a",cursor:"pointer"}}>
+              <div>
+                <div style={{color:"#e2e8f0",fontSize:13,fontWeight:"bold"}}>{u.name}</div>
+                <div style={{color:"#475569",fontSize:11}}>{u.email} · {u.matches.length} match{u.matches.length!==1?"es":""}</div>
+              </div>
+              <div style={{color:"#475569",fontSize:14}}>{expandedUser===u.uid?"▲":"▼"}</div>
+            </div>
+            {/* Match list for this user */}
+            {expandedUser===u.uid&&(
+              <div style={{padding:"8px 12px",display:"flex",flexDirection:"column",gap:6}}>
+                {u.matches.map(m=>(
+                  <div key={m.code} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#1e293b",borderRadius:8,padding:"8px 10px",border:"1px solid #334155"}}>
+                    <div>
+                      <div style={{color:"#e2e8f0",fontSize:12}}>{m.teamA} vs {m.teamB}</div>
+                      <div style={{color:"#475569",fontSize:10}}>
+                        {m.code} · {fmtAge(m.updatedAt||m.createdAt)} · {m.complete?"✓ Complete":"🔴 Live"}
+                      </div>
+                      <div style={{color:"#64748b",fontSize:10}}>{fmtScore(m)}</div>
+                    </div>
+                    <button onClick={()=>{ if(confirm("Delete match "+m.code+"?")) deleteUserMatch(u.uid, m.code); }}
+                      style={{padding:"5px 10px",background:"rgba(127,29,29,.2)",border:"1px solid #7f1d1d",borderRadius:8,color:"#fca5a5",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Local match history ── */}
       <div style={{background:"#1e293b",borderRadius:14,padding:18,border:"1px solid #334155",marginBottom:12}}>
         <div style={{color:"#94a3b8",fontSize:13,marginBottom:12}}>
           Local Match History: <b style={{color:"#e2e8f0"}}>{matchHistory.length} matches</b>
@@ -287,7 +392,7 @@ function AdminPanel({matchHistory, setMatchHistory, onDone}) {
         </button>
       </div>
 
-      {/* Firebase live index */}
+      {/* ── Firebase live index ── */}
       <div style={{background:"#1e293b",borderRadius:14,padding:18,border:"1px solid #334155",marginBottom:12}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
           <div style={{color:"#94a3b8",fontSize:13}}>🔴 Live Index (Firebase)</div>
@@ -309,6 +414,7 @@ function AdminPanel({matchHistory, setMatchHistory, onDone}) {
                 <div>
                   <div style={{color:"#e2e8f0",fontSize:13}}>{e.teamA} vs {e.teamB}</div>
                   <div style={{color:"#475569",fontSize:11}}>{e.code} · {fmtAge(e.updatedAt||e.createdAt)}</div>
+                  {e.createdBy&&<div style={{color:"#475569",fontSize:10}}>by {e.createdBy.name||e.createdBy.email}</div>}
                 </div>
                 <button onClick={()=>deleteEntry(e.code)}
                   style={{padding:"6px 12px",background:"rgba(127,29,29,.2)",border:"1px solid #7f1d1d",borderRadius:8,color:"#fca5a5",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
@@ -383,12 +489,34 @@ function AuthGate({children}) {
     initFB();
     if (!_fbAuth) { setStatus("guest"); return; }
     var unsub = _fbAuth.onAuthStateChanged(u => {
-      if (u) { setAuthUser(u); setStatus("authed"); }
-      else   { setAuthUser(null); setStatus("guest"); }
+      if (u) {
+        setAuthUser(u); setStatus("authed");
+      } else {
+        // Force-clear any stale match/history data left by old unregistered usage
+        try {
+          localStorage.removeItem(LOCAL_KEY);
+          localStorage.removeItem(HIST_KEY);
+        } catch(e) {}
+        setAuthUser(null); setStatus("guest");
+      }
     });
     var t = setTimeout(() => setStatus(s => s === "loading" ? "guest" : s), 5000);
     return () => { unsub(); clearTimeout(t); };
   }, []);
+
+  async function handleGoogle() {
+    clearForm(); setBusy(true);
+    try {
+      var provider = new firebase.auth.GoogleAuthProvider();
+      var cred = await _fbAuth.signInWithPopup(provider);
+      // Store/update user record in DB
+      var u = cred.user;
+      await _fbDB.ref("users/"+u.uid).set({ name: u.displayName||"", email: u.email||"", createdAt: Date.now() });
+    } catch(e) {
+      if (e.code !== "auth/popup-closed-by-user") setErr(friendlyError(e.code));
+    }
+    setBusy(false);
+  }
 
   function clearForm() { setErr(""); setInfo(""); }
 
@@ -533,6 +661,16 @@ function AuthGate({children}) {
               </div>
               {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:12,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8}}>{err}</div>}
               <button onClick={handleRegister} disabled={busy} style={btnPrimary}>{busy?"Creating account…":"Create Account"}</button>
+              <div style={{display:"flex",alignItems:"center",gap:10,margin:"18px 0 14px"}}>
+                <div style={{flex:1,height:1,background:"#334155"}}/>
+                <span style={{color:"#475569",fontSize:12}}>or</span>
+                <div style={{flex:1,height:1,background:"#334155"}}/>
+              </div>
+              <button onClick={handleGoogle} disabled={busy}
+                style={{width:"100%",padding:"13px 0",background:"#fff",borderRadius:12,border:"none",color:"#1a1a1a",fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+                <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.7 33.9 29.8 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"/><path fill="#34A853" d="M6.3 14.7l7 5.1C15 16.1 19.2 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 16.3 2 9.6 7.3 6.3 14.7z"/><path fill="#FBBC05" d="M24 46c5.5 0 10.5-1.9 14.3-5l-6.6-5.4C29.8 37 27 38 24 38c-5.7 0-10.6-3.1-13.1-7.6l-7 5.4C7.6 42.3 15.3 46 24 46z"/><path fill="#EA4335" d="M44.5 20H24v8.5h11.8c-.8 2.3-2.3 4.3-4.3 5.7l6.6 5.4c3.8-3.5 6.4-8.7 6.4-15.6 0-1.3-.2-2.7-.5-4z"/></svg>
+                Continue with Google
+              </button>
             </div>
           ) : (
             <div>
@@ -554,6 +692,16 @@ function AuthGate({children}) {
               </div>
               {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:12,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8}}>{err}</div>}
               <button onClick={handleLogin} disabled={busy} style={btnPrimary}>{busy?"Signing in…":"Sign In"}</button>
+              <div style={{display:"flex",alignItems:"center",gap:10,margin:"18px 0 14px"}}>
+                <div style={{flex:1,height:1,background:"#334155"}}/>
+                <span style={{color:"#475569",fontSize:12}}>or</span>
+                <div style={{flex:1,height:1,background:"#334155"}}/>
+              </div>
+              <button onClick={handleGoogle} disabled={busy}
+                style={{width:"100%",padding:"13px 0",background:"#fff",borderRadius:12,border:"none",color:"#1a1a1a",fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif",display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+                <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.7 33.9 29.8 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 11.8 2 2 11.8 2 24s9.8 22 22 22c11 0 21-8 21-22 0-1.3-.2-2.7-.5-4z"/><path fill="#34A853" d="M6.3 14.7l7 5.1C15 16.1 19.2 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 4.1 29.6 2 24 2 16.3 2 9.6 7.3 6.3 14.7z"/><path fill="#FBBC05" d="M24 46c5.5 0 10.5-1.9 14.3-5l-6.6-5.4C29.8 37 27 38 24 38c-5.7 0-10.6-3.1-13.1-7.6l-7 5.4C7.6 42.3 15.3 46 24 46z"/><path fill="#EA4335" d="M44.5 20H24v8.5h11.8c-.8 2.3-2.3 4.3-4.3 5.7l6.6 5.4c3.8-3.5 6.4-8.7 6.4-15.6 0-1.3-.2-2.7-.5-4z"/></svg>
+                Continue with Google
+              </button>
             </div>
           )}
         </div>
@@ -649,25 +797,30 @@ function App({ currentUser }) {
       .catch(()=>setSyncing(false));
     // Write/update live index entry (small summary for listing)
     var bothOver = match.inningsOver && match.inningsOver[0] && match.inningsOver[1];
+    var bt = match.batting||0;
+    var summary = {
+      code,
+      teamA: match.teamA.name,
+      teamB: match.teamB.name,
+      runs:  match.runs,
+      wickets: match.wickets,
+      overs: match.overs,
+      balls: match.balls,
+      batting: bt,
+      totalOvers: match.totalOvers,
+      inningsOver: match.inningsOver,
+      createdAt: match.createdAt,
+      updatedAt: Date.now(),
+      createdBy: match.createdBy || null,
+    };
     if (bothOver) {
-      // Remove from live index when match is complete
       _fbDB.ref("liveIndex/"+code).remove();
     } else {
-      var bt = match.batting||0;
-      _fbDB.ref("liveIndex/"+code).set({
-        code,
-        teamA: match.teamA.name,
-        teamB: match.teamB.name,
-        runs:  match.runs,
-        wickets: match.wickets,
-        overs: match.overs,
-        balls: match.balls,
-        batting: bt,
-        totalOvers: match.totalOvers,
-        inningsOver: match.inningsOver,
-        createdAt: match.createdAt,
-        updatedAt: Date.now(),
-      });
+      _fbDB.ref("liveIndex/"+code).set(summary);
+    }
+    // Always keep userMatches in sync (including completed matches)
+    if (currentUser) {
+      _fbDB.ref("userMatches/"+currentUser.uid+"/"+code).set({...summary, complete: !!bothOver});
     }
   }, [match]);
 
@@ -697,13 +850,17 @@ function App({ currentUser }) {
   function startMatch() {
     var code = fbReady ? genCode() : "LOCAL";
     var m = blankMatch(setup, code);
+    // Tag match with creator info
+    if (currentUser) {
+      m.createdBy = { uid: currentUser.uid, name: currentUser.displayName||"", email: currentUser.email||"" };
+    }
     setMatch(m);
     setHistory([]);
     setIsViewer(false);
     setScreen("match");
     // Immediately register in liveIndex so it appears in viewer list
     if (fbReady && code !== "LOCAL" && _fbDB) {
-      _fbDB.ref("liveIndex/"+code).set({
+      var entry = {
         code,
         teamA: m.teamA.name,
         teamB: m.teamB.name,
@@ -716,7 +873,11 @@ function App({ currentUser }) {
         inningsOver: m.inningsOver,
         createdAt: m.createdAt,
         updatedAt: Date.now(),
-      });
+        createdBy: m.createdBy || null,
+      };
+      _fbDB.ref("liveIndex/"+code).set(entry);
+      // Also write to user-scoped path
+      if (currentUser) _fbDB.ref("userMatches/"+currentUser.uid+"/"+code).set(entry);
     }
   }
 
@@ -1020,60 +1181,62 @@ function App({ currentUser }) {
           </button>
         )}
 
-        {/* Watch Live */}
-        <div style={{background:"#1e293b",borderRadius:20,padding:24,border:"1px solid #334155",boxShadow:"0 20px 60px rgba(0,0,0,.5)"}}>
+
+        {/* Watch Live — visible to all logged-in users */}
+        <div style={{background:"#1e293b",borderRadius:20,padding:24,border:"1px solid #334155",boxShadow:"0 20px 60px rgba(0,0,0,.5)",marginBottom:14}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-            <div style={{color:"#64748b",fontSize:11,letterSpacing:2}}>WATCH LIVE</div>
-            {liveMatches!==null&&(
-              <button onClick={fetchLiveMatches} disabled={loadingLive}
-                style={{padding:"5px 12px",background:"transparent",border:"1px solid #334155",borderRadius:8,color:"#94a3b8",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-                {loadingLive?"…":"🔄 Refresh"}
-              </button>
-            )}
-          </div>
-          {liveMatches===null&&(
+            <div>
+              <div style={{color:"#64748b",fontSize:11,letterSpacing:2,marginBottom:2}}>WATCH LIVE</div>
+              <div style={{color:"#94a3b8",fontSize:12}}>Join a match in progress</div>
+            </div>
             <button onClick={fetchLiveMatches} disabled={loadingLive}
-              style={{width:"100%",padding:"13px 0",background:"linear-gradient(135deg,#1d4ed8,#1e40af)",borderRadius:12,border:"none",color:"#fff",fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-              {loadingLive?"🔍 Searching…":"📡 Show Live Matches"}
+              style={{padding:"8px 16px",background:"rgba(251,191,36,.12)",border:"1px solid rgba(251,191,36,.3)",borderRadius:10,color:"#fbbf24",fontSize:13,cursor:loadingLive?"not-allowed":"pointer",fontFamily:"Georgia,serif",fontWeight:"bold"}}>
+              {loadingLive ? "Loading…" : liveMatches===null ? "🔍 Find Matches" : "↻ Refresh"}
             </button>
+          </div>
+
+          {liveError && (
+            <div style={{color:"#f87171",fontSize:12,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8,marginBottom:10,whiteSpace:"pre-wrap"}}>{liveError}</div>
           )}
-          {liveError&&(
-            <div style={{background:"rgba(239,68,68,.1)",border:"1px solid #7f1d1d",borderRadius:10,padding:"10px 14px",marginTop:8}}>
-              <div style={{color:"#fca5a5",fontSize:12,marginBottom:6}}>{liveError}</div>
-              <div style={{color:"#64748b",fontSize:11}}>Check your Firebase rules allow reading <code style={{color:"#94a3b8"}}>liveIndex</code>:</div>
-              <pre style={{color:"#4ade80",fontSize:10,marginTop:6,overflowX:"auto"}}>{"liveIndex: { \".read\": true, \".write\": true }"}</pre>
-            </div>
-          )}
-          {liveMatches!==null&&liveMatches.length===0&&!loadingLive&&(
-            <div style={{textAlign:"center",color:"#475569",fontSize:13,padding:"14px 0"}}>No live matches right now</div>
-          )}
-          {loadingLive&&liveMatches!==null&&(
-            <div style={{textAlign:"center",color:"#475569",fontSize:13,padding:"10px 0"}}>Refreshing…</div>
-          )}
-          {liveMatches!==null&&liveMatches.length>0&&(
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {liveMatches.map(m=>{
-                var bt=m.batting||0;
-                var bName=bt===0?m.teamA:m.teamB;
-                var r=(m.runs&&m.runs[bt])||0, w=(m.wickets&&m.wickets[bt])||0;
-                var ov=(m.overs&&m.overs[bt])||0, bl=(m.balls&&m.balls[bt])||0;
-                var inn1Done=m.inningsOver&&m.inningsOver[0];
-                return (
-                  <button key={m.code} onClick={()=>joinByCode(m.code)}
-                    style={{width:"100%",background:"#0f172a",border:"1px solid #1d4ed8",borderRadius:12,padding:"12px 14px",cursor:"pointer",textAlign:"left",fontFamily:"Georgia,serif"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                      <span style={{color:"#ef4444",fontSize:11,fontWeight:"bold"}}>● LIVE</span>
-                      <span style={{color:"#475569",fontSize:11}}>{m.totalOvers} overs</span>
+
+          {liveMatches !== null && (
+            liveMatches.length === 0
+              ? <div style={{color:"#475569",fontSize:13,textAlign:"center",padding:"12px 0"}}>No live matches right now</div>
+              : liveMatches.map(m => (
+                <div key={m.code} onClick={()=>joinByCode(m.code)}
+                  style={{background:"#0f172a",borderRadius:12,padding:"12px 14px",marginBottom:8,border:"1px solid #334155",cursor:"pointer"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                    <span style={{color:"#4ade80",fontSize:10,letterSpacing:1}}>● LIVE</span>
+                    <span style={{color:"#475569",fontSize:11}}>{m.totalOvers} overs</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <div style={{color:m.batting===0?"#fbbf24":"#94a3b8",fontSize:14,fontWeight:"bold"}}>{m.teamA}</div>
+                      <div style={{color:"#f1f5f9",fontSize:15,fontWeight:"bold"}}>{m.runs&&m.runs[0]!==undefined?m.runs[0]:0}/{m.wickets&&m.wickets[0]!==undefined?m.wickets[0]:0}</div>
                     </div>
-                    <div style={{color:"#94a3b8",fontSize:12,marginBottom:6}}>{m.teamA} vs {m.teamB}</div>
-                    {inn1Done&&<div style={{color:"#64748b",fontSize:11,marginBottom:2}}>{m.teamA}: {(m.runs&&m.runs[0])||0}/{(m.wickets&&m.wickets[0])||0}</div>}
-                    <div style={{color:"#fbbf24",fontWeight:"bold",fontSize:16}}>{bName}: {r}/{w} <span style={{color:"#475569",fontSize:12,fontWeight:"normal"}}>({ov}.{bl} ov)</span></div>
-                  </button>
-                );
-              })}
-            </div>
+                    <div style={{color:"#475569",fontSize:12}}>vs</div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{color:m.batting===1?"#fbbf24":"#94a3b8",fontSize:14,fontWeight:"bold"}}>{m.teamB}</div>
+                      <div style={{color:"#f1f5f9",fontSize:15,fontWeight:"bold"}}>{m.runs&&m.runs[1]!==undefined?m.runs[1]:0}/{m.wickets&&m.wickets[1]!==undefined?m.wickets[1]:0}</div>
+                    </div>
+                  </div>
+                </div>
+              ))
           )}
+
+          {/* Join by code */}
+          <div style={{marginTop:liveMatches!==null?10:0,display:"flex",gap:8}}>
+            <input id="join-code-input" placeholder="Have a match code? Enter it"
+              style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:10,padding:"10px 12px",color:"#f1f5f9",fontSize:14,outline:"none",fontFamily:"Georgia,serif",textTransform:"uppercase",letterSpacing:2}}
+              onKeyDown={e=>{if(e.key==="Enter"){var v=e.target.value.trim().toUpperCase();if(v.length>=4)joinByCode(v);}}}
+            />
+            <button onClick={()=>{var el=document.getElementById("join-code-input");if(el&&el.value.trim().length>=4)joinByCode(el.value.trim().toUpperCase());}}
+              style={{padding:"10px 16px",background:"#1e3a5f",border:"1px solid #1d4ed8",borderRadius:10,color:"#60a5fa",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+              Join
+            </button>
+          </div>
         </div>
+
         <div style={{textAlign:"center",marginTop:18}}>
           <button onClick={()=>setScreen("admin")}
             style={{background:"none",border:"none",color:"#1e293b",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}>
@@ -1130,7 +1293,7 @@ function App({ currentUser }) {
               </div>
             </div>
           ))}
-          {matchHistory.length > 0 && (
+          {matchHistory.length > 0 && currentUser && currentUser.email === "admin@cricket.com" && (
             <button onClick={()=>setScreen("admin")}
               style={{width:"100%",marginTop:4,marginBottom:20,padding:"10px 0",background:"transparent",border:"1px solid #475569",borderRadius:10,color:"#64748b",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
               🔒 Admin — Manage History
@@ -1241,7 +1404,7 @@ function App({ currentUser }) {
               {adminPin.length>0&&!pinOk&&<div style={{color:"#f87171",fontSize:12,marginTop:10}}>Incorrect PIN</div>}
             </div>
           ) : (
-            <AdminPanel matchHistory={matchHistory} setMatchHistory={setMatchHistory} onDone={()=>{setScreen("home");setAdminPin("");}}/>
+            <AdminPanel matchHistory={matchHistory} setMatchHistory={setMatchHistory} currentUser={currentUser} onDone={()=>{setScreen("home");setAdminPin("");}}/>
           )}
         </div>
       </div>
