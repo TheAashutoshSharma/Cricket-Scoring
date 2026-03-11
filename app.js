@@ -508,15 +508,41 @@ function AuthGate({children}) {
     clearForm(); setBusy(true);
     try {
       var provider = new firebase.auth.GoogleAuthProvider();
-      var cred = await _fbAuth.signInWithPopup(provider);
-      // Store/update user record in DB
-      var u = cred.user;
-      await _fbDB.ref("users/"+u.uid).set({ name: u.displayName||"", email: u.email||"", createdAt: Date.now() });
+      provider.addScope('email');
+      provider.addScope('profile');
+      // Try popup first; fall back to redirect on mobile/blocked
+      try {
+        var cred = await _fbAuth.signInWithPopup(provider);
+        var u = cred.user;
+        await _fbDB.ref("users/"+u.uid).set({ name: u.displayName||"", email: u.email||"", createdAt: Date.now() });
+      } catch(popupErr) {
+        if (popupErr.code === "auth/popup-blocked" || popupErr.code === "auth/popup-closed-by-user" || popupErr.code === "auth/cancelled-popup-request") {
+          // Fall back to redirect
+          await _fbAuth.signInWithRedirect(provider);
+          // Page will reload — result handled below
+          return;
+        }
+        throw popupErr;
+      }
     } catch(e) {
-      if (e.code !== "auth/popup-closed-by-user") setErr(friendlyError(e.code));
+      var msg = friendlyError(e.code) || e.message || "Google sign-in failed";
+      setErr(msg);
     }
     setBusy(false);
   }
+
+  // Handle redirect result on page load
+  useEffect(() => {
+    if (!_fbAuth) return;
+    _fbAuth.getRedirectResult().then(result => {
+      if (result && result.user) {
+        var u = result.user;
+        if (_fbDB) _fbDB.ref("users/"+u.uid).set({ name: u.displayName||"", email: u.email||"", createdAt: Date.now() });
+      }
+    }).catch(e => {
+      if (e.code !== "auth/no-auth-event") setErr(friendlyError(e.code));
+    });
+  }, []);
 
   function clearForm() { setErr(""); setInfo(""); }
 
@@ -573,6 +599,10 @@ function AuthGate({children}) {
       "auth/invalid-credential":      "Incorrect email or password",
       "auth/too-many-requests":       "Too many attempts — try again later",
       "auth/network-request-failed":  "Network error — check your connection",
+      "auth/popup-blocked":           "Popup was blocked — trying redirect instead…",
+      "auth/unauthorized-domain":     "This domain isn't authorised in Firebase Console → Authentication → Settings → Authorised domains",
+      "auth/operation-not-allowed":   "Google sign-in isn't enabled — go to Firebase Console → Authentication → Sign-in method → enable Google",
+      "auth/internal-error":          "Firebase internal error — check your internet connection and try again",
     };
     return map[code] || "Something went wrong. Please try again";
   }
