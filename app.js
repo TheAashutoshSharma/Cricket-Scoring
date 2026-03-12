@@ -621,25 +621,88 @@ function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onCho
   var winnerName = tossWinner === 0 ? teamAName : teamBName;
   var loserName  = tossWinner === 0 ? teamBName : teamAName;
 
+  // SVG of ₹10 coin — heads (Ashoka Lion Capital) and tails (₹10 numeral)
+  var CoinHeads = () => (
+    <svg viewBox="0 0 100 100" width="84" height="84">
+      {/* Coin body */}
+      <circle cx="50" cy="50" r="48" fill="url(#hg)" stroke="#b8860b" strokeWidth="2"/>
+      <circle cx="50" cy="50" r="43" fill="none" stroke="#d4a017" strokeWidth="1" strokeDasharray="4 3"/>
+      <defs>
+        <radialGradient id="hg" cx="38%" cy="35%">
+          <stop offset="0%" stopColor="#ffe066"/>
+          <stop offset="60%" stopColor="#d4a017"/>
+          <stop offset="100%" stopColor="#a07800"/>
+        </radialGradient>
+      </defs>
+      {/* Ashoka pillar — simplified */}
+      {/* Shaft */}
+      <rect x="46" y="42" width="8" height="22" rx="1" fill="#7a5500"/>
+      {/* Capital block */}
+      <rect x="40" y="36" width="20" height="7" rx="2" fill="#8a6200"/>
+      {/* Four lions suggestion — top circle */}
+      <circle cx="50" cy="32" r="7" fill="#9a7000"/>
+      <circle cx="50" cy="32" r="5" fill="#b38600"/>
+      {/* Abacus wheel (Dharma wheel hint) */}
+      <circle cx="50" cy="32" r="3" fill="#7a5500"/>
+      <circle cx="50" cy="32" r="1.5" fill="#ffd700"/>
+      {/* Base */}
+      <rect x="38" y="64" width="24" height="4" rx="2" fill="#7a5500"/>
+      <rect x="34" y="68" width="32" height="3" rx="1.5" fill="#8a6200"/>
+      {/* INDIA text */}
+      <text x="50" y="82" textAnchor="middle" fontSize="7" fontFamily="Georgia,serif" fill="#5a3e00" fontWeight="bold" letterSpacing="1">INDIA</text>
+      {/* Rim text */}
+      <text x="50" y="14" textAnchor="middle" fontSize="6" fontFamily="Georgia,serif" fill="#5a3e00">भारत</text>
+    </svg>
+  );
+
+  var CoinTails = () => (
+    <svg viewBox="0 0 100 100" width="84" height="84">
+      {/* Coin body */}
+      <circle cx="50" cy="50" r="48" fill="url(#tg)" stroke="#888" strokeWidth="2"/>
+      <circle cx="50" cy="50" r="43" fill="none" stroke="#aaa" strokeWidth="1" strokeDasharray="4 3"/>
+      <defs>
+        <radialGradient id="tg" cx="38%" cy="35%">
+          <stop offset="0%" stopColor="#e8e8e8"/>
+          <stop offset="60%" stopColor="#b0b0b0"/>
+          <stop offset="100%" stopColor="#808080"/>
+        </radialGradient>
+      </defs>
+      {/* Rupee symbol ₹ */}
+      <text x="50" y="46" textAnchor="middle" fontSize="26" fontFamily="Georgia,serif" fill="#444" fontWeight="bold">₹</text>
+      {/* 10 numeral */}
+      <text x="50" y="66" textAnchor="middle" fontSize="16" fontFamily="Georgia,serif" fill="#333" fontWeight="bold">10</text>
+      {/* Decorative ring */}
+      <circle cx="50" cy="50" r="35" fill="none" stroke="#999" strokeWidth="0.8"/>
+      {/* INDIA text */}
+      <text x="50" y="82" textAnchor="middle" fontSize="6.5" fontFamily="Georgia,serif" fill="#444" letterSpacing="1">INDIA</text>
+      <text x="50" y="14" textAnchor="middle" fontSize="6" fontFamily="Georgia,serif" fill="#444">भारत</text>
+    </svg>
+  );
+
   return (
     <div>
       {/* Coin display */}
       <div style={{textAlign:"center",marginBottom:20}}>
         <div style={{
           width:90,height:90,borderRadius:"50%",margin:"0 auto 14px",
-          background: flipping ? "linear-gradient(135deg,#fbbf24,#d97706)"
-            : coinFace==="heads" ? "linear-gradient(135deg,#fbbf24,#d97706)"
-            : coinFace==="tails" ? "linear-gradient(135deg,#94a3b8,#475569)"
-            : "linear-gradient(135deg,#334155,#1e293b)",
           display:"flex",alignItems:"center",justifyContent:"center",
-          fontSize:40,boxShadow:"0 4px 24px rgba(0,0,0,.5)",
-          border:"3px solid "+(coinFace?"#fbbf24":"#475569"),
+          boxShadow: coinFace==="heads" ? "0 4px 20px rgba(212,160,23,.6)"
+            : coinFace==="tails" ? "0 4px 20px rgba(150,150,150,.5)"
+            : "0 4px 20px rgba(0,0,0,.5)",
           transition:"all .3s",
+          background: flipping ? "linear-gradient(135deg,#fbbf24,#d97706)" : "transparent",
+          fontSize: flipping ? 40 : 0,
         }}>
-          {flipping ? "🪙" : coinFace==="heads" ? "👑" : coinFace==="tails" ? "🦅" : "🪙"}
+          {flipping ? "🪙" : coinFace==="heads" ? <CoinHeads/> : coinFace==="tails" ? <CoinTails/> : (
+            <svg viewBox="0 0 100 100" width="84" height="84">
+              <circle cx="50" cy="50" r="48" fill="url(#ng)" stroke="#475569" strokeWidth="2"/>
+              <defs><radialGradient id="ng" cx="38%" cy="35%"><stop offset="0%" stopColor="#475569"/><stop offset="100%" stopColor="#1e293b"/></radialGradient></defs>
+              <text x="50" y="58" textAnchor="middle" fontSize="36" fill="#94a3b8">🪙</text>
+            </svg>
+          )}
         </div>
         {tossWon && <div style={{color:"#4ade80",fontSize:15,fontWeight:"bold",marginBottom:4}}>{winnerName} wins the toss!</div>}
-        {coinFace && <div style={{color:"#94a3b8",fontSize:12}}>Coin landed: <b>{coinFace}</b></div>}
+        {coinFace && <div style={{color:"#94a3b8",fontSize:12}}>Coin landed: <b>{coinFace}</b> · {coinFace==="heads"?"Ashoka Pillar":"₹10"}</div>}
       </div>
 
       {/* Before toss: Team A calls */}
@@ -649,14 +712,18 @@ function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onCho
             {teamAName.toUpperCase()} — CALL THE TOSS
           </div>
           <div style={{display:"flex",gap:8,marginBottom:12}}>
-            {[["heads","👑 Heads"],["tails","🦅 Tails"]].map(([val,lbl])=>(
+            {[["heads","🏛 Heads (Ashoka)"],["tails","₹ Tails (10)"]].map(([val,lbl])=>(
               <button key={val} onClick={()=>pickCall(val)}
-                style={{flex:1,padding:"14px 0",borderRadius:12,
+                style={{flex:1,padding:"10px 0",borderRadius:12,
                   border:call===val?"2px solid #fbbf24":"1px solid #334155",
                   background:call===val?"rgba(251,191,36,.12)":"#0f172a",
                   color:call===val?"#fbbf24":"#94a3b8",
-                  fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-                {lbl}
+                  fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",
+                  display:"flex",flexDirection:"column",alignItems:"center",gap:4,paddingTop:8,paddingBottom:8}}>
+                <div style={{width:38,height:38,borderRadius:"50%",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  {val==="heads" ? <CoinHeads/> : <CoinTails/>}
+                </div>
+                <span style={{fontSize:11}}>{val==="heads"?"Heads":"Tails"}</span>
               </button>
             ))}
           </div>
