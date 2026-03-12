@@ -2373,6 +2373,14 @@ function PlayerStatsCard({ p, onClick }) {
         <div style={{background:"#0f172a",borderRadius:10,padding:"10px 12px"}}>
           <div style={{color:"#64748b",fontSize:10,letterSpacing:1,marginBottom:6}}>BATTING</div>
           <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+            <span style={{color:"#94a3b8",fontSize:11}}>Matches</span>
+            <span style={{color:"#e2e8f0",fontSize:12}}>{bat.matches||0}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+            <span style={{color:"#94a3b8",fontSize:11}}>Innings</span>
+            <span style={{color:"#e2e8f0",fontSize:12}}>{bat.innings||0}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
             <span style={{color:"#94a3b8",fontSize:11}}>Runs</span>
             <span style={{color:"#fbbf24",fontWeight:"bold",fontSize:13}}>{bat.runs||0}</span>
           </div>
