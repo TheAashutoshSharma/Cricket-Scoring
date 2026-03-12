@@ -62,27 +62,33 @@ const blankSetup = () => ({
 });
 
 const blankMatch = (setup, code) => {
-  var bf = (setup.battingFirst === 1) ? 1 : 0; // 0=teamA bats first, 1=teamB bats first
+  var bf = (setup.battingFirst === 1) ? 1 : 0;
   var aPIds  = setup.teamAPlayerIds  || [];
   var bPIds  = setup.teamBPlayerIds  || [];
   var aPlayers = setup.teamAPlayers.slice(0,setup.teamACount||2).map((n,i)=>({...mkP(n), playerId: aPIds[i]||null}));
   var bPlayers = setup.teamBPlayers.slice(0,setup.teamBCount||2).map((n,i)=>({...mkP(n), playerId: bPIds[i]||null}));
+  // Always start batting=0. If Team B bats first, swap them into slot 0 (first-innings slot).
+  // The rest of the codebase assumes batting=0 is first innings, batting=1 is second/chase.
+  var firstTeam  = bf===1 ? {name:setup.teamBName||"Team B", players:bPlayers, bowlers:[]} : {name:setup.teamAName||"Team A", players:aPlayers, bowlers:[]};
+  var secondTeam = bf===1 ? {name:setup.teamAName||"Team A", players:aPlayers, bowlers:[]} : {name:setup.teamBName||"Team B", players:bPlayers, bowlers:[]};
+  var firstCount  = bf===1 ? (setup.teamBCount||2) : (setup.teamACount||2);
+  var secondCount = bf===1 ? (setup.teamACount||2) : (setup.teamBCount||2);
   return {
     matchCode: code, createdAt: Date.now(),
     totalOvers: setup.overs,
-    batting: bf, striker:0,
+    batting: 0, striker:0,
     currentBatsmen:[0,1], currentBowler:0,
     runs:[0,0], wickets:[0,0], overs:[0,0], balls:[0,0],
     extras:[0,0],
     extrasBreakdown:[{wide:0,noBall:0,bye:0,legBye:0},{wide:0,noBall:0,bye:0,legBye:0}],
     ballLog:[[],[]],
     inningsOver:[false,false],
-    numPlayers:[setup.teamACount||2, setup.teamBCount||2],
-    needsBowler: true, // must pick first bowler before scoring
+    numPlayers:[firstCount, secondCount],
+    needsBowler: true,
     tossWinner: setup.tossWinner,
     battingFirst: bf,
-    teamA:{ name:setup.teamAName||"Team A", players:aPlayers, bowlers:[] },
-    teamB:{ name:setup.teamBName||"Team B", players:bPlayers, bowlers:[] },
+    teamA: firstTeam,
+    teamB: secondTeam,
   };
 };
 
@@ -93,8 +99,8 @@ const bBg   = b => b.retired?"#0891b2":b.wicket?"#ef4444":b.r===6?"#f59e0b":b.r=
 const bTxt  = b => b.retired?"RH":b.wicket?"W":b.extra?(b.r+b.extra[0]):String(b.r);
 // Max wickets before innings ends = numPlayers (last man bats alone, innings ends when last man out)
 const maxWkts = (m, bt) => (m.numPlayers ? m.numPlayers[bt] : 11);
-// Check if 2nd innings chase is won
-const chaseWon = (m) => m.batting===1 && m.runs[1] > m.runs[0];
+// Chase is won only in the 2nd innings (first innings must be complete)
+const chaseWon = (m) => m.inningsOver && m.inningsOver[0] && m.batting===1 && m.runs[1] > m.runs[0];
 
 // ── EditModal — top-level so it never remounts on App re-render ──
 function EditModal({editing, editVal, setEditVal, onCommit, onCancel}) {
