@@ -948,15 +948,15 @@ function AuthGate({children}) {
           )}
         </div>
 
-        {/* Guest option */}
+        {/* Guest option — disabled */}
         <div style={{textAlign:"center",marginTop:20}}>
           <div style={{color:"#334155",fontSize:12,marginBottom:10}}>— or —</div>
-          <button onClick={()=>setStatus("guest")}
-            style={{background:"none",border:"1px solid #334155",borderRadius:10,padding:"11px 32px",color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",width:"100%"}}>
+          <button disabled onClick={()=>setStatus("guest")}
+            style={{background:"none",border:"1px solid #1e293b",borderRadius:10,padding:"11px 32px",color:"#2d3f55",fontSize:13,cursor:"not-allowed",fontFamily:"Georgia,serif",width:"100%"}}>
             Continue as Guest
           </button>
-          <p style={{color:"#475569",fontSize:11,marginTop:10,lineHeight:1.5}}>
-            Guests can score & watch live matches.<br/>Register to track player stats &amp; teams.
+          <p style={{color:"#1e3a5f",fontSize:11,marginTop:8,lineHeight:1.5}}>
+            Guest access is currently disabled. Please sign in or register.
           </p>
         </div>
 
@@ -1168,8 +1168,8 @@ function App({ currentUser }) {
       localStorage.setItem(HIST_KEY, JSON.stringify(hist));
       setMatchHistory(hist);
     } catch(e) {}
-    // Also push player stats to Firebase
-    updatePlayerStats(m);
+    // Push player stats to Firebase only for completed, non-abandoned matches
+    if (!m.abandoned) updatePlayerStats(m);
   }
 
   function updatePlayerStats(m) {
@@ -2421,17 +2421,21 @@ function PlayerStatsCard({ p, onClick }) {
   );
 }
 
-// ── PlayersScreen — register/view players ────────────────────
+// ── PlayersScreen — view/edit players ────────────────────────
 function PlayersScreen({ currentUser, onBack }) {
+  const isAdmin = currentUser && ADMIN_EMAILS.includes(currentUser.email);
+  const ROLES       = ["Batsman","Bowler","All-rounder","Wicket-keeper"];
+  const BAT_STYLES  = ["Right-hand","Left-hand"];
+  const BOWL_STYLES = ["Right-arm Fast","Right-arm Medium","Right-arm Off-spin","Left-arm Fast","Left-arm Medium","Left-arm Spin","N/A"];
+
   const [players, setPlayers] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
-  const [view,    setView]    = React.useState("list"); // list | add | detail
+  const [view,    setView]    = React.useState("list"); // list | detail | edit | add
   const [sel,     setSel]     = React.useState(null);
-  const [form,    setForm]    = React.useState({ name:"", role:"Batsman" });
+  const [editForm,setEditForm]= React.useState({});
   const [saving,  setSaving]  = React.useState(false);
   const [err,     setErr]     = React.useState("");
   const [search,  setSearch]  = React.useState("");
-  const ROLES = ["Batsman","Bowler","All-rounder","Wicket-keeper"];
 
   React.useEffect(() => { loadPlayers(); }, []);
 
@@ -2440,18 +2444,54 @@ function PlayersScreen({ currentUser, onBack }) {
     setLoading(true);
     _fbDB.ref("players").once("value", snap => {
       var val = snap.val() || {};
-      var list = Object.values(val).sort((a,b)=>(a.name||"").localeCompare(b.name||""));
-      setPlayers(list);
+      setPlayers(Object.values(val).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
       setLoading(false);
     }, () => setLoading(false));
   }
 
-  function savePlayer() {
-    if (!form.name.trim()) return setErr("Name is required");
+  function canEdit(p) {
+    if (!currentUser) return false;
+    if (isAdmin) return true;
+    // The player themselves — matched by uid stored on player record
+    if (p.uid && p.uid === currentUser.uid) return true;
+    return false;
+  }
+
+  function openEdit(p) {
+    setEditForm({
+      name: p.name||"", role: p.role||"Batsman",
+      batStyle: p.batStyle||"Right-hand", bowlStyle: p.bowlStyle||"Right-arm Medium",
+      dob: p.dob||"",
+    });
+    setSel(p); setErr(""); setView("edit");
+  }
+
+  function saveEdit() {
+    if (!editForm.name.trim()) return setErr("Name is required");
+    setSaving(true); setErr("");
+    // Only update non-stats fields — never touch batting/bowling objects
+    var updates = {
+      name: editForm.name.trim(),
+      role: editForm.role,
+      batStyle: editForm.batStyle,
+      bowlStyle: editForm.bowlStyle,
+      dob: editForm.dob || null,
+    };
+    _fbDB.ref("players/"+sel.id).update(updates).then(() => {
+      var updated = {...sel, ...updates};
+      setPlayers(ps => ps.map(p => p.id===sel.id ? updated : p).sort((a,b)=>a.name.localeCompare(b.name)));
+      setSel(updated); setSaving(false); setView("detail");
+    }).catch(e => { setErr(e.message); setSaving(false); });
+  }
+
+  function saveNewPlayer() {
+    if (!editForm.name.trim()) return setErr("Name is required");
     setSaving(true); setErr("");
     var id = "P_" + Date.now() + "_" + Math.random().toString(36).slice(2,6);
     var p = {
-      id, name: form.name.trim(), role: form.role,
+      id, name: editForm.name.trim(), role: editForm.role||"Batsman",
+      batStyle: editForm.batStyle||"Right-hand", bowlStyle: editForm.bowlStyle||"Right-arm Medium",
+      dob: editForm.dob||null,
       createdBy: currentUser ? currentUser.uid : null,
       createdAt: Date.now(),
       batting:  { matches:0, innings:0, runs:0, balls:0, outs:0, fours:0, sixes:0, highScore:0, fifties:0, hundreds:0 },
@@ -2459,69 +2499,106 @@ function PlayersScreen({ currentUser, onBack }) {
     };
     _fbDB.ref("players/"+id).set(p).then(() => {
       setPlayers(ps => [...ps, p].sort((a,b)=>a.name.localeCompare(b.name)));
-      setForm({ name:"", role:"Batsman" });
-      setView("list");
-      setSaving(false);
+      setView("list"); setSaving(false);
     }).catch(e => { setErr(e.message); setSaving(false); });
   }
 
   var filtered = players.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
+  var inSt = {width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:10,padding:"12px 14px",color:"#f1f5f9",fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:"Georgia,serif"};
 
-  if (view === "add") return (
-    <div style={{...S.page}}>
-      <div style={{...S.wrap, padding:"0 16px"}}>
-        <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",gap:12}}>
-          <button onClick={()=>{setView("list");setErr("");}} style={S.btnSm}>← Back</button>
-          <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>ADD PLAYER</h2>
-        </div>
-        <div style={{background:"#1e293b",borderRadius:16,padding:22,border:"1px solid #334155"}}>
-          <div style={{marginBottom:14}}>
-            <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>PLAYER NAME</label>
-            <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}
-              placeholder="e.g. Rohit Sharma" autoFocus
-              style={{width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:10,padding:"12px 14px",color:"#f1f5f9",fontSize:15,outline:"none",boxSizing:"border-box",fontFamily:"Georgia,serif"}}
-              onKeyDown={e=>{if(e.key==="Enter")savePlayer();}}/>
+  // ── Edit / Add form ──
+  if (view==="edit" || view==="add") {
+    var isAdd = view==="add";
+    return (
+      <div style={S.page}>
+        <div style={{...S.wrap, padding:"0 16px"}}>
+          <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",gap:12}}>
+            <button onClick={()=>{setView(isAdd?"list":"detail");setErr("");}} style={S.btnSm}>← Back</button>
+            <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>{isAdd?"ADD PLAYER":"EDIT PROFILE"}</h2>
           </div>
-          <div style={{marginBottom:20}}>
-            <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:8}}>ROLE</label>
-            <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-              {ROLES.map(r=>(
-                <button key={r} onClick={()=>setForm(f=>({...f,role:r}))}
-                  style={{padding:"8px 14px",borderRadius:10,border:form.role===r?"1px solid #fbbf24":"1px solid #334155",background:form.role===r?"rgba(251,191,36,.12)":"transparent",color:form.role===r?"#fbbf24":"#94a3b8",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-                  {r}
-                </button>
-              ))}
+          <div style={{background:"#1e293b",borderRadius:16,padding:20,border:"1px solid #334155",marginBottom:14}}>
+            <div style={{marginBottom:12}}>
+              <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>PLAYER NAME</label>
+              <input value={editForm.name||""} onChange={e=>setEditForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Rohit Sharma" style={inSt} autoFocus/>
+            </div>
+            <div style={{marginBottom:12}}>
+              <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:8}}>ROLE</label>
+              <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                {ROLES.map(r=>(
+                  <button key={r} onClick={()=>setEditForm(f=>({...f,role:r}))}
+                    style={{padding:"7px 12px",borderRadius:9,border:(editForm.role||"Batsman")===r?"1px solid #fbbf24":"1px solid #334155",background:(editForm.role||"Batsman")===r?"rgba(251,191,36,.1)":"transparent",color:(editForm.role||"Batsman")===r?"#fbbf24":"#94a3b8",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+              <div>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>BATTING</label>
+                <select value={editForm.batStyle||"Right-hand"} onChange={e=>setEditForm(f=>({...f,batStyle:e.target.value}))}
+                  style={{...inSt,padding:"10px 10px"}}>
+                  {BAT_STYLES.map(s=><option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>BOWLING</label>
+                <select value={editForm.bowlStyle||"Right-arm Medium"} onChange={e=>setEditForm(f=>({...f,bowlStyle:e.target.value}))}
+                  style={{...inSt,padding:"10px 10px"}}>
+                  {BOWL_STYLES.map(s=><option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+            <div style={{marginBottom:6}}>
+              <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>DATE OF BIRTH <span style={{color:"#334155"}}>(optional)</span></label>
+              <input value={editForm.dob||""} onChange={e=>setEditForm(f=>({...f,dob:e.target.value}))} type="date" style={{...inSt,colorScheme:"dark"}}/>
             </div>
           </div>
+          <div style={{background:"rgba(251,191,36,.06)",border:"1px solid rgba(251,191,36,.15)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
+            <div style={{color:"#64748b",fontSize:11}}>🔒 Stats (matches, runs, wickets etc.) are updated automatically from match scorecards and cannot be edited manually.</div>
+          </div>
           {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:12,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8}}>{err}</div>}
-          <button onClick={savePlayer} disabled={saving}
+          <button onClick={isAdd?saveNewPlayer:saveEdit} disabled={saving}
             style={{width:"100%",padding:"13px 0",background:"linear-gradient(135deg,#fbbf24,#d97706)",borderRadius:12,border:"none",color:"#0f172a",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-            {saving ? "Saving…" : "Register Player"}
+            {saving?"Saving…":isAdd?"Register Player":"Save Changes"}
           </button>
         </div>
       </div>
-    </div>
-  );
+    );
+  }
 
-  if (view === "detail" && sel) return (
-    <div style={S.page}>
-      <div style={{...S.wrap, padding:"0 16px"}}>
-        <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",gap:12}}>
-          <button onClick={()=>setView("list")} style={S.btnSm}>← Back</button>
-          <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>PLAYER PROFILE</h2>
-        </div>
-        <div style={{background:"#1e293b",borderRadius:16,padding:22,border:"1px solid #334155",textAlign:"center",marginBottom:14}}>
-          <div style={{width:64,height:64,borderRadius:"50%",background:"linear-gradient(135deg,#fbbf24,#d97706)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,fontWeight:"bold",color:"#0f172a",margin:"0 auto 12px"}}>
-            {sel.name[0].toUpperCase()}
+  // ── Detail view ──
+  if (view==="detail" && sel) {
+    var editable = canEdit(sel);
+    return (
+      <div style={S.page}>
+        <div style={{...S.wrap, padding:"0 16px"}}>
+          <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <button onClick={()=>setView("list")} style={S.btnSm}>← Back</button>
+              <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>PLAYER PROFILE</h2>
+            </div>
+            {editable && (
+              <button onClick={()=>openEdit(sel)}
+                style={{padding:"7px 14px",background:"transparent",border:"1px solid #fbbf24",borderRadius:10,color:"#fbbf24",fontWeight:"bold",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                ✏️ Edit
+              </button>
+            )}
           </div>
-          <div style={{color:"#f1f5f9",fontSize:20,fontWeight:"bold"}}>{sel.name}</div>
-          <div style={{color:"#64748b",fontSize:12,marginTop:4}}>{sel.role}</div>
+          <div style={{background:"#1e293b",borderRadius:16,padding:22,border:"1px solid #334155",textAlign:"center",marginBottom:14}}>
+            <div style={{width:64,height:64,borderRadius:"50%",background:"linear-gradient(135deg,#fbbf24,#d97706)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,fontWeight:"bold",color:"#0f172a",margin:"0 auto 12px"}}>
+              {sel.name[0].toUpperCase()}
+            </div>
+            <div style={{color:"#f1f5f9",fontSize:20,fontWeight:"bold"}}>{sel.name}</div>
+            <div style={{color:"#64748b",fontSize:12,marginTop:4}}>{sel.role}{sel.batStyle?` · ${sel.batStyle} bat`:""}{sel.bowlStyle&&sel.bowlStyle!=="N/A"?` · ${sel.bowlStyle}`:""}</div>
+            {sel.uid && <div style={{color:"#4ade80",fontSize:11,marginTop:6}}>✓ Registered account</div>}
+          </div>
+          <PlayerStatsCard p={sel} />
         </div>
-        <PlayerStatsCard p={sel} />
       </div>
-    </div>
-  );
+    );
+  }
 
+  // ── List view ──
   return (
     <div style={S.page}>
       <div style={{...S.wrap, padding:"0 16px"}}>
@@ -2530,17 +2607,19 @@ function PlayersScreen({ currentUser, onBack }) {
             <button onClick={onBack} style={S.btnSm}>← Back</button>
             <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>🏏 PLAYERS</h2>
           </div>
-          <button onClick={()=>setView("add")}
-            style={{padding:"7px 14px",background:"linear-gradient(135deg,#fbbf24,#d97706)",border:"none",borderRadius:10,color:"#0f172a",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-            + Add
-          </button>
+          {isAdmin && (
+            <button onClick={()=>{setEditForm({name:"",role:"Batsman",batStyle:"Right-hand",bowlStyle:"Right-arm Medium",dob:""});setView("add");}}
+              style={{padding:"7px 14px",background:"linear-gradient(135deg,#fbbf24,#d97706)",border:"none",borderRadius:10,color:"#0f172a",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+              + Add
+            </button>
+          )}
         </div>
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search players…"
           style={{width:"100%",background:"#1e293b",border:"1px solid #334155",borderRadius:10,padding:"10px 14px",color:"#f1f5f9",fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:"Georgia,serif",marginBottom:14}}/>
         {loading && <div style={{color:"#475569",textAlign:"center",padding:40}}>Loading…</div>}
         {!loading && filtered.length===0 && (
           <div style={{color:"#475569",textAlign:"center",padding:40,lineHeight:1.8}}>
-            No players registered yet.<br/><span style={{fontSize:12}}>Tap + Add to register a player.</span>
+            No players yet.<br/><span style={{fontSize:12}}>Players are created when someone registers as a player.</span>
           </div>
         )}
         {filtered.map(p=>(
@@ -2553,15 +2632,16 @@ function PlayersScreen({ currentUser, onBack }) {
 
 // ── TeamsScreen — create/manage teams ────────────────────────
 function TeamsScreen({ currentUser, onBack }) {
+  const isAdmin = currentUser && ADMIN_EMAILS.includes(currentUser.email);
+
   const [teams,   setTeams]   = React.useState([]);
   const [players, setPlayers] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
-  const [view,    setView]    = React.useState("list"); // list | create | detail
+  const [view,    setView]    = React.useState("list"); // list | create | edit | detail
   const [sel,     setSel]     = React.useState(null);
   const [form,    setForm]    = React.useState({ name:"", playerIds:[] });
   const [saving,  setSaving]  = React.useState(false);
   const [err,     setErr]     = React.useState("");
-  const [search,  setSearch]  = React.useState("");
 
   React.useEffect(() => {
     if (!_fbDB) return;
@@ -2578,6 +2658,12 @@ function TeamsScreen({ currentUser, onBack }) {
     }).catch(()=>setLoading(false));
   }, []);
 
+  function canEdit(t) {
+    if (!currentUser) return false;
+    if (isAdmin) return true;
+    return t.createdBy && t.createdBy === currentUser.uid;
+  }
+
   function togglePlayer(id) {
     setForm(f => ({
       ...f,
@@ -2587,82 +2673,104 @@ function TeamsScreen({ currentUser, onBack }) {
 
   function saveTeam() {
     if (!form.name.trim()) return setErr("Team name is required");
-    if (form.playerIds.length < 2) return setErr("Add at least 2 players to the team");
+    if (form.playerIds.length < 2) return setErr("Add at least 2 players");
     setSaving(true); setErr("");
-    var id = "T_" + Date.now() + "_" + Math.random().toString(36).slice(2,6);
-    var t = {
-      id, name: form.name.trim(),
-      playerIds: form.playerIds,
-      createdBy: currentUser ? currentUser.uid : null,
-      createdAt: Date.now(),
-    };
-    _fbDB.ref("teams/"+id).set(t).then(() => {
-      setTeams(ts => [...ts, t].sort((a,b)=>a.name.localeCompare(b.name)));
-      setForm({ name:"", playerIds:[] });
-      setView("list");
-      setSaving(false);
-    }).catch(e => { setErr(e.message); setSaving(false); });
+    if (view==="edit" && sel) {
+      // Update existing team — only name and playerIds
+      _fbDB.ref("teams/"+sel.id).update({ name: form.name.trim(), playerIds: form.playerIds }).then(() => {
+        var updated = {...sel, name: form.name.trim(), playerIds: form.playerIds};
+        setTeams(ts => ts.map(t => t.id===sel.id ? updated : t).sort((a,b)=>a.name.localeCompare(b.name)));
+        setSel(updated); setView("detail"); setSaving(false);
+      }).catch(e => { setErr(e.message); setSaving(false); });
+    } else {
+      // Create new team
+      var id = "T_" + Date.now() + "_" + Math.random().toString(36).slice(2,6);
+      var t = { id, name: form.name.trim(), playerIds: form.playerIds, createdBy: currentUser ? currentUser.uid : null, createdAt: Date.now() };
+      _fbDB.ref("teams/"+id).set(t).then(() => {
+        setTeams(ts => [...ts, t].sort((a,b)=>a.name.localeCompare(b.name)));
+        setView("list"); setSaving(false);
+      }).catch(e => { setErr(e.message); setSaving(false); });
+    }
   }
 
-  var inputSt = {width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:10,padding:"12px 14px",color:"#f1f5f9",fontSize:15,outline:"none",boxSizing:"border-box",fontFamily:"Georgia,serif"};
+  var inputSt = {width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:10,padding:"12px 14px",color:"#f1f5f9",fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:"Georgia,serif"};
 
-  if (view === "create") return (
-    <div style={S.page}>
-      <div style={{...S.wrap, padding:"0 16px"}}>
-        <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",gap:12}}>
-          <button onClick={()=>{setView("list");setErr("");}} style={S.btnSm}>← Back</button>
-          <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>CREATE TEAM</h2>
-        </div>
-        <div style={{background:"#1e293b",borderRadius:16,padding:22,border:"1px solid #334155",marginBottom:14}}>
-          <div style={{marginBottom:18}}>
-            <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>TEAM NAME</label>
-            <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Mumbai Warriors" style={inputSt}/>
-          </div>
-          <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:10}}>SELECT PLAYERS ({form.playerIds.length} selected)</label>
-          {players.length===0 && <div style={{color:"#475569",fontSize:13,marginBottom:14}}>No players registered yet — add players first.</div>}
-          <div style={{maxHeight:"40vh",overflowY:"auto",display:"flex",flexDirection:"column",gap:6}}>
-            {players.map(p=>{
-              var sel2 = form.playerIds.includes(p.id);
-              return (
-                <div key={p.id} onClick={()=>togglePlayer(p.id)}
-                  style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:10,border:sel2?"1px solid #fbbf24":"1px solid #334155",background:sel2?"rgba(251,191,36,.08)":"#0f172a",cursor:"pointer"}}>
-                  <div style={{width:20,height:20,borderRadius:5,border:sel2?"2px solid #fbbf24":"1px solid #475569",background:sel2?"#fbbf24":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                    {sel2&&<span style={{color:"#0f172a",fontSize:13,fontWeight:"bold"}}>✓</span>}
-                  </div>
-                  <div>
-                    <div style={{color:sel2?"#fbbf24":"#e2e8f0",fontSize:14}}>{p.name}</div>
-                    <div style={{color:"#475569",fontSize:11}}>{p.role}</div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:12,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8}}>{err}</div>}
-        <button onClick={saveTeam} disabled={saving}
-          style={{width:"100%",padding:"13px 0",background:"linear-gradient(135deg,#fbbf24,#d97706)",borderRadius:12,border:"none",color:"#0f172a",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-          {saving?"Saving…":"Save Team"}
-        </button>
-      </div>
-    </div>
-  );
-
-  if (view==="detail" && sel) {
-    var teamPlayers = players.filter(p=>sel.playerIds&&sel.playerIds.includes(p.id));
+  // ── Create / Edit form ──
+  if (view==="create" || view==="edit") {
+    var isEdit = view==="edit";
     return (
       <div style={S.page}>
         <div style={{...S.wrap, padding:"0 16px"}}>
           <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",gap:12}}>
-            <button onClick={()=>setView("list")} style={S.btnSm}>← Back</button>
-            <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>{sel.name.toUpperCase()}</h2>
+            <button onClick={()=>{setView(isEdit?"detail":"list");setErr("");}} style={S.btnSm}>← Back</button>
+            <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>{isEdit?"EDIT TEAM":"CREATE TEAM"}</h2>
           </div>
-          <div style={{color:"#64748b",fontSize:12,marginBottom:14}}>{teamPlayers.length} players</div>
+          <div style={{background:"#1e293b",borderRadius:16,padding:20,border:"1px solid #334155",marginBottom:14}}>
+            <div style={{marginBottom:14}}>
+              <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>TEAM NAME</label>
+              <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Mumbai Warriors" style={inputSt}/>
+            </div>
+            <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:8}}>PLAYERS ({form.playerIds.length} selected)</label>
+            {players.length===0 && <div style={{color:"#475569",fontSize:13,marginBottom:10}}>No registered players yet.</div>}
+            <div style={{maxHeight:"40vh",overflowY:"auto",display:"flex",flexDirection:"column",gap:6}}>
+              {players.map(p=>{
+                var on = form.playerIds.includes(p.id);
+                return (
+                  <div key={p.id} onClick={()=>togglePlayer(p.id)}
+                    style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:10,border:on?"1px solid #fbbf24":"1px solid #334155",background:on?"rgba(251,191,36,.08)":"#0f172a",cursor:"pointer"}}>
+                    <div style={{width:20,height:20,borderRadius:5,border:on?"2px solid #fbbf24":"1px solid #475569",background:on?"#fbbf24":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      {on&&<span style={{color:"#0f172a",fontSize:12,fontWeight:"bold"}}>✓</span>}
+                    </div>
+                    <div>
+                      <div style={{color:on?"#fbbf24":"#e2e8f0",fontSize:14}}>{p.name}</div>
+                      <div style={{color:"#475569",fontSize:11}}>{p.role}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {err&&<div style={{color:"#f87171",fontSize:12,marginBottom:12,padding:"8px 12px",background:"rgba(239,68,68,.1)",borderRadius:8}}>{err}</div>}
+          <button onClick={saveTeam} disabled={saving}
+            style={{width:"100%",padding:"13px 0",background:"linear-gradient(135deg,#fbbf24,#d97706)",borderRadius:12,border:"none",color:"#0f172a",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            {saving?"Saving…":isEdit?"Save Changes":"Create Team"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Detail view ──
+  if (view==="detail" && sel) {
+    var teamPlayers = players.filter(p=>sel.playerIds&&sel.playerIds.includes(p.id));
+    var editable = canEdit(sel);
+    var ownerLabel = sel.createdBy === (currentUser&&currentUser.uid) ? "You own this team" : isAdmin ? "Admin access" : null;
+    return (
+      <div style={S.page}>
+        <div style={{...S.wrap, padding:"0 16px"}}>
+          <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <button onClick={()=>setView("list")} style={S.btnSm}>← Back</button>
+              <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>{sel.name.toUpperCase()}</h2>
+            </div>
+            {editable && (
+              <button onClick={()=>{setForm({name:sel.name,playerIds:[...(sel.playerIds||[])]});setView("edit");}}
+                style={{padding:"7px 14px",background:"transparent",border:"1px solid #fbbf24",borderRadius:10,color:"#fbbf24",fontWeight:"bold",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                ✏️ Edit
+              </button>
+            )}
+          </div>
+          <div style={{color:"#64748b",fontSize:12,marginBottom:14,display:"flex",gap:12,alignItems:"center"}}>
+            <span>{teamPlayers.length} players</span>
+            {ownerLabel && <span style={{color:"#4ade80",fontSize:11}}>· {ownerLabel}</span>}
+          </div>
           {teamPlayers.map(p=><PlayerStatsCard key={p.id} p={p}/>)}
         </div>
       </div>
     );
   }
 
+  // ── List view ──
   return (
     <div style={S.page}>
       <div style={{...S.wrap, padding:"0 16px"}}>
@@ -2671,10 +2779,12 @@ function TeamsScreen({ currentUser, onBack }) {
             <button onClick={onBack} style={S.btnSm}>← Back</button>
             <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>👥 TEAMS</h2>
           </div>
-          <button onClick={()=>setView("create")}
-            style={{padding:"7px 14px",background:"linear-gradient(135deg,#fbbf24,#d97706)",border:"none",borderRadius:10,color:"#0f172a",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-            + Create
-          </button>
+          {currentUser && (
+            <button onClick={()=>{setForm({name:"",playerIds:[]});setView("create");}}
+              style={{padding:"7px 14px",background:"linear-gradient(135deg,#fbbf24,#d97706)",border:"none",borderRadius:10,color:"#0f172a",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+              + Create
+            </button>
+          )}
         </div>
         {loading && <div style={{color:"#475569",textAlign:"center",padding:40}}>Loading…</div>}
         {!loading && teams.length===0 && (
@@ -2682,16 +2792,23 @@ function TeamsScreen({ currentUser, onBack }) {
             No teams yet.<br/><span style={{fontSize:12}}>Create a team to save your squad.</span>
           </div>
         )}
-        {teams.map(t=>(
-          <div key={t.id} onClick={()=>{setSel(t);setView("detail");}}
-            style={{background:"#1e293b",borderRadius:14,padding:"14px 16px",marginBottom:10,border:"1px solid #334155",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <div style={{color:"#f1f5f9",fontSize:15,fontWeight:"bold"}}>{t.name}</div>
-              <div style={{color:"#64748b",fontSize:12,marginTop:3}}>{(t.playerIds||[]).length} players</div>
+        {teams.map(t=>{
+          var isOwner = currentUser && t.createdBy===currentUser.uid;
+          return (
+            <div key={t.id} onClick={()=>{setSel(t);setView("detail");}}
+              style={{background:"#1e293b",borderRadius:14,padding:"14px 16px",marginBottom:10,border:"1px solid #334155",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{color:"#f1f5f9",fontSize:15,fontWeight:"bold"}}>{t.name}</div>
+                <div style={{color:"#64748b",fontSize:12,marginTop:3}}>
+                  {(t.playerIds||[]).length} players
+                  {isOwner && <span style={{color:"#4ade80",marginLeft:8,fontSize:11}}>· Owner</span>}
+                  {isAdmin&&!isOwner && <span style={{color:"#a78bfa",marginLeft:8,fontSize:11}}>· Admin</span>}
+                </div>
+              </div>
+              <span style={{color:"#475569",fontSize:18}}>›</span>
             </div>
-            <span style={{color:"#475569",fontSize:18}}>›</span>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
