@@ -62,7 +62,7 @@ const blankSetup = () => ({
 });
 
 const blankMatch = (setup, code) => {
-  var bf = setup.battingFirst || 0; // 0=teamA bats first, 1=teamB bats first
+  var bf = (setup.battingFirst === 1) ? 1 : 0; // 0=teamA bats first, 1=teamB bats first
   var aPIds  = setup.teamAPlayerIds  || [];
   var bPIds  = setup.teamBPlayerIds  || [];
   var aPlayers = setup.teamAPlayers.slice(0,setup.teamACount||2).map((n,i)=>({...mkP(n), playerId: aPIds[i]||null}));
@@ -582,118 +582,137 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
 
 // ── TossStep — coin toss in setup wizard ──────────────────────
 function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onChoice}) {
-  const [flipping, setFlipping] = React.useState(false);
-  const [face,     setFace]     = React.useState(null); // null | "heads" | "tails"
-  const [choice,   setChoice]   = React.useState(null); // "heads"|"tails" — team A's call
+  const [flipping,  setFlipping] = React.useState(false);
+  const [coinFace,  setCoinFace] = React.useState(null); // "heads" | "tails" | null
+  const [call,      setCall]     = React.useState(null); // team A's call: "heads"|"tails"
+  const callRef = React.useRef(null); // ref so setTimeout always reads latest value
 
   function doToss() {
-    if (!choice) return;
+    if (!callRef.current) return;
     setFlipping(true);
-    setFace(null);
-    // Animate for 1.2s then reveal
+    setCoinFace(null);
     setTimeout(() => {
-      var result = Math.random() < 0.5 ? "heads" : "tails";
-      setFace(result);
+      var result  = Math.random() < 0.5 ? "heads" : "tails";
+      var winner  = result === callRef.current ? 0 : 1; // 0=teamA, 1=teamB
+      setCoinFace(result);
       setFlipping(false);
-      var winner = result === choice ? 0 : 1; // 0=teamA wins, 1=teamB wins
       onToss(winner);
-    }, 1200);
+    }, 1300);
   }
 
-  var tossWon = tossWinner !== null;
+  function pickCall(c) {
+    setCall(c);
+    callRef.current = c;
+  }
+
+  function redo() {
+    setCoinFace(null);
+    setCall(null);
+    callRef.current = null;
+    onToss(null);
+  }
+
+  var tossWon    = tossWinner !== null && tossWinner !== undefined;
   var winnerName = tossWinner === 0 ? teamAName : teamBName;
+  var loserName  = tossWinner === 0 ? teamBName : teamAName;
 
   return (
     <div>
-      {/* Coin */}
+      {/* Coin display */}
       <div style={{textAlign:"center",marginBottom:20}}>
         <div style={{
-          width:90, height:90, borderRadius:"50%", margin:"0 auto 14px",
-          background: flipping
-            ? "linear-gradient(135deg,#fbbf24,#d97706)"
-            : face==="heads" ? "linear-gradient(135deg,#fbbf24,#d97706)"
-            : face==="tails" ? "linear-gradient(135deg,#94a3b8,#475569)"
+          width:90,height:90,borderRadius:"50%",margin:"0 auto 14px",
+          background: flipping ? "linear-gradient(135deg,#fbbf24,#d97706)"
+            : coinFace==="heads" ? "linear-gradient(135deg,#fbbf24,#d97706)"
+            : coinFace==="tails" ? "linear-gradient(135deg,#94a3b8,#475569)"
             : "linear-gradient(135deg,#334155,#1e293b)",
-          display:"flex", alignItems:"center", justifyContent:"center",
-          fontSize: flipping ? 36 : 40,
-          boxShadow:"0 4px 24px rgba(0,0,0,.5)",
-          transition:"background .3s",
-          animation: flipping ? "spin .2s linear infinite" : "none",
-          border:"3px solid " + (face?"#fbbf24":"#475569"),
+          display:"flex",alignItems:"center",justifyContent:"center",
+          fontSize:40,boxShadow:"0 4px 24px rgba(0,0,0,.5)",
+          border:"3px solid "+(coinFace?"#fbbf24":"#475569"),
+          transition:"all .3s",
         }}>
-          {flipping ? "🪙" : face==="heads" ? "👑" : face==="tails" ? "🦅" : "🪙"}
+          {flipping ? "🪙" : coinFace==="heads" ? "👑" : coinFace==="tails" ? "🦅" : "🪙"}
         </div>
-        <style>{`@keyframes spin { from{transform:rotateY(0deg)} to{transform:rotateY(360deg)} }`}</style>
-        {tossWon && (
-          <div style={{color:"#4ade80",fontSize:15,fontWeight:"bold",marginBottom:4}}>
-            {winnerName} wins the toss!
-          </div>
-        )}
-        {face && <div style={{color:"#94a3b8",fontSize:12}}>Coin landed: {face}</div>}
+        {tossWon && <div style={{color:"#4ade80",fontSize:15,fontWeight:"bold",marginBottom:4}}>{winnerName} wins the toss!</div>}
+        {coinFace && <div style={{color:"#94a3b8",fontSize:12}}>Coin landed: <b>{coinFace}</b></div>}
       </div>
 
-      {/* Call selection (before toss) */}
-      {!tossWon && (
-        <div style={{marginBottom:16}}>
+      {/* Before toss: Team A calls */}
+      {!tossWon && !flipping && (
+        <div style={{marginBottom:14}}>
           <div style={{color:"#64748b",fontSize:11,letterSpacing:1,marginBottom:10,textAlign:"center"}}>
-            {teamAName.toUpperCase()} CALLS THE TOSS
+            {teamAName.toUpperCase()} — CALL THE TOSS
           </div>
-          <div style={{display:"flex",gap:8}}>
-            {["heads","tails"].map(c=>(
-              <button key={c} onClick={()=>setChoice(c)}
-                style={{flex:1,padding:"14px 0",borderRadius:12,border:choice===c?"2px solid #fbbf24":"1px solid #334155",background:choice===c?"rgba(251,191,36,.12)":"#0f172a",color:choice===c?"#fbbf24":"#94a3b8",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif",textTransform:"capitalize"}}>
-                {c==="heads"?"👑 Heads":"🦅 Tails"}
+          <div style={{display:"flex",gap:8,marginBottom:12}}>
+            {[["heads","👑 Heads"],["tails","🦅 Tails"]].map(([val,lbl])=>(
+              <button key={val} onClick={()=>pickCall(val)}
+                style={{flex:1,padding:"14px 0",borderRadius:12,
+                  border:call===val?"2px solid #fbbf24":"1px solid #334155",
+                  background:call===val?"rgba(251,191,36,.12)":"#0f172a",
+                  color:call===val?"#fbbf24":"#94a3b8",
+                  fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                {lbl}
               </button>
             ))}
           </div>
+          <button onClick={doToss} disabled={!call}
+            style={{width:"100%",padding:"13px 0",
+              background:call?"linear-gradient(135deg,#fbbf24,#d97706)":"#0f172a",
+              border:"1px solid #334155",borderRadius:12,
+              color:call?"#0f172a":"#334155",
+              fontWeight:"bold",fontSize:15,
+              cursor:call?"pointer":"not-allowed",
+              fontFamily:"Georgia,serif",letterSpacing:1,marginBottom:8}}>
+            🪙 Flip Coin
+          </button>
+          <button onClick={()=>{ onToss(0); onChoice(0); }}
+            style={{width:"100%",padding:"8px 0",background:"none",border:"1px solid #334155",borderRadius:10,color:"#475569",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            Skip toss — {teamAName} bats first
+          </button>
         </div>
       )}
 
-      {/* Toss button */}
-      {!tossWon && (
-        <button onClick={doToss} disabled={!choice||flipping}
-          style={{width:"100%",padding:"13px 0",background:choice&&!flipping?"linear-gradient(135deg,#fbbf24,#d97706)":"#0f172a",border:"1px solid #334155",borderRadius:12,color:choice&&!flipping?"#0f172a":"#334155",fontWeight:"bold",fontSize:15,cursor:choice&&!flipping?"pointer":"not-allowed",fontFamily:"Georgia,serif",letterSpacing:1,marginBottom:8}}>
-          {flipping ? "🪙 Flipping…" : "🪙 Flip Coin"}
-        </button>
+      {/* Flipping indicator */}
+      {flipping && (
+        <div style={{textAlign:"center",color:"#fbbf24",fontSize:14,padding:"12px 0"}}>🪙 Flipping…</div>
       )}
 
-      {/* Bat / Bowl choice for winner */}
+      {/* After toss: winner picks bat or bowl */}
       {tossWon && (
         <div>
           <div style={{color:"#64748b",fontSize:11,letterSpacing:1,marginBottom:10,textAlign:"center"}}>
             {winnerName.toUpperCase()} CHOOSES TO…
           </div>
           <div style={{display:"flex",gap:8,marginBottom:8}}>
-            {[[tossWinner,"🏏 Bat First"],[1-tossWinner,"🎯 Bowl First"]].map(([team, lbl])=>{
-              var bf = team; // battingFirst value
-              var active = battingFirst === bf;
-              return (
-                <button key={lbl} onClick={()=>onChoice(bf)}
-                  style={{flex:1,padding:"14px 0",borderRadius:12,border:active?"2px solid #fbbf24":"1px solid #334155",background:active?"rgba(251,191,36,.12)":"#0f172a",color:active?"#fbbf24":"#94a3b8",fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-                  {lbl}
-                </button>
-              );
-            })}
+            {/* Bat First = winner bats = battingFirst is tossWinner's team index */}
+            <button onClick={()=>onChoice(tossWinner)}
+              style={{flex:1,padding:"14px 0",borderRadius:12,
+                border:battingFirst===tossWinner?"2px solid #fbbf24":"1px solid #334155",
+                background:battingFirst===tossWinner?"rgba(251,191,36,.12)":"#0f172a",
+                color:battingFirst===tossWinner?"#fbbf24":"#94a3b8",
+                fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+              🏏 Bat First
+            </button>
+            {/* Bowl First = winner bowls = other team bats */}
+            <button onClick={()=>onChoice(1-tossWinner)}
+              style={{flex:1,padding:"14px 0",borderRadius:12,
+                border:battingFirst===(1-tossWinner)?"2px solid #fbbf24":"1px solid #334155",
+                background:battingFirst===(1-tossWinner)?"rgba(251,191,36,.12)":"#0f172a",
+                color:battingFirst===(1-tossWinner)?"#fbbf24":"#94a3b8",
+                fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+              🎯 Bowl First
+            </button>
           </div>
-          {battingFirst !== null && (
-            <div style={{color:"#4ade80",fontSize:13,textAlign:"center",padding:"8px 0"}}>
-              ✓ {battingFirst===0?teamAName:teamBName} will bat first
+          {battingFirst !== null && battingFirst !== undefined && (
+            <div style={{color:"#4ade80",fontSize:13,textAlign:"center",padding:"6px 0"}}>
+              ✓ {battingFirst===0?teamAName:teamBName} will bat first · {battingFirst===tossWinner?loserName:winnerName} will bowl
             </div>
           )}
-          {/* Skip toss option — redo */}
-          <button onClick={()=>{setFace(null);setChoice(null);onToss(null);}}
-            style={{width:"100%",marginTop:6,padding:"8px 0",background:"none",border:"1px solid #334155",borderRadius:10,color:"#475569",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+          <button onClick={redo}
+            style={{width:"100%",marginTop:8,padding:"8px 0",background:"none",border:"1px solid #334155",borderRadius:10,color:"#475569",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
             ↺ Redo Toss
           </button>
         </div>
-      )}
-
-      {/* Skip toss entirely */}
-      {!tossWon && (
-        <button onClick={()=>{onToss(0); onChoice(0);}}
-          style={{width:"100%",marginTop:8,padding:"8px 0",background:"none",border:"1px solid #334155",borderRadius:10,color:"#475569",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-          Skip toss — {teamAName} bats first
-        </button>
       )}
     </div>
   );
@@ -2087,13 +2106,29 @@ function App({ currentUser }) {
                 </div>
               </div>
             )}
-            {s.step===1&&<NList names={s.teamAPlayers} ids={s.teamAPlayerIds} ph="Player" min={2} max={25} onUp={(v,vids)=>setSetup(p=>({...p,teamAPlayers:v,teamACount:v.length,teamAPlayerIds:vids||p.teamAPlayerIds}))} currentUser={currentUser}/>}
-            {s.step===2&&<NList names={s.teamBPlayers} ids={s.teamBPlayerIds} ph="Player" min={2} max={25} onUp={(v,vids)=>setSetup(p=>({...p,teamBPlayers:v,teamBCount:v.length,teamBPlayerIds:vids||p.teamBPlayerIds}))} currentUser={currentUser}/>}
+            {s.step===1&&(
+              <div>
+                <div style={{textAlign:"center",marginBottom:16,paddingBottom:14,borderBottom:"1px solid #334155"}}>
+                  <div style={{color:"#475569",fontSize:11,letterSpacing:2,marginBottom:4}}>TEAM 1 — PLAYERS</div>
+                  <div style={{color:"#fbbf24",fontSize:24,fontWeight:"bold"}}>{s.teamAName}</div>
+                </div>
+                <NList names={s.teamAPlayers} ids={s.teamAPlayerIds} ph="Player" min={2} max={25} onUp={(v,vids)=>setSetup(p=>({...p,teamAPlayers:v,teamACount:v.length,teamAPlayerIds:vids||p.teamAPlayerIds}))} currentUser={currentUser}/>
+              </div>
+            )}
+            {s.step===2&&(
+              <div>
+                <div style={{textAlign:"center",marginBottom:16,paddingBottom:14,borderBottom:"1px solid #334155"}}>
+                  <div style={{color:"#475569",fontSize:11,letterSpacing:2,marginBottom:4}}>TEAM 2 — PLAYERS</div>
+                  <div style={{color:"#fbbf24",fontSize:24,fontWeight:"bold"}}>{s.teamBName}</div>
+                </div>
+                <NList names={s.teamBPlayers} ids={s.teamBPlayerIds} ph="Player" min={2} max={25} onUp={(v,vids)=>setSetup(p=>({...p,teamBPlayers:v,teamBCount:v.length,teamBPlayerIds:vids||p.teamBPlayerIds}))} currentUser={currentUser}/>
+              </div>
+            )}
             {s.step===3&&(
               <TossStep
                 teamAName={s.teamAName} teamBName={s.teamBName}
                 tossWinner={s.tossWinner} battingFirst={s.battingFirst}
-                onToss={(winner)=>setSetup(p=>({...p,tossWinner:winner,battingFirst:winner}))}
+                onToss={(winner)=>setSetup(p=>({...p,tossWinner:winner,battingFirst:winner===null?0:null}))}
                 onChoice={(bf)=>setSetup(p=>({...p,battingFirst:bf}))}
               />
             )}
@@ -2103,8 +2138,11 @@ function App({ currentUser }) {
               {s.step<STEPS.length-1
                 ?<button onClick={()=>setSetup(p=>({...p,step:p.step+1}))}
                   style={{flex:2,padding:"13px 0",background:"linear-gradient(135deg,#1d4ed8,#1e40af)",borderRadius:12,border:"none",color:"#fff",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>Next →</button>
-                :<button onClick={startMatch}
-                  style={{flex:2,padding:"13px 0",background:"linear-gradient(135deg,#fbbf24,#d97706)",borderRadius:12,border:"none",color:"#0f172a",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif",letterSpacing:1}}>▶ Start Match</button>}
+                :<button onClick={s.battingFirst!==null&&s.battingFirst!==undefined?startMatch:undefined}
+                  disabled={s.battingFirst===null||s.battingFirst===undefined}
+                  style={{flex:2,padding:"13px 0",background:s.battingFirst!==null&&s.battingFirst!==undefined?"linear-gradient(135deg,#fbbf24,#d97706)":"#1e293b",borderRadius:12,border:s.battingFirst!==null&&s.battingFirst!==undefined?"none":"1px solid #334155",color:s.battingFirst!==null&&s.battingFirst!==undefined?"#0f172a":"#334155",fontWeight:"bold",fontSize:15,cursor:s.battingFirst!==null&&s.battingFirst!==undefined?"pointer":"not-allowed",fontFamily:"Georgia,serif",letterSpacing:1}}>
+                  {s.battingFirst!==null&&s.battingFirst!==undefined?"▶ Start Match":"← Pick bat or bowl"}
+                </button>}
             </div>
           </div>
         </div>
