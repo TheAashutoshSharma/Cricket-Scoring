@@ -583,26 +583,31 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
 // ── TossStep — coin toss in setup wizard ──────────────────────
 function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onChoice}) {
   const [flipping,  setFlipping] = React.useState(false);
-  const [coinFace,  setCoinFace] = React.useState(null); // "heads" | "tails" | null
-  const [call,      setCall]     = React.useState(null); // team A's call: "heads"|"tails"
-  const callRef = React.useRef(null); // ref so setTimeout always reads latest value
+  const [coinFace,  setCoinFace] = React.useState(null);
+  const [call,      setCall]     = React.useState(null);
 
-  function doToss() {
-    if (!callRef.current) return;
-    setFlipping(true);
-    setCoinFace(null);
-    setTimeout(() => {
-      var result  = Math.random() < 0.5 ? "heads" : "tails";
-      var winner  = result === callRef.current ? 0 : 1; // 0=teamA, 1=teamB
-      setCoinFace(result);
-      setFlipping(false);
-      onToss(winner);
-    }, 1300);
-  }
+  // Use refs so setTimeout callback always gets latest values
+  const callRef    = React.useRef(null);
+  const onTossRef  = React.useRef(onToss);
+  React.useEffect(() => { onTossRef.current = onToss; }, [onToss]);
 
   function pickCall(c) {
     setCall(c);
     callRef.current = c;
+  }
+
+  function doToss() {
+    var myCall = callRef.current;
+    if (!myCall) return;
+    setFlipping(true);
+    setCoinFace(null);
+    setTimeout(() => {
+      var result = Math.random() < 0.5 ? "heads" : "tails";
+      var winner = result === myCall ? 0 : 1; // team A called myCall; if coin matches, team A wins
+      setCoinFace(result);
+      setFlipping(false);
+      onTossRef.current(winner);
+    }, 1300);
   }
 
   function redo() {
