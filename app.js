@@ -2814,9 +2814,15 @@ function PlayersScreen({ currentUser, onBack }) {
   function canEdit(p) {
     if (!currentUser) return false;
     if (isAdmin) return true;
-    // The player themselves — matched by uid stored on player record
     if (p.uid && p.uid === currentUser.uid) return true;
     return false;
+  }
+
+  function deletePlayer(p) {
+    if (!confirm(`Delete ${p.name}? This cannot be undone.`)) return;
+    if (_fbDB) _fbDB.ref("players/"+p.id).remove();
+    setPlayers(ps => ps.filter(x => x.id !== p.id));
+    setView("list"); setSel(null);
   }
 
   function openEdit(p) {
@@ -2940,10 +2946,16 @@ function PlayersScreen({ currentUser, onBack }) {
               <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>PLAYER PROFILE</h2>
             </div>
             {editable && (
-              <button onClick={()=>openEdit(sel)}
-                style={{padding:"7px 14px",background:"transparent",border:"1px solid #fbbf24",borderRadius:10,color:"#fbbf24",fontWeight:"bold",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-                ✏️ Edit
-              </button>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>openEdit(sel)}
+                  style={{padding:"7px 14px",background:"transparent",border:"1px solid #fbbf24",borderRadius:10,color:"#fbbf24",fontWeight:"bold",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                  ✏️ Edit
+                </button>
+                <button onClick={()=>deletePlayer(sel)}
+                  style={{padding:"7px 14px",background:"transparent",border:"1px solid #ef4444",borderRadius:10,color:"#ef4444",fontWeight:"bold",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                  🗑️
+                </button>
+              </div>
             )}
           </div>
           <div style={{background:"#1e293b",borderRadius:16,padding:22,border:"1px solid #334155",textAlign:"center",marginBottom:14}}>
