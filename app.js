@@ -627,61 +627,62 @@ function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onCho
   var winnerName = tossWinner === 0 ? teamAName : teamBName;
   var loserName  = tossWinner === 0 ? teamBName : teamAName;
 
-  // SVG of ₹10 coin — heads (Ashoka Lion Capital) and tails (₹10 numeral)
-  var CoinHeads = () => (
-    <svg viewBox="0 0 100 100" width="84" height="84">
-      {/* Coin body */}
-      <circle cx="50" cy="50" r="48" fill="url(#hg)" stroke="#b8860b" strokeWidth="2"/>
-      <circle cx="50" cy="50" r="43" fill="none" stroke="#d4a017" strokeWidth="1" strokeDasharray="4 3"/>
+  // Use a stable unique prefix per TossStep instance to avoid duplicate SVG IDs
+  const uid = React.useRef("t" + Math.random().toString(36).slice(2,6)).current;
+
+  var CoinHeads = ({size=84}) => (
+    <svg viewBox="0 0 100 100" width={size} height={size}>
       <defs>
-        <radialGradient id="hg" cx="38%" cy="35%">
+        <radialGradient id={uid+"hg"} cx="38%" cy="35%">
           <stop offset="0%" stopColor="#ffe066"/>
           <stop offset="60%" stopColor="#d4a017"/>
           <stop offset="100%" stopColor="#a07800"/>
         </radialGradient>
       </defs>
-      {/* Ashoka pillar — simplified */}
-      {/* Shaft */}
+      <circle cx="50" cy="50" r="48" fill={`url(#${uid}hg)`} stroke="#b8860b" strokeWidth="2"/>
+      <circle cx="50" cy="50" r="43" fill="none" stroke="#d4a017" strokeWidth="1" strokeDasharray="4 3"/>
       <rect x="46" y="42" width="8" height="22" rx="1" fill="#7a5500"/>
-      {/* Capital block */}
       <rect x="40" y="36" width="20" height="7" rx="2" fill="#8a6200"/>
-      {/* Four lions suggestion — top circle */}
       <circle cx="50" cy="32" r="7" fill="#9a7000"/>
       <circle cx="50" cy="32" r="5" fill="#b38600"/>
-      {/* Abacus wheel (Dharma wheel hint) */}
       <circle cx="50" cy="32" r="3" fill="#7a5500"/>
       <circle cx="50" cy="32" r="1.5" fill="#ffd700"/>
-      {/* Base */}
       <rect x="38" y="64" width="24" height="4" rx="2" fill="#7a5500"/>
       <rect x="34" y="68" width="32" height="3" rx="1.5" fill="#8a6200"/>
-      {/* INDIA text */}
       <text x="50" y="82" textAnchor="middle" fontSize="7" fontFamily="Georgia,serif" fill="#5a3e00" fontWeight="bold" letterSpacing="1">INDIA</text>
-      {/* Rim text */}
-      <text x="50" y="14" textAnchor="middle" fontSize="6" fontFamily="Georgia,serif" fill="#5a3e00">भारत</text>
+      <text x="50" y="14" textAnchor="middle" fontSize="6" fontFamily="Georgia,serif" fill="#5a3e00">{"भारत"}</text>
     </svg>
   );
 
-  var CoinTails = () => (
-    <svg viewBox="0 0 100 100" width="84" height="84">
-      {/* Coin body */}
-      <circle cx="50" cy="50" r="48" fill="url(#tg)" stroke="#888" strokeWidth="2"/>
-      <circle cx="50" cy="50" r="43" fill="none" stroke="#aaa" strokeWidth="1" strokeDasharray="4 3"/>
+  var CoinTails = ({size=84}) => (
+    <svg viewBox="0 0 100 100" width={size} height={size}>
       <defs>
-        <radialGradient id="tg" cx="38%" cy="35%">
+        <radialGradient id={uid+"tg"} cx="38%" cy="35%">
           <stop offset="0%" stopColor="#e8e8e8"/>
           <stop offset="60%" stopColor="#b0b0b0"/>
           <stop offset="100%" stopColor="#808080"/>
         </radialGradient>
       </defs>
-      {/* Rupee symbol ₹ */}
-      <text x="50" y="46" textAnchor="middle" fontSize="26" fontFamily="Georgia,serif" fill="#444" fontWeight="bold">₹</text>
-      {/* 10 numeral */}
-      <text x="50" y="66" textAnchor="middle" fontSize="16" fontFamily="Georgia,serif" fill="#333" fontWeight="bold">10</text>
-      {/* Decorative ring */}
+      <circle cx="50" cy="50" r="48" fill={`url(#${uid}tg)`} stroke="#888" strokeWidth="2"/>
+      <circle cx="50" cy="50" r="43" fill="none" stroke="#aaa" strokeWidth="1" strokeDasharray="4 3"/>
       <circle cx="50" cy="50" r="35" fill="none" stroke="#999" strokeWidth="0.8"/>
-      {/* INDIA text */}
+      <text x="50" y="46" textAnchor="middle" fontSize="26" fontFamily="Georgia,serif" fill="#444" fontWeight="bold">{"₹"}</text>
+      <text x="50" y="66" textAnchor="middle" fontSize="16" fontFamily="Georgia,serif" fill="#333" fontWeight="bold">10</text>
       <text x="50" y="82" textAnchor="middle" fontSize="6.5" fontFamily="Georgia,serif" fill="#444" letterSpacing="1">INDIA</text>
-      <text x="50" y="14" textAnchor="middle" fontSize="6" fontFamily="Georgia,serif" fill="#444">भारत</text>
+      <text x="50" y="14" textAnchor="middle" fontSize="6" fontFamily="Georgia,serif" fill="#444">{"भारत"}</text>
+    </svg>
+  );
+
+  var CoinBlank = ({size=84}) => (
+    <svg viewBox="0 0 100 100" width={size} height={size}>
+      <defs>
+        <radialGradient id={uid+"ng"} cx="38%" cy="35%">
+          <stop offset="0%" stopColor="#475569"/>
+          <stop offset="100%" stopColor="#1e293b"/>
+        </radialGradient>
+      </defs>
+      <circle cx="50" cy="50" r="48" fill={`url(#${uid}ng)`} stroke="#475569" strokeWidth="2"/>
+      <text x="50" y="62" textAnchor="middle" fontSize="36" fill="#94a3b8">{"🪙"}</text>
     </svg>
   );
 
@@ -699,13 +700,7 @@ function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onCho
           background: flipping ? "linear-gradient(135deg,#fbbf24,#d97706)" : "transparent",
           fontSize: flipping ? 40 : 0,
         }}>
-          {flipping ? "🪙" : coinFace==="heads" ? <CoinHeads/> : coinFace==="tails" ? <CoinTails/> : (
-            <svg viewBox="0 0 100 100" width="84" height="84">
-              <circle cx="50" cy="50" r="48" fill="url(#ng)" stroke="#475569" strokeWidth="2"/>
-              <defs><radialGradient id="ng" cx="38%" cy="35%"><stop offset="0%" stopColor="#475569"/><stop offset="100%" stopColor="#1e293b"/></radialGradient></defs>
-              <text x="50" y="58" textAnchor="middle" fontSize="36" fill="#94a3b8">🪙</text>
-            </svg>
-          )}
+          {flipping ? "🪙" : coinFace==="heads" ? <CoinHeads/> : coinFace==="tails" ? <CoinTails/> : <CoinBlank/>}
         </div>
         {tossWon && <div style={{color:"#4ade80",fontSize:15,fontWeight:"bold",marginBottom:4}}>{winnerName} wins the toss!</div>}
         {coinFace && <div style={{color:"#94a3b8",fontSize:12}}>Coin landed: <b>{coinFace}</b> · {coinFace==="heads"?"Ashoka Pillar":"₹10"}</div>}
@@ -727,7 +722,7 @@ function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onCho
                   fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",
                   display:"flex",flexDirection:"column",alignItems:"center",gap:4,paddingTop:8,paddingBottom:8}}>
                 <div style={{width:38,height:38,borderRadius:"50%",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                  {val==="heads" ? <CoinHeads/> : <CoinTails/>}
+                  {val==="heads" ? <CoinHeads size={38}/> : <CoinTails size={38}/>}
                 </div>
                 <span style={{fontSize:11}}>{val==="heads"?"Heads":"Tails"}</span>
               </button>
@@ -1401,17 +1396,20 @@ function App({ currentUser }) {
     if (!_fbDB) return;
     var ref = _fbDB.ref("matches/"+code);
     listRef.current = ref;
-    // First value: set as viewer and navigate
     var first = true;
     ref.on("value", snap => {
       var v = snap.val();
-      if (!v) return;
       if (first) {
         first = false;
+        if (!v) {
+          // Match not found in Firebase — show error on home
+          setLiveError("Match not found or no longer available.");
+          setLoadingLive(false);
+          return;
+        }
         setMatch(v); setIsViewer(true); setScreen("viewer");
       } else {
-        // Subsequent updates: only update match data, never touch isViewer or screen
-        setMatch(v);
+        if (v) setMatch(v);
       }
     }, err => console.warn("FB listener error:", err.message));
   }
@@ -1556,7 +1554,7 @@ function App({ currentUser }) {
       var val = snap.val();
       if (!val) { setLiveMatches([]); setLoadingLive(false); return; }
       var now = Date.now();
-      var STALE = 24*60*60*1000; // 24 hours
+      var STALE = 12*60*60*1000; // 12 hours
       var list = [];
       var removes = [];
       Object.values(val).forEach(m => {
@@ -1915,18 +1913,6 @@ function App({ currentUser }) {
                 </div>
               ))
           )}
-
-          {/* Join by code */}
-          <div style={{marginTop:liveMatches!==null?10:0,display:"flex",gap:8}}>
-            <input id="join-code-input" placeholder="Have a match code? Enter it"
-              style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:10,padding:"10px 12px",color:"#f1f5f9",fontSize:14,outline:"none",fontFamily:"Georgia,serif",textTransform:"uppercase",letterSpacing:2}}
-              onKeyDown={e=>{if(e.key==="Enter"){var v=e.target.value.trim().toUpperCase();if(v.length>=4)joinByCode(v);}}}
-            />
-            <button onClick={()=>{var el=document.getElementById("join-code-input");if(el&&el.value.trim().length>=4)joinByCode(el.value.trim().toUpperCase());}}
-              style={{padding:"10px 16px",background:"#1e3a5f",border:"1px solid #1d4ed8",borderRadius:10,color:"#60a5fa",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-              Join
-            </button>
-          </div>
         </div>
 
         {/* History button */}
