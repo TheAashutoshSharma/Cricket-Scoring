@@ -2815,6 +2815,7 @@ function PlayersScreen({ currentUser, onBack }) {
     if (!currentUser) return false;
     if (isAdmin) return true;
     if (p.uid && p.uid === currentUser.uid) return true;
+    if (p.createdBy && p.createdBy === currentUser.uid) return true;
     return false;
   }
 
@@ -2945,18 +2946,20 @@ function PlayersScreen({ currentUser, onBack }) {
               <button onClick={()=>setView("list")} style={S.btnSm}>← Back</button>
               <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>PLAYER PROFILE</h2>
             </div>
-            {editable && (
-              <div style={{display:"flex",gap:8}}>
+            <div style={{display:"flex",gap:8}}>
+              {editable && (
                 <button onClick={()=>openEdit(sel)}
                   style={{padding:"7px 14px",background:"transparent",border:"1px solid #fbbf24",borderRadius:10,color:"#fbbf24",fontWeight:"bold",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
                   ✏️ Edit
                 </button>
+              )}
+              {(editable || isAdmin) && (
                 <button onClick={()=>deletePlayer(sel)}
                   style={{padding:"7px 14px",background:"transparent",border:"1px solid #ef4444",borderRadius:10,color:"#ef4444",fontWeight:"bold",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-                  🗑️
+                  🗑️ Delete
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
           <div style={{background:"#1e293b",borderRadius:16,padding:22,border:"1px solid #334155",textAlign:"center",marginBottom:14}}>
             <div style={{width:64,height:64,borderRadius:"50%",background:"linear-gradient(135deg,#fbbf24,#d97706)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,fontWeight:"bold",color:"#0f172a",margin:"0 auto 12px"}}>
