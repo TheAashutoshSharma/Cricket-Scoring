@@ -988,8 +988,27 @@ function AuthGate({children}) {
     initFB();
     if (!_fbAuth) { setStatus("login"); return; }
     var unsub = _fbAuth.onAuthStateChanged(u => {
-      if (u) { setAuthUser(u); setStatus("authed"); }
-      else   { setAuthUser(null); setStatus("login"); }
+      if (u) {
+        // Verify the user has a record in our DB — if deleted, sign them out
+        if (_fbDB) {
+          _fbDB.ref("users/"+u.uid).once("value").then(snap => {
+            if (snap.exists()) {
+              setAuthUser(u); setStatus("authed");
+            } else {
+              // DB record missing — sign out and show login
+              _fbAuth.signOut();
+              setAuthUser(null); setStatus("login");
+              setErr("Account not found. Please register.");
+            }
+          }).catch(() => {
+            // On DB error, still allow in (avoids locking out on connectivity issues)
+            setAuthUser(u); setStatus("authed");
+          });
+        } else {
+          setAuthUser(u); setStatus("authed");
+        }
+      }
+      else { setAuthUser(null); setStatus("login"); }
     });
     var t = setTimeout(() => setStatus(s => s === "loading" ? "login" : s), 5000);
     return () => { unsub(); clearTimeout(t); };
@@ -2678,7 +2697,7 @@ function App({ currentUser }) {
 // PLAYER & TEAM MANAGEMENT COMPONENTS
 // ════════════════════════════════════════════════════════════
 
-// ── PlayerStatsCard ──────────────────────────────────────────
+// ── PlayerStatsCard ── compact list row, expands to full stats on click ──
 function PlayerStatsCard({ p, onClick }) {
   var bat = p.batting || {};
   var bowl = p.bowling || {};
@@ -2686,16 +2705,49 @@ function PlayerStatsCard({ p, onClick }) {
   var sr  = bat.balls  > 0 ? ((bat.runs / bat.balls)*100).toFixed(1) : "-";
   var eco = (bowl.overs + (bowl.balls||0)/6) > 0 ? (bowl.runs / (bowl.overs + (bowl.balls||0)/6)).toFixed(2) : "-";
   var age = null;
-  if (p.dob) {
-    var diff = Date.now() - new Date(p.dob).getTime();
-    age = Math.floor(diff / (365.25*24*3600*1000));
-  }
+  if (p.dob) { var diff = Date.now() - new Date(p.dob).getTime(); age = Math.floor(diff/(365.25*24*3600*1000)); }
+
+  // Compact row — just name, role, key numbers
   return (
-    <div onClick={onClick} style={{background:"#1e293b",borderRadius:14,padding:"14px 16px",marginBottom:10,border:"1px solid #334155",cursor:onClick?"pointer":"default"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+    <div onClick={onClick} style={{background:"#1e293b",borderRadius:12,padding:"12px 16px",marginBottom:8,border:"1px solid #334155",cursor:onClick?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{color:"#f1f5f9",fontSize:14,fontWeight:"bold",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</div>
+        <div style={{display:"flex",gap:6,marginTop:2,flexWrap:"wrap"}}>
+          {p.role && <span style={{color:"#64748b",fontSize:11}}>{p.role}</span>}
+          {age && <span style={{color:"#475569",fontSize:11}}>· Age {age}</span>}
+          {p.uid && <span style={{color:"#4ade80",fontSize:11}}>· ✓</span>}
+        </div>
+      </div>
+      <div style={{display:"flex",gap:14,alignItems:"center",flexShrink:0}}>
+        <div style={{textAlign:"center"}}>
+          <div style={{color:"#fbbf24",fontSize:13,fontWeight:"bold"}}>{bat.runs||0}</div>
+          <div style={{color:"#475569",fontSize:10}}>runs</div>
+        </div>
+        <div style={{textAlign:"center"}}>
+          <div style={{color:"#a78bfa",fontSize:13,fontWeight:"bold"}}>{bowl.wickets||0}</div>
+          <div style={{color:"#475569",fontSize:10}}>wkts</div>
+        </div>
+        <div style={{color:"#334155",fontSize:16}}>›</div>
+      </div>
+    </div>
+  );
+}
+
+// ── PlayerFullStats ── full stats panel shown in detail view ──
+function PlayerFullStats({ p }) {
+  var bat = p.batting || {};
+  var bowl = p.bowling || {};
+  var avg = bat.innings > 0 ? (bat.runs / Math.max(bat.outs,1)).toFixed(1) : "-";
+  var sr  = bat.balls  > 0 ? ((bat.runs / bat.balls)*100).toFixed(1) : "-";
+  var eco = (bowl.overs + (bowl.balls||0)/6) > 0 ? (bowl.runs / (bowl.overs + (bowl.balls||0)/6)).toFixed(2) : "-";
+  var age = null;
+  if (p.dob) { var diff = Date.now() - new Date(p.dob).getTime(); age = Math.floor(diff/(365.25*24*3600*1000)); }
+  return (
+    <div style={{background:"#1e293b",borderRadius:14,padding:"16px",border:"1px solid #334155"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
         <div>
-          <div style={{color:"#f1f5f9",fontSize:15,fontWeight:"bold"}}>{p.name}</div>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:3}}>
+          <div style={{color:"#f1f5f9",fontSize:17,fontWeight:"bold"}}>{p.name}</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
             {p.role && <span style={{color:"#64748b",fontSize:11}}>{p.role}</span>}
             {p.batStyle && <span style={{color:"#475569",fontSize:11}}>· {p.batStyle} bat</span>}
             {p.bowlStyle && p.bowlStyle!=="N/A" && <span style={{color:"#475569",fontSize:11}}>· {p.bowlStyle}</span>}
@@ -2710,57 +2762,21 @@ function PlayerStatsCard({ p, onClick }) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
         <div style={{background:"#0f172a",borderRadius:10,padding:"10px 12px"}}>
           <div style={{color:"#64748b",fontSize:10,letterSpacing:1,marginBottom:6}}>BATTING</div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Matches</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{bat.matches||0}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Innings</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{bat.innings||0}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Runs</span>
-            <span style={{color:"#fbbf24",fontWeight:"bold",fontSize:13}}>{bat.runs||0}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Avg</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{avg}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>SR</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{sr}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>50s/100s</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{bat.fifties||0}/{bat.hundreds||0}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between"}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>HS</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{bat.highScore||0}</span>
-          </div>
+          {[["Matches",bat.matches||0],["Innings",bat.innings||0],["Runs",bat.runs||0,"#fbbf24"],["Avg",avg],["SR",sr],["50s/100s",(bat.fifties||0)+"/"+(bat.hundreds||0)],["HS",bat.highScore||0]].map(([l,v,c])=>(
+            <div key={l} style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+              <span style={{color:"#94a3b8",fontSize:11}}>{l}</span>
+              <span style={{color:c||"#e2e8f0",fontSize:12,fontWeight:c?"bold":"normal"}}>{v}</span>
+            </div>
+          ))}
         </div>
         <div style={{background:"#0f172a",borderRadius:10,padding:"10px 12px"}}>
           <div style={{color:"#64748b",fontSize:10,letterSpacing:1,marginBottom:6}}>BOWLING</div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Wickets</span>
-            <span style={{color:"#a78bfa",fontWeight:"bold",fontSize:13}}>{bowl.wickets||0}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Econ</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{eco}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Runs</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{bowl.runs||0}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Maidens</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{bowl.maidens||0}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between"}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Best</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{bowl.bestWickets||0}/{(bowl.bestRuns===999||!bowl.bestRuns)?0:bowl.bestRuns}</span>
-          </div>
+          {[["Wickets",bowl.wickets||0,"#a78bfa"],["Econ",eco],["Runs",bowl.runs||0],["Overs",bowl.overs||0],["Maidens",bowl.maidens||0],["Best",(bowl.bestWickets||0)+"/"+(bowl.bestRuns===999||!bowl.bestRuns?0:bowl.bestRuns)]].map(([l,v,c])=>(
+            <div key={l} style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+              <span style={{color:"#94a3b8",fontSize:11}}>{l}</span>
+              <span style={{color:c||"#e2e8f0",fontSize:12,fontWeight:c?"bold":"normal"}}>{v}</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -2938,7 +2954,7 @@ function PlayersScreen({ currentUser, onBack }) {
             <div style={{color:"#64748b",fontSize:12,marginTop:4}}>{sel.role}{sel.batStyle?` · ${sel.batStyle} bat`:""}{sel.bowlStyle&&sel.bowlStyle!=="N/A"?` · ${sel.bowlStyle}`:""}</div>
             {sel.uid && <div style={{color:"#4ade80",fontSize:11,marginTop:6}}>✓ Registered account</div>}
           </div>
-          <PlayerStatsCard p={sel} />
+          <PlayerFullStats p={sel} />
         </div>
       </div>
     );
@@ -3242,7 +3258,7 @@ function TeamsScreen({ currentUser, onBack }) {
             {isAdmin&&!iAmOwner && <span style={{color:"#a78bfa",fontSize:11}}>· Admin access</span>}
             {ownerCount > 1 && <span style={{color:"#64748b",fontSize:11}}>· {ownerCount} owners</span>}
           </div>
-          {teamPlayers.map(p=><PlayerStatsCard key={p.id} p={p}/>)}
+          {teamPlayers.map(p=><PlayerFullStats key={p.id} p={p}/>)}
         </div>
       </div>
     );
