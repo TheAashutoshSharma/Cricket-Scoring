@@ -374,10 +374,15 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
         var userInfo = usersVal[uid] || {};
         var matchList = Object.values(matchMap).filter(m => m && m.code);
         if (!matchList.length) return;
+        // Find name/email from match entries as fallback (createdBy stored on each match)
+        var nameFromMatches  = matchList.map(m => m.createdBy && m.createdBy.name).find(n => n && n.trim());
+        var emailFromMatches = matchList.map(m => m.createdBy && m.createdBy.email).find(e => e && e.trim());
+        var resolvedEmail = userInfo.email || emailFromMatches || uid;
+        var resolvedName  = userInfo.name  || nameFromMatches  || resolvedEmail.split("@")[0] || "Unknown";
         grouped[uid] = {
           uid,
-          name:    userInfo.name  || "Unknown",
-          email:   userInfo.email || uid,
+          name:    resolvedName,
+          email:   resolvedEmail,
           matches: matchList.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)),
         };
       });
