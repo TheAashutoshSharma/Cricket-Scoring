@@ -1317,7 +1317,9 @@ function App({ currentUser }) {
   const [liveError,   setLiveError]   = useState("");
   const listRef = useRef(null);
   const scorerLockRef = useRef(null);
+  const scorerRequestRef = useRef(null); // listener for incoming handover requests
   const [scorerToast, setScorerToast] = useState("");
+  const [handoverRequest, setHandoverRequest] = useState(null); // {uid, name} pending approval
   // Players & Teams
   const [showPlayers,    setShowPlayers]    = useState(false);
   const [showTeams,      setShowTeams]      = useState(false);
@@ -1443,13 +1445,9 @@ function App({ currentUser }) {
   function detach() { if (listRef.current) { listRef.current.off(); listRef.current=null; } }
 
   // ── Multi-scorer lock system ─────────────────────────────────
-  // Eligible: match creator OR any registered player (matched by uid) in either team
+  // Any logged-in user can score — open access since players may be added by name only
   function canClaimScoring(m) {
-    if (!currentUser || !m) return false;
-    var uid = currentUser.uid;
-    if (m.createdBy && m.createdBy.uid === uid) return true;
-    var allPlayers = [...(m.teamA&&m.teamA.players||[]), ...(m.teamB&&m.teamB.players||[])];
-    return allPlayers.some(p => p.uid === uid);
+    return !!(currentUser && m);
   }
 
   // Returns true if this user is the match creator (gets priority in conflicts)
@@ -1457,22 +1455,23 @@ function App({ currentUser }) {
     return currentUser && m && m.createdBy && m.createdBy.uid === currentUser.uid;
   }
 
-  // Watch scorerUid — if it changes away from us, drop to viewer immediately
+  // Watch scorerUid — if it changes to someone else's uid, drop to viewer
   function watchScorerLock(code) {
     if (scorerLockRef.current) { scorerLockRef.current.off(); }
     if (!_fbDB || !currentUser) return;
     var myUid = currentUser.uid;
+    var firstFire = true; // ignore the initial value event
     scorerLockRef.current = _fbDB.ref("matches/"+code+"/scorerUid");
     scorerLockRef.current.on("value", snap => {
+      if (firstFire) { firstFire = false; return; } // skip initial read
       var newScorer = snap.val();
       if (newScorer && newScorer !== myUid) {
-        // Someone else took over — drop to viewer
+        // Someone else claimed — drop to viewer
+        if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
         setIsViewer(true);
         setScreen("viewer");
-        _fbDB.ref("matches/"+code+"/scorerName").once("value", ns => {
-          setScorerToast((ns.val()||"Someone") + " is now scoring");
-          setTimeout(()=>setScorerToast(""), 4000);
-        });
+        setScorerToast((snap.val()||"Someone") + " is now scoring");
+        setTimeout(()=>setScorerToast(""), 4000);
       }
     });
   }
@@ -1506,11 +1505,14 @@ function App({ currentUser }) {
         scorerName:       myName,
         scorerHeartbeat:  Date.now(),
       }).then(() => {
-        detach();
+        detach(); // stop read-only listener
+        // Use latest match data from Firebase (most up to date)
+        var m2 = {...latest, scorerUid: uid, scorerName: myName};
+        setMatch(m2);
         setIsViewer(false);
         setScreen("match");
         watchScorerLock(code);
-        setMatch(prev => ({...(prev||latest), scorerUid: uid, scorerName: myName}));
+        watchHandoverRequests(code);
       });
     });
   }
@@ -1519,18 +1521,86 @@ function App({ currentUser }) {
   function handOffScoring(m) {
     if (!_fbDB || !m || !m.matchCode) return;
     var code = m.matchCode;
-    _fbDB.ref("matches/"+code).update({ scorerUid: null, scorerName: null, scorerHeartbeat: null });
+    // 1. Stop scorer lock watcher first (prevents self-trigger on null write)
     if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
+    // 2. Clear scorer slot in Firebase
+    _fbDB.ref("matches/"+code).update({ scorerUid: null, scorerName: null, scorerHeartbeat: null });
+    // 3. Switch to viewer mode
     setIsViewer(true);
     setScreen("viewer");
-    attachListener(code);
+    // 4. Reattach as read-only listener — skip first-nav since we are already on viewer
+    if (listRef.current) listRef.current.off();
+    var ref = _fbDB.ref("matches/"+code);
+    listRef.current = ref;
+    ref.on("value", snap => { var v = snap.val(); if (v) setMatch(v); },
+      err => console.warn("FB listener error:", err.message));
+  }
+
+  // Watch for incoming handover requests (called when you become scorer)
+  function watchHandoverRequests(code) {
+    if (scorerRequestRef.current) { scorerRequestRef.current.off(); }
+    if (!_fbDB || !currentUser) return;
+    scorerRequestRef.current = _fbDB.ref("matches/"+code+"/scorerRequest");
+    scorerRequestRef.current.on("value", snap => {
+      var req = snap.val();
+      if (req && req.uid && req.uid !== currentUser.uid) {
+        setHandoverRequest(req); // show approve/decline banner
+      } else {
+        setHandoverRequest(null);
+      }
+    });
+  }
+
+  function stopWatchingRequests() {
+    if (scorerRequestRef.current) { scorerRequestRef.current.off(); scorerRequestRef.current = null; }
+    setHandoverRequest(null);
+  }
+
+  // Viewer requests handover from active scorer
+  function requestHandover(m) {
+    if (!_fbDB || !m || !m.matchCode || !currentUser) return;
+    var code = m.matchCode;
+    var req = { uid: currentUser.uid, name: currentUser.displayName || currentUser.email || "A player", requestedAt: Date.now() };
+    _fbDB.ref("matches/"+code+"/scorerRequest").set(req);
+    setScorerToast("Handover requested — waiting for approval");
+    setTimeout(()=>setScorerToast(""), 4000);
+  }
+
+  // Active scorer approves the handover request
+  function approveHandover(m, req) {
+    if (!_fbDB || !m || !m.matchCode || !req) return;
+    var code = m.matchCode;
+    stopWatchingRequests();
+    // Write new scorer, clear request
+    _fbDB.ref("matches/"+code).update({
+      scorerUid: req.uid, scorerName: req.name,
+      scorerHeartbeat: Date.now(), scorerRequest: null,
+    }).then(() => {
+      // Current scorer drops to viewer
+      if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
+      setIsViewer(true);
+      setScreen("viewer");
+      if (listRef.current) listRef.current.off();
+      var ref = _fbDB.ref("matches/"+code);
+      listRef.current = ref;
+      ref.on("value", snap => { var v = snap.val(); if (v) setMatch(v); },
+        err => console.warn("FB listener:", err.message));
+    });
+  }
+
+  // Active scorer declines the handover request
+  function declineHandover(m) {
+    if (!_fbDB || !m || !m.matchCode) return;
+    _fbDB.ref("matches/"+m.matchCode+"/scorerRequest").remove();
+    setHandoverRequest(null);
   }
 
   // Release scoring fully (match end / leave)
   function releaseScoring(code) {
     if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
+    stopWatchingRequests();
     if (_fbDB && code && code !== "LOCAL") {
-      _fbDB.ref("matches/"+code).update({ scorerUid: null, scorerName: null, scorerHeartbeat: null });
+      _fbDB.ref("matches/"+code).update({ scorerUid: null, scorerName: null, scorerHeartbeat: null, scorerRequest: null });
     }
   }
 
@@ -1552,6 +1622,7 @@ function App({ currentUser }) {
     setScreen("match");
     if (currentUser && code !== "LOCAL") {
       watchScorerLock(code);
+      watchHandoverRequests(code);
     }
     // Immediately register in liveIndex so it appears in viewer list
     if (fbReady && code !== "LOCAL" && _fbDB) {
@@ -1659,9 +1730,11 @@ function App({ currentUser }) {
   }
 
   function resetAll() {
-    if (!confirm("Start a new match? This will clear everything.")) return;
+    var msg = isViewer ? "Leave this match?" : "Start a new match? This will clear everything.";
+    if (!confirm(msg)) return;
     if (match && match.matchCode && !isViewer) releaseScoring(match.matchCode);
     detach();
+    stopWatchingRequests();
     setMatch(null); setHistory([]); setSetup(blankSetup());
     setIsViewer(false); setScreen("home");
   }
@@ -2492,7 +2565,9 @@ function App({ currentUser }) {
   // VIEWER
   if (screen==="viewer") {
     var canScore = match && canClaimScoring(match);
-    var currentScorerName = match && match.scorerName;
+    var iAmScorer = match && currentUser && match.scorerUid === currentUser.uid;
+    var scorerActive = match && match.scorerUid && !iAmScorer; // someone else is scoring
+    var iRequestedHandover = match && match.scorerRequest && currentUser && match.scorerRequest.uid === currentUser.uid;
     return (
     <div style={S.page}>
       <EditModal editing={editing} editVal={editVal} setEditVal={setEditVal} onCommit={commitEdit} onCancel={cancelEdit}/>
@@ -2502,16 +2577,24 @@ function App({ currentUser }) {
         </div>
       ) : null}
       <div style={S.wrap}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px 0"}}>
-          <div>
-            <span style={{color:"#ef4444",fontSize:13}}>● LIVE</span>
-            {currentScorerName && <div style={{color:"#475569",fontSize:10,marginTop:2}}>Scoring: {currentScorerName}</div>}
+        {/* Scorer banner — always visible */}
+        <div style={{background:"#0f172a",borderBottom:"1px solid #1e293b",padding:"8px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{color:"#ef4444",fontSize:11}}>● LIVE</span>
+            {match&&match.scorerName
+              ? <span style={{color:"#94a3b8",fontSize:12}}>🏏 Scoring: <b style={{color:"#fbbf24"}}>{match.scorerName}</b></span>
+              : <span style={{color:"#475569",fontSize:12}}>No active scorer</span>}
           </div>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={()=>setScreen("scorecard")} style={S.btnSm}>📋 Scorecard</button>
+          <div style={{display:"flex",gap:6}}>
+            <button onClick={()=>setScreen("scorecard")} style={S.btnSm}>📋</button>
             {canScore && (
-              <button onClick={()=>claimScoring(match)}
-                style={{...S.btnSm,borderColor:"#d97706",color:"#fbbf24"}}>🏏 Score</button>
+              scorerActive
+                ? iRequestedHandover
+                  ? <button disabled style={{...S.btnSm,opacity:0.5,color:"#94a3b8"}}>⏳ Pending…</button>
+                  : <button onClick={()=>requestHandover(match)}
+                      style={{...S.btnSm,borderColor:"#d97706",color:"#fbbf24"}}>✋ Request Score</button>
+                : <button onClick={()=>claimScoring(match)}
+                    style={{...S.btnSm,borderColor:"#4ade80",color:"#4ade80"}}>🏏 Start Scoring</button>
             )}
             <button onClick={resetAll} style={S.btnSm}>✕ Leave</button>
           </div>
@@ -2632,35 +2715,52 @@ function App({ currentUser }) {
       {recallPrompt && <RecallPromptModal match={match} onRecall={recallRetired} onDecline={declineRecall}/>}
       <div style={S.wrap}>
 
-        {/* Toast for scorer events */}
+        {/* Toast */}
         {scorerToast ? (
           <div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",background:"#1e293b",border:"1px solid #fbbf24",borderRadius:12,padding:"10px 20px",color:"#fbbf24",fontSize:13,zIndex:9999,boxShadow:"0 4px 20px rgba(0,0,0,.5)",whiteSpace:"nowrap"}}>
             🏏 {scorerToast}
           </div>
         ) : null}
 
-        {/* Top bar */}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px 0",gap:6}}>
-          <span style={{color:"#fbbf24",fontWeight:"bold",fontSize:13,letterSpacing:1,flexShrink:0}}>
-            🏏 SCORER
-            {syncing&&<span style={{color:"#60a5fa",fontSize:10,marginLeft:6}}>↑ sync</span>}
+        {/* Scorer identity banner */}
+        <div style={{background:"#0f172a",borderBottom:"1px solid #1e293b",padding:"7px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span style={{color:"#94a3b8",fontSize:12}}>🏏 Scoring: <b style={{color:"#fbbf24"}}>{match.scorerName || (currentUser&&(currentUser.displayName||currentUser.email)) || "You"}</b>
+            {syncing&&<span style={{color:"#60a5fa",fontSize:10,marginLeft:6}}>↑</span>}
           </span>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+          <div style={{display:"flex",gap:6}}>
             <button onClick={undo} disabled={!history.length}
-              style={{...S.btnSm,opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"#fb923c":"#334155"}}>
+              style={{...S.btnSm,opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"#fb923c":"#334155",padding:"4px 10px",fontSize:11}}>
               ↩ Undo
             </button>
-            <button onClick={()=>setScreen("scorecard")} style={S.btnSm}>📋</button>
+            <button onClick={()=>setScreen("scorecard")} style={{...S.btnSm,padding:"4px 10px",fontSize:11}}>📋</button>
             {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
               <button onClick={()=>handOffScoring(match)}
-                style={{...S.btnSm,borderColor:"#64748b",color:"#94a3b8"}}
-                title="Hand off scoring to another player">
+                style={{...S.btnSm,borderColor:"#64748b",color:"#94a3b8",padding:"4px 10px",fontSize:11}}>
                 ↪ Hand Off
               </button>
             )}
-            <button onClick={resetAll} style={S.btnSm}>🔄 New</button>
+            <button onClick={resetAll} style={{...S.btnSm,padding:"4px 10px",fontSize:11}}>🔄</button>
           </div>
         </div>
+
+        {/* Handover approval banner */}
+        {handoverRequest && (
+          <div style={{margin:"10px 12px 0",background:"rgba(251,191,36,.08)",border:"1px solid rgba(251,191,36,.4)",borderRadius:14,padding:"12px 16px"}}>
+            <div style={{color:"#fbbf24",fontSize:13,fontWeight:"bold",marginBottom:8}}>
+              ✋ {handoverRequest.name} wants to score
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>approveHandover(match, handoverRequest)}
+                style={{flex:1,padding:"9px 0",background:"linear-gradient(135deg,#4ade80,#16a34a)",border:"none",borderRadius:10,color:"#0f172a",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                ✓ Approve
+              </button>
+              <button onClick={()=>declineHandover(match)}
+                style={{flex:1,padding:"9px 0",background:"transparent",border:"1px solid #ef4444",borderRadius:10,color:"#ef4444",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                ✗ Decline
+              </button>
+            </div>
+          </div>
+        )}
 
         <ScoreHeader/>
 
