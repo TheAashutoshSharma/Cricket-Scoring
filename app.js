@@ -1445,13 +1445,9 @@ function App({ currentUser }) {
   function detach() { if (listRef.current) { listRef.current.off(); listRef.current=null; } }
 
   // ── Multi-scorer lock system ─────────────────────────────────
-  // Eligible: match creator OR any registered player (matched by uid) in either team
+  // Any logged-in user can score — open access since players may be added by name only
   function canClaimScoring(m) {
-    if (!currentUser || !m) return false;
-    var uid = currentUser.uid;
-    if (m.createdBy && m.createdBy.uid === uid) return true;
-    var allPlayers = [...(m.teamA&&m.teamA.players||[]), ...(m.teamB&&m.teamB.players||[])];
-    return allPlayers.some(p => p.uid === uid);
+    return !!(currentUser && m);
   }
 
   // Returns true if this user is the match creator (gets priority in conflicts)
