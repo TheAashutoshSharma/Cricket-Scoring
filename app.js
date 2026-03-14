@@ -1730,9 +1730,11 @@ function App({ currentUser }) {
   }
 
   function resetAll() {
-    if (!confirm("Start a new match? This will clear everything.")) return;
+    var msg = isViewer ? "Leave this match?" : "Start a new match? This will clear everything.";
+    if (!confirm(msg)) return;
     if (match && match.matchCode && !isViewer) releaseScoring(match.matchCode);
     detach();
+    stopWatchingRequests();
     setMatch(null); setHistory([]); setSetup(blankSetup());
     setIsViewer(false); setScreen("home");
   }
@@ -2563,7 +2565,8 @@ function App({ currentUser }) {
   // VIEWER
   if (screen==="viewer") {
     var canScore = match && canClaimScoring(match);
-    var scorerActive = match && match.scorerUid;
+    var iAmScorer = match && currentUser && match.scorerUid === currentUser.uid;
+    var scorerActive = match && match.scorerUid && !iAmScorer; // someone else is scoring
     var iRequestedHandover = match && match.scorerRequest && currentUser && match.scorerRequest.uid === currentUser.uid;
     return (
     <div style={S.page}>
