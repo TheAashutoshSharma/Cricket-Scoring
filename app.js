@@ -1457,22 +1457,23 @@ function App({ currentUser }) {
     return currentUser && m && m.createdBy && m.createdBy.uid === currentUser.uid;
   }
 
-  // Watch scorerUid — if it changes away from us, drop to viewer immediately
+  // Watch scorerUid — if it changes to someone else's uid, drop to viewer
   function watchScorerLock(code) {
     if (scorerLockRef.current) { scorerLockRef.current.off(); }
     if (!_fbDB || !currentUser) return;
     var myUid = currentUser.uid;
+    var firstFire = true; // ignore the initial value event
     scorerLockRef.current = _fbDB.ref("matches/"+code+"/scorerUid");
     scorerLockRef.current.on("value", snap => {
+      if (firstFire) { firstFire = false; return; } // skip initial read
       var newScorer = snap.val();
       if (newScorer && newScorer !== myUid) {
-        // Someone else took over — drop to viewer
+        // Someone else claimed — drop to viewer
+        if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
         setIsViewer(true);
         setScreen("viewer");
-        _fbDB.ref("matches/"+code+"/scorerName").once("value", ns => {
-          setScorerToast((ns.val()||"Someone") + " is now scoring");
-          setTimeout(()=>setScorerToast(""), 4000);
-        });
+        setScorerToast((snap.val()||"Someone") + " is now scoring");
+        setTimeout(()=>setScorerToast(""), 4000);
       }
     });
   }
@@ -1519,11 +1520,15 @@ function App({ currentUser }) {
   function handOffScoring(m) {
     if (!_fbDB || !m || !m.matchCode) return;
     var code = m.matchCode;
-    _fbDB.ref("matches/"+code).update({ scorerUid: null, scorerName: null, scorerHeartbeat: null });
+    // Stop watching scorer lock first (prevents self-trigger)
     if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
+    // Clear scorer slot in Firebase
+    _fbDB.ref("matches/"+code).update({ scorerUid: null, scorerName: null, scorerHeartbeat: null });
+    // Switch to viewer — reattach read-only listener
     setIsViewer(true);
     setScreen("viewer");
-    attachListener(code);
+    // Small delay so Firebase write completes before re-listening
+    setTimeout(() => attachListener(code), 300);
   }
 
   // Release scoring fully (match end / leave)
