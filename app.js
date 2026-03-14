@@ -1507,11 +1507,13 @@ function App({ currentUser }) {
         scorerName:       myName,
         scorerHeartbeat:  Date.now(),
       }).then(() => {
-        detach();
+        detach(); // stop read-only listener
+        // Use latest match data from Firebase (most up to date)
+        var m2 = {...latest, scorerUid: uid, scorerName: myName};
+        setMatch(m2);
         setIsViewer(false);
         setScreen("match");
-        watchScorerLock(code);
-        setMatch(prev => ({...(prev||latest), scorerUid: uid, scorerName: myName}));
+        watchScorerLock(code); // watch for anyone else claiming
       });
     });
   }
@@ -1520,15 +1522,19 @@ function App({ currentUser }) {
   function handOffScoring(m) {
     if (!_fbDB || !m || !m.matchCode) return;
     var code = m.matchCode;
-    // Stop watching scorer lock first (prevents self-trigger)
+    // 1. Stop scorer lock watcher first (prevents self-trigger on null write)
     if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
-    // Clear scorer slot in Firebase
+    // 2. Clear scorer slot in Firebase
     _fbDB.ref("matches/"+code).update({ scorerUid: null, scorerName: null, scorerHeartbeat: null });
-    // Switch to viewer — reattach read-only listener
+    // 3. Switch to viewer mode
     setIsViewer(true);
     setScreen("viewer");
-    // Small delay so Firebase write completes before re-listening
-    setTimeout(() => attachListener(code), 300);
+    // 4. Reattach as read-only listener — skip first-nav since we are already on viewer
+    if (listRef.current) listRef.current.off();
+    var ref = _fbDB.ref("matches/"+code);
+    listRef.current = ref;
+    ref.on("value", snap => { var v = snap.val(); if (v) setMatch(v); },
+      err => console.warn("FB listener error:", err.message));
   }
 
   // Release scoring fully (match end / leave)
