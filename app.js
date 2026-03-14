@@ -374,10 +374,15 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
         var userInfo = usersVal[uid] || {};
         var matchList = Object.values(matchMap).filter(m => m && m.code);
         if (!matchList.length) return;
+        // Find name/email from match entries as fallback (createdBy stored on each match)
+        var nameFromMatches  = matchList.map(m => m.createdBy && m.createdBy.name).find(n => n && n.trim());
+        var emailFromMatches = matchList.map(m => m.createdBy && m.createdBy.email).find(e => e && e.trim());
+        var resolvedEmail = userInfo.email || emailFromMatches || uid;
+        var resolvedName  = userInfo.name  || nameFromMatches  || resolvedEmail.split("@")[0] || "Unknown";
         grouped[uid] = {
           uid,
-          name:    userInfo.name  || "Unknown",
-          email:   userInfo.email || uid,
+          name:    resolvedName,
+          email:   resolvedEmail,
           matches: matchList.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)),
         };
       });
@@ -627,61 +632,62 @@ function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onCho
   var winnerName = tossWinner === 0 ? teamAName : teamBName;
   var loserName  = tossWinner === 0 ? teamBName : teamAName;
 
-  // SVG of ₹10 coin — heads (Ashoka Lion Capital) and tails (₹10 numeral)
-  var CoinHeads = () => (
-    <svg viewBox="0 0 100 100" width="84" height="84">
-      {/* Coin body */}
-      <circle cx="50" cy="50" r="48" fill="url(#hg)" stroke="#b8860b" strokeWidth="2"/>
-      <circle cx="50" cy="50" r="43" fill="none" stroke="#d4a017" strokeWidth="1" strokeDasharray="4 3"/>
+  // Use a stable unique prefix per TossStep instance to avoid duplicate SVG IDs
+  const uid = React.useRef("t" + Math.random().toString(36).slice(2,6)).current;
+
+  var CoinHeads = ({size=84}) => (
+    <svg viewBox="0 0 100 100" width={size} height={size}>
       <defs>
-        <radialGradient id="hg" cx="38%" cy="35%">
+        <radialGradient id={uid+"hg"} cx="38%" cy="35%">
           <stop offset="0%" stopColor="#ffe066"/>
           <stop offset="60%" stopColor="#d4a017"/>
           <stop offset="100%" stopColor="#a07800"/>
         </radialGradient>
       </defs>
-      {/* Ashoka pillar — simplified */}
-      {/* Shaft */}
+      <circle cx="50" cy="50" r="48" fill={`url(#${uid}hg)`} stroke="#b8860b" strokeWidth="2"/>
+      <circle cx="50" cy="50" r="43" fill="none" stroke="#d4a017" strokeWidth="1" strokeDasharray="4 3"/>
       <rect x="46" y="42" width="8" height="22" rx="1" fill="#7a5500"/>
-      {/* Capital block */}
       <rect x="40" y="36" width="20" height="7" rx="2" fill="#8a6200"/>
-      {/* Four lions suggestion — top circle */}
       <circle cx="50" cy="32" r="7" fill="#9a7000"/>
       <circle cx="50" cy="32" r="5" fill="#b38600"/>
-      {/* Abacus wheel (Dharma wheel hint) */}
       <circle cx="50" cy="32" r="3" fill="#7a5500"/>
       <circle cx="50" cy="32" r="1.5" fill="#ffd700"/>
-      {/* Base */}
       <rect x="38" y="64" width="24" height="4" rx="2" fill="#7a5500"/>
       <rect x="34" y="68" width="32" height="3" rx="1.5" fill="#8a6200"/>
-      {/* INDIA text */}
       <text x="50" y="82" textAnchor="middle" fontSize="7" fontFamily="Georgia,serif" fill="#5a3e00" fontWeight="bold" letterSpacing="1">INDIA</text>
-      {/* Rim text */}
-      <text x="50" y="14" textAnchor="middle" fontSize="6" fontFamily="Georgia,serif" fill="#5a3e00">भारत</text>
+      <text x="50" y="14" textAnchor="middle" fontSize="6" fontFamily="Georgia,serif" fill="#5a3e00">{"भारत"}</text>
     </svg>
   );
 
-  var CoinTails = () => (
-    <svg viewBox="0 0 100 100" width="84" height="84">
-      {/* Coin body */}
-      <circle cx="50" cy="50" r="48" fill="url(#tg)" stroke="#888" strokeWidth="2"/>
-      <circle cx="50" cy="50" r="43" fill="none" stroke="#aaa" strokeWidth="1" strokeDasharray="4 3"/>
+  var CoinTails = ({size=84}) => (
+    <svg viewBox="0 0 100 100" width={size} height={size}>
       <defs>
-        <radialGradient id="tg" cx="38%" cy="35%">
+        <radialGradient id={uid+"tg"} cx="38%" cy="35%">
           <stop offset="0%" stopColor="#e8e8e8"/>
           <stop offset="60%" stopColor="#b0b0b0"/>
           <stop offset="100%" stopColor="#808080"/>
         </radialGradient>
       </defs>
-      {/* Rupee symbol ₹ */}
-      <text x="50" y="46" textAnchor="middle" fontSize="26" fontFamily="Georgia,serif" fill="#444" fontWeight="bold">₹</text>
-      {/* 10 numeral */}
-      <text x="50" y="66" textAnchor="middle" fontSize="16" fontFamily="Georgia,serif" fill="#333" fontWeight="bold">10</text>
-      {/* Decorative ring */}
+      <circle cx="50" cy="50" r="48" fill={`url(#${uid}tg)`} stroke="#888" strokeWidth="2"/>
+      <circle cx="50" cy="50" r="43" fill="none" stroke="#aaa" strokeWidth="1" strokeDasharray="4 3"/>
       <circle cx="50" cy="50" r="35" fill="none" stroke="#999" strokeWidth="0.8"/>
-      {/* INDIA text */}
+      <text x="50" y="46" textAnchor="middle" fontSize="26" fontFamily="Georgia,serif" fill="#444" fontWeight="bold">{"₹"}</text>
+      <text x="50" y="66" textAnchor="middle" fontSize="16" fontFamily="Georgia,serif" fill="#333" fontWeight="bold">10</text>
       <text x="50" y="82" textAnchor="middle" fontSize="6.5" fontFamily="Georgia,serif" fill="#444" letterSpacing="1">INDIA</text>
-      <text x="50" y="14" textAnchor="middle" fontSize="6" fontFamily="Georgia,serif" fill="#444">भारत</text>
+      <text x="50" y="14" textAnchor="middle" fontSize="6" fontFamily="Georgia,serif" fill="#444">{"भारत"}</text>
+    </svg>
+  );
+
+  var CoinBlank = ({size=84}) => (
+    <svg viewBox="0 0 100 100" width={size} height={size}>
+      <defs>
+        <radialGradient id={uid+"ng"} cx="38%" cy="35%">
+          <stop offset="0%" stopColor="#475569"/>
+          <stop offset="100%" stopColor="#1e293b"/>
+        </radialGradient>
+      </defs>
+      <circle cx="50" cy="50" r="48" fill={`url(#${uid}ng)`} stroke="#475569" strokeWidth="2"/>
+      <text x="50" y="62" textAnchor="middle" fontSize="36" fill="#94a3b8">{"🪙"}</text>
     </svg>
   );
 
@@ -699,13 +705,7 @@ function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onCho
           background: flipping ? "linear-gradient(135deg,#fbbf24,#d97706)" : "transparent",
           fontSize: flipping ? 40 : 0,
         }}>
-          {flipping ? "🪙" : coinFace==="heads" ? <CoinHeads/> : coinFace==="tails" ? <CoinTails/> : (
-            <svg viewBox="0 0 100 100" width="84" height="84">
-              <circle cx="50" cy="50" r="48" fill="url(#ng)" stroke="#475569" strokeWidth="2"/>
-              <defs><radialGradient id="ng" cx="38%" cy="35%"><stop offset="0%" stopColor="#475569"/><stop offset="100%" stopColor="#1e293b"/></radialGradient></defs>
-              <text x="50" y="58" textAnchor="middle" fontSize="36" fill="#94a3b8">🪙</text>
-            </svg>
-          )}
+          {flipping ? "🪙" : coinFace==="heads" ? <CoinHeads/> : coinFace==="tails" ? <CoinTails/> : <CoinBlank/>}
         </div>
         {tossWon && <div style={{color:"#4ade80",fontSize:15,fontWeight:"bold",marginBottom:4}}>{winnerName} wins the toss!</div>}
         {coinFace && <div style={{color:"#94a3b8",fontSize:12}}>Coin landed: <b>{coinFace}</b> · {coinFace==="heads"?"Ashoka Pillar":"₹10"}</div>}
@@ -727,7 +727,7 @@ function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onCho
                   fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",
                   display:"flex",flexDirection:"column",alignItems:"center",gap:4,paddingTop:8,paddingBottom:8}}>
                 <div style={{width:38,height:38,borderRadius:"50%",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                  {val==="heads" ? <CoinHeads/> : <CoinTails/>}
+                  {val==="heads" ? <CoinHeads size={38}/> : <CoinTails size={38}/>}
                 </div>
                 <span style={{fontSize:11}}>{val==="heads"?"Heads":"Tails"}</span>
               </button>
@@ -988,8 +988,27 @@ function AuthGate({children}) {
     initFB();
     if (!_fbAuth) { setStatus("login"); return; }
     var unsub = _fbAuth.onAuthStateChanged(u => {
-      if (u) { setAuthUser(u); setStatus("authed"); }
-      else   { setAuthUser(null); setStatus("login"); }
+      if (u) {
+        // Verify the user has a record in our DB — if deleted, sign them out
+        if (_fbDB) {
+          _fbDB.ref("users/"+u.uid).once("value").then(snap => {
+            if (snap.exists()) {
+              setAuthUser(u); setStatus("authed");
+            } else {
+              // DB record missing — sign out and show login
+              _fbAuth.signOut();
+              setAuthUser(null); setStatus("login");
+              setErr("Account not found. Please register.");
+            }
+          }).catch(() => {
+            // On DB error, still allow in (avoids locking out on connectivity issues)
+            setAuthUser(u); setStatus("authed");
+          });
+        } else {
+          setAuthUser(u); setStatus("authed");
+        }
+      }
+      else { setAuthUser(null); setStatus("login"); }
     });
     var t = setTimeout(() => setStatus(s => s === "loading" ? "login" : s), 5000);
     return () => { unsub(); clearTimeout(t); };
@@ -1297,6 +1316,8 @@ function App({ currentUser }) {
   const [loadingLive, setLoadingLive] = useState(false);
   const [liveError,   setLiveError]   = useState("");
   const listRef = useRef(null);
+  const scorerLockRef = useRef(null);
+  const [scorerToast, setScorerToast] = useState("");
   // Players & Teams
   const [showPlayers,    setShowPlayers]    = useState(false);
   const [showTeams,      setShowTeams]      = useState(false);
@@ -1401,22 +1422,117 @@ function App({ currentUser }) {
     if (!_fbDB) return;
     var ref = _fbDB.ref("matches/"+code);
     listRef.current = ref;
-    // First value: set as viewer and navigate
     var first = true;
     ref.on("value", snap => {
       var v = snap.val();
-      if (!v) return;
       if (first) {
         first = false;
+        if (!v) {
+          // Match not found in Firebase — show error on home
+          setLiveError("Match not found or no longer available.");
+          setLoadingLive(false);
+          return;
+        }
         setMatch(v); setIsViewer(true); setScreen("viewer");
       } else {
-        // Subsequent updates: only update match data, never touch isViewer or screen
-        setMatch(v);
+        if (v) setMatch(v);
       }
     }, err => console.warn("FB listener error:", err.message));
   }
 
   function detach() { if (listRef.current) { listRef.current.off(); listRef.current=null; } }
+
+  // ── Multi-scorer lock system ─────────────────────────────────
+  // Eligible: match creator OR any registered player (matched by uid) in either team
+  function canClaimScoring(m) {
+    if (!currentUser || !m) return false;
+    var uid = currentUser.uid;
+    if (m.createdBy && m.createdBy.uid === uid) return true;
+    var allPlayers = [...(m.teamA&&m.teamA.players||[]), ...(m.teamB&&m.teamB.players||[])];
+    return allPlayers.some(p => p.uid === uid);
+  }
+
+  // Returns true if this user is the match creator (gets priority in conflicts)
+  function isMatchCreator(m) {
+    return currentUser && m && m.createdBy && m.createdBy.uid === currentUser.uid;
+  }
+
+  // Watch scorerUid — if it changes away from us, drop to viewer immediately
+  function watchScorerLock(code) {
+    if (scorerLockRef.current) { scorerLockRef.current.off(); }
+    if (!_fbDB || !currentUser) return;
+    var myUid = currentUser.uid;
+    scorerLockRef.current = _fbDB.ref("matches/"+code+"/scorerUid");
+    scorerLockRef.current.on("value", snap => {
+      var newScorer = snap.val();
+      if (newScorer && newScorer !== myUid) {
+        // Someone else took over — drop to viewer
+        setIsViewer(true);
+        setScreen("viewer");
+        _fbDB.ref("matches/"+code+"/scorerName").once("value", ns => {
+          setScorerToast((ns.val()||"Someone") + " is now scoring");
+          setTimeout(()=>setScorerToast(""), 4000);
+        });
+      }
+    });
+  }
+
+  // Claim scoring rights:
+  // - If slot is free → claim it
+  // - If match creator tries to claim → always wins (overrides current scorer)
+  // - If another eligible player tries → blocked, told who has it
+  function claimScoring(m) {
+    if (!_fbDB || !m || !m.matchCode || !currentUser) return;
+    var code = m.matchCode;
+    var uid = currentUser.uid;
+    var myName = currentUser.displayName || currentUser.email || "A player";
+    var iAmCreator = isMatchCreator(m);
+
+    _fbDB.ref("matches/"+code).once("value", snap => {
+      var latest = snap.val();
+      if (!latest) return;
+      var existingScorer = latest.scorerUid;
+
+      if (existingScorer && existingScorer !== uid && !iAmCreator) {
+        // Slot taken by non-creator — blocked
+        setScorerToast((latest.scorerName||"Someone") + " is already scoring");
+        setTimeout(()=>setScorerToast(""), 3500);
+        return;
+      }
+
+      // Free slot OR I am the creator — claim it
+      _fbDB.ref("matches/"+code).update({
+        scorerUid:        uid,
+        scorerName:       myName,
+        scorerHeartbeat:  Date.now(),
+      }).then(() => {
+        detach();
+        setIsViewer(false);
+        setScreen("match");
+        watchScorerLock(code);
+        setMatch(prev => ({...(prev||latest), scorerUid: uid, scorerName: myName}));
+      });
+    });
+  }
+
+  // Hand off scoring to another player — scorer explicitly yields
+  function handOffScoring(m) {
+    if (!_fbDB || !m || !m.matchCode) return;
+    var code = m.matchCode;
+    _fbDB.ref("matches/"+code).update({ scorerUid: null, scorerName: null, scorerHeartbeat: null });
+    if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
+    setIsViewer(true);
+    setScreen("viewer");
+    attachListener(code);
+  }
+
+  // Release scoring fully (match end / leave)
+  function releaseScoring(code) {
+    if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
+    if (_fbDB && code && code !== "LOCAL") {
+      _fbDB.ref("matches/"+code).update({ scorerUid: null, scorerName: null, scorerHeartbeat: null });
+    }
+  }
 
   // ── Match start ──────────────────────────────────────────────
   function startMatch() {
@@ -1425,11 +1541,18 @@ function App({ currentUser }) {
     // Tag match with creator info
     if (currentUser) {
       m.createdBy = { uid: currentUser.uid, name: currentUser.displayName||"", email: currentUser.email||"" };
+      // Creator claims scoring lock immediately
+      m.scorerUid = currentUser.uid;
+      m.scorerName = currentUser.displayName || currentUser.email || "Creator";
+      m.scorerHeartbeat = Date.now();
     }
     setMatch(m);
     setHistory([]);
     setIsViewer(false);
     setScreen("match");
+    if (currentUser && code !== "LOCAL") {
+      watchScorerLock(code);
+    }
     // Immediately register in liveIndex so it appears in viewer list
     if (fbReady && code !== "LOCAL" && _fbDB) {
       var entry = {
@@ -1448,7 +1571,6 @@ function App({ currentUser }) {
         createdBy: m.createdBy || null,
       };
       _fbDB.ref("liveIndex/"+code).set(entry);
-      // Also write to user-scoped path
       if (currentUser) _fbDB.ref("userMatches/"+currentUser.uid+"/"+code).set(entry);
     }
   }
@@ -1538,6 +1660,7 @@ function App({ currentUser }) {
 
   function resetAll() {
     if (!confirm("Start a new match? This will clear everything.")) return;
+    if (match && match.matchCode && !isViewer) releaseScoring(match.matchCode);
     detach();
     setMatch(null); setHistory([]); setSetup(blankSetup());
     setIsViewer(false); setScreen("home");
@@ -1556,7 +1679,7 @@ function App({ currentUser }) {
       var val = snap.val();
       if (!val) { setLiveMatches([]); setLoadingLive(false); return; }
       var now = Date.now();
-      var STALE = 24*60*60*1000; // 24 hours
+      var STALE = 12*60*60*1000; // 12 hours
       var list = [];
       var removes = [];
       Object.values(val).forEach(m => {
@@ -1915,18 +2038,6 @@ function App({ currentUser }) {
                 </div>
               ))
           )}
-
-          {/* Join by code */}
-          <div style={{marginTop:liveMatches!==null?10:0,display:"flex",gap:8}}>
-            <input id="join-code-input" placeholder="Have a match code? Enter it"
-              style={{flex:1,background:"#0f172a",border:"1px solid #334155",borderRadius:10,padding:"10px 12px",color:"#f1f5f9",fontSize:14,outline:"none",fontFamily:"Georgia,serif",textTransform:"uppercase",letterSpacing:2}}
-              onKeyDown={e=>{if(e.key==="Enter"){var v=e.target.value.trim().toUpperCase();if(v.length>=4)joinByCode(v);}}}
-            />
-            <button onClick={()=>{var el=document.getElementById("join-code-input");if(el&&el.value.trim().length>=4)joinByCode(el.value.trim().toUpperCase());}}
-              style={{padding:"10px 16px",background:"#1e3a5f",border:"1px solid #1d4ed8",borderRadius:10,color:"#60a5fa",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-              Join
-            </button>
-          </div>
         </div>
 
         {/* History button */}
@@ -2379,21 +2490,29 @@ function App({ currentUser }) {
 
   // ════════════════════════════════════════════════════════════
   // VIEWER
-  if (screen==="viewer") return (
+  if (screen==="viewer") {
+    var canScore = match && canClaimScoring(match);
+    var currentScorerName = match && match.scorerName;
+    return (
     <div style={S.page}>
       <EditModal editing={editing} editVal={editVal} setEditVal={setEditVal} onCommit={commitEdit} onCancel={cancelEdit}/>
+      {scorerToast ? (
+        <div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",background:"#1e293b",border:"1px solid #fbbf24",borderRadius:12,padding:"10px 20px",color:"#fbbf24",fontSize:13,zIndex:9999,boxShadow:"0 4px 20px rgba(0,0,0,.5)",whiteSpace:"nowrap"}}>
+          🏏 {scorerToast}
+        </div>
+      ) : null}
       <div style={S.wrap}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px 0"}}>
-          <span style={{color:"#ef4444",fontSize:13}}>● LIVE</span>
+          <div>
+            <span style={{color:"#ef4444",fontSize:13}}>● LIVE</span>
+            {currentScorerName && <div style={{color:"#475569",fontSize:10,marginTop:2}}>Scoring: {currentScorerName}</div>}
+          </div>
           <div style={{display:"flex",gap:8}}>
             <button onClick={()=>setScreen("scorecard")} style={S.btnSm}>📋 Scorecard</button>
-            <button onClick={()=>{
-              if(confirm("Take over scoring? The previous scorer will lose control.")) {
-                detach(); // stop receiving updates from old scorer
-                setIsViewer(false);
-                setScreen("match");
-              }
-            }} style={{...S.btnSm,borderColor:"#d97706",color:"#fbbf24"}}>🏏 Score</button>
+            {canScore && (
+              <button onClick={()=>claimScoring(match)}
+                style={{...S.btnSm,borderColor:"#d97706",color:"#fbbf24"}}>🏏 Score</button>
+            )}
             <button onClick={resetAll} style={S.btnSm}>✕ Leave</button>
           </div>
         </div>
@@ -2422,6 +2541,7 @@ function App({ currentUser }) {
       </div>
     </div>
   );
+  } // end viewer
 
   // ════════════════════════════════════════════════════════════
   // SCORECARD
@@ -2512,6 +2632,13 @@ function App({ currentUser }) {
       {recallPrompt && <RecallPromptModal match={match} onRecall={recallRetired} onDecline={declineRecall}/>}
       <div style={S.wrap}>
 
+        {/* Toast for scorer events */}
+        {scorerToast ? (
+          <div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",background:"#1e293b",border:"1px solid #fbbf24",borderRadius:12,padding:"10px 20px",color:"#fbbf24",fontSize:13,zIndex:9999,boxShadow:"0 4px 20px rgba(0,0,0,.5)",whiteSpace:"nowrap"}}>
+            🏏 {scorerToast}
+          </div>
+        ) : null}
+
         {/* Top bar */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 14px 0",gap:6}}>
           <span style={{color:"#fbbf24",fontWeight:"bold",fontSize:13,letterSpacing:1,flexShrink:0}}>
@@ -2524,6 +2651,13 @@ function App({ currentUser }) {
               ↩ Undo
             </button>
             <button onClick={()=>setScreen("scorecard")} style={S.btnSm}>📋</button>
+            {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
+              <button onClick={()=>handOffScoring(match)}
+                style={{...S.btnSm,borderColor:"#64748b",color:"#94a3b8"}}
+                title="Hand off scoring to another player">
+                ↪ Hand Off
+              </button>
+            )}
             <button onClick={resetAll} style={S.btnSm}>🔄 New</button>
           </div>
         </div>
@@ -2687,7 +2821,7 @@ function App({ currentUser }) {
 // PLAYER & TEAM MANAGEMENT COMPONENTS
 // ════════════════════════════════════════════════════════════
 
-// ── PlayerStatsCard ──────────────────────────────────────────
+// ── PlayerStatsCard ── compact list row, expands to full stats on click ──
 function PlayerStatsCard({ p, onClick }) {
   var bat = p.batting || {};
   var bowl = p.bowling || {};
@@ -2695,16 +2829,49 @@ function PlayerStatsCard({ p, onClick }) {
   var sr  = bat.balls  > 0 ? ((bat.runs / bat.balls)*100).toFixed(1) : "-";
   var eco = (bowl.overs + (bowl.balls||0)/6) > 0 ? (bowl.runs / (bowl.overs + (bowl.balls||0)/6)).toFixed(2) : "-";
   var age = null;
-  if (p.dob) {
-    var diff = Date.now() - new Date(p.dob).getTime();
-    age = Math.floor(diff / (365.25*24*3600*1000));
-  }
+  if (p.dob) { var diff = Date.now() - new Date(p.dob).getTime(); age = Math.floor(diff/(365.25*24*3600*1000)); }
+
+  // Compact row — just name, role, key numbers
   return (
-    <div onClick={onClick} style={{background:"#1e293b",borderRadius:14,padding:"14px 16px",marginBottom:10,border:"1px solid #334155",cursor:onClick?"pointer":"default"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+    <div onClick={onClick} style={{background:"#1e293b",borderRadius:12,padding:"12px 16px",marginBottom:8,border:"1px solid #334155",cursor:onClick?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{color:"#f1f5f9",fontSize:14,fontWeight:"bold",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</div>
+        <div style={{display:"flex",gap:6,marginTop:2,flexWrap:"wrap"}}>
+          {p.role && <span style={{color:"#64748b",fontSize:11}}>{p.role}</span>}
+          {age && <span style={{color:"#475569",fontSize:11}}>· Age {age}</span>}
+          {p.uid && <span style={{color:"#4ade80",fontSize:11}}>· ✓</span>}
+        </div>
+      </div>
+      <div style={{display:"flex",gap:14,alignItems:"center",flexShrink:0}}>
+        <div style={{textAlign:"center"}}>
+          <div style={{color:"#fbbf24",fontSize:13,fontWeight:"bold"}}>{bat.runs||0}</div>
+          <div style={{color:"#475569",fontSize:10}}>runs</div>
+        </div>
+        <div style={{textAlign:"center"}}>
+          <div style={{color:"#a78bfa",fontSize:13,fontWeight:"bold"}}>{bowl.wickets||0}</div>
+          <div style={{color:"#475569",fontSize:10}}>wkts</div>
+        </div>
+        <div style={{color:"#334155",fontSize:16}}>›</div>
+      </div>
+    </div>
+  );
+}
+
+// ── PlayerFullStats ── full stats panel shown in detail view ──
+function PlayerFullStats({ p }) {
+  var bat = p.batting || {};
+  var bowl = p.bowling || {};
+  var avg = bat.innings > 0 ? (bat.runs / Math.max(bat.outs,1)).toFixed(1) : "-";
+  var sr  = bat.balls  > 0 ? ((bat.runs / bat.balls)*100).toFixed(1) : "-";
+  var eco = (bowl.overs + (bowl.balls||0)/6) > 0 ? (bowl.runs / (bowl.overs + (bowl.balls||0)/6)).toFixed(2) : "-";
+  var age = null;
+  if (p.dob) { var diff = Date.now() - new Date(p.dob).getTime(); age = Math.floor(diff/(365.25*24*3600*1000)); }
+  return (
+    <div style={{background:"#1e293b",borderRadius:14,padding:"16px",border:"1px solid #334155"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
         <div>
-          <div style={{color:"#f1f5f9",fontSize:15,fontWeight:"bold"}}>{p.name}</div>
-          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:3}}>
+          <div style={{color:"#f1f5f9",fontSize:17,fontWeight:"bold"}}>{p.name}</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4}}>
             {p.role && <span style={{color:"#64748b",fontSize:11}}>{p.role}</span>}
             {p.batStyle && <span style={{color:"#475569",fontSize:11}}>· {p.batStyle} bat</span>}
             {p.bowlStyle && p.bowlStyle!=="N/A" && <span style={{color:"#475569",fontSize:11}}>· {p.bowlStyle}</span>}
@@ -2719,57 +2886,21 @@ function PlayerStatsCard({ p, onClick }) {
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
         <div style={{background:"#0f172a",borderRadius:10,padding:"10px 12px"}}>
           <div style={{color:"#64748b",fontSize:10,letterSpacing:1,marginBottom:6}}>BATTING</div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Matches</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{bat.matches||0}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Innings</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{bat.innings||0}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Runs</span>
-            <span style={{color:"#fbbf24",fontWeight:"bold",fontSize:13}}>{bat.runs||0}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Avg</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{avg}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>SR</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{sr}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>50s/100s</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{bat.fifties||0}/{bat.hundreds||0}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between"}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>HS</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{bat.highScore||0}</span>
-          </div>
+          {[["Matches",bat.matches||0],["Innings",bat.innings||0],["Runs",bat.runs||0,"#fbbf24"],["Avg",avg],["SR",sr],["50s/100s",(bat.fifties||0)+"/"+(bat.hundreds||0)],["HS",bat.highScore||0]].map(([l,v,c])=>(
+            <div key={l} style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+              <span style={{color:"#94a3b8",fontSize:11}}>{l}</span>
+              <span style={{color:c||"#e2e8f0",fontSize:12,fontWeight:c?"bold":"normal"}}>{v}</span>
+            </div>
+          ))}
         </div>
         <div style={{background:"#0f172a",borderRadius:10,padding:"10px 12px"}}>
           <div style={{color:"#64748b",fontSize:10,letterSpacing:1,marginBottom:6}}>BOWLING</div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Wickets</span>
-            <span style={{color:"#a78bfa",fontWeight:"bold",fontSize:13}}>{bowl.wickets||0}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Econ</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{eco}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Runs</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{bowl.runs||0}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Maidens</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{bowl.maidens||0}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between"}}>
-            <span style={{color:"#94a3b8",fontSize:11}}>Best</span>
-            <span style={{color:"#e2e8f0",fontSize:12}}>{bowl.bestWickets||0}/{(bowl.bestRuns===999||!bowl.bestRuns)?0:bowl.bestRuns}</span>
-          </div>
+          {[["Wickets",bowl.wickets||0,"#a78bfa"],["Econ",eco],["Runs",bowl.runs||0],["Overs",bowl.overs||0],["Maidens",bowl.maidens||0],["Best",(bowl.bestWickets||0)+"/"+(bowl.bestRuns===999||!bowl.bestRuns?0:bowl.bestRuns)]].map(([l,v,c])=>(
+            <div key={l} style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+              <span style={{color:"#94a3b8",fontSize:11}}>{l}</span>
+              <span style={{color:c||"#e2e8f0",fontSize:12,fontWeight:c?"bold":"normal"}}>{v}</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -2807,9 +2938,16 @@ function PlayersScreen({ currentUser, onBack }) {
   function canEdit(p) {
     if (!currentUser) return false;
     if (isAdmin) return true;
-    // The player themselves — matched by uid stored on player record
     if (p.uid && p.uid === currentUser.uid) return true;
+    if (p.createdBy && p.createdBy === currentUser.uid) return true;
     return false;
+  }
+
+  function deletePlayer(p) {
+    if (!confirm(`Delete ${p.name}? This cannot be undone.`)) return;
+    if (_fbDB) _fbDB.ref("players/"+p.id).remove();
+    setPlayers(ps => ps.filter(x => x.id !== p.id));
+    setView("list"); setSel(null);
   }
 
   function openEdit(p) {
@@ -2932,12 +3070,20 @@ function PlayersScreen({ currentUser, onBack }) {
               <button onClick={()=>setView("list")} style={S.btnSm}>← Back</button>
               <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>PLAYER PROFILE</h2>
             </div>
-            {editable && (
-              <button onClick={()=>openEdit(sel)}
-                style={{padding:"7px 14px",background:"transparent",border:"1px solid #fbbf24",borderRadius:10,color:"#fbbf24",fontWeight:"bold",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
-                ✏️ Edit
-              </button>
-            )}
+            <div style={{display:"flex",gap:8}}>
+              {editable && (
+                <button onClick={()=>openEdit(sel)}
+                  style={{padding:"7px 14px",background:"transparent",border:"1px solid #fbbf24",borderRadius:10,color:"#fbbf24",fontWeight:"bold",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                  ✏️ Edit
+                </button>
+              )}
+              {(editable || isAdmin) && (
+                <button onClick={()=>deletePlayer(sel)}
+                  style={{padding:"7px 14px",background:"transparent",border:"1px solid #ef4444",borderRadius:10,color:"#ef4444",fontWeight:"bold",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+                  🗑️ Delete
+                </button>
+              )}
+            </div>
           </div>
           <div style={{background:"#1e293b",borderRadius:16,padding:22,border:"1px solid #334155",textAlign:"center",marginBottom:14}}>
             <div style={{width:64,height:64,borderRadius:"50%",background:"linear-gradient(135deg,#fbbf24,#d97706)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,fontWeight:"bold",color:"#0f172a",margin:"0 auto 12px"}}>
@@ -2947,7 +3093,7 @@ function PlayersScreen({ currentUser, onBack }) {
             <div style={{color:"#64748b",fontSize:12,marginTop:4}}>{sel.role}{sel.batStyle?` · ${sel.batStyle} bat`:""}{sel.bowlStyle&&sel.bowlStyle!=="N/A"?` · ${sel.bowlStyle}`:""}</div>
             {sel.uid && <div style={{color:"#4ade80",fontSize:11,marginTop:6}}>✓ Registered account</div>}
           </div>
-          <PlayerStatsCard p={sel} />
+          <PlayerFullStats p={sel} />
         </div>
       </div>
     );
@@ -2986,6 +3132,71 @@ function PlayersScreen({ currentUser, onBack }) {
 }
 
 // ── TeamsScreen — create/manage teams ────────────────────────
+// ── QuickAddPlayer — inline new player form for use inside team create/edit ──
+function QuickAddPlayer({currentUser, onAdded}) {
+  const [open,    setOpen]    = React.useState(false);
+  const [name,    setName]    = React.useState("");
+  const [role,    setRole]    = React.useState("Batsman");
+  const [saving,  setSaving]  = React.useState(false);
+  const [err,     setErr]     = React.useState("");
+
+  async function save() {
+    var nm = name.trim();
+    if (!nm) return setErr("Name is required");
+    setSaving(true); setErr("");
+    try {
+      var now = Date.now();
+      var pid = "P_" + now + "_" + Math.random().toString(36).slice(2,6);
+      var p = {
+        id: pid, name: nm, role,
+        batStyle:"Right-hand", bowlStyle:"Right-arm Medium", dob:null,
+        createdBy: currentUser ? currentUser.uid : null, createdAt: now,
+        batting:  {matches:0,innings:0,runs:0,balls:0,outs:0,fours:0,sixes:0,highScore:0,fifties:0,hundreds:0},
+        bowling:  {overs:0,balls:0,runs:0,wickets:0,maidens:0,bestWickets:0,bestRuns:999},
+      };
+      if (_fbDB) await _fbDB.ref("players/"+pid).set(p);
+      onAdded(p);
+      setName(""); setRole("Batsman"); setOpen(false);
+    } catch(e) { setErr(e.message||"Error saving"); }
+    setSaving(false);
+  }
+
+  if (!open) return (
+    <button onClick={()=>setOpen(true)}
+      style={{width:"100%",padding:"9px 0",marginBottom:4,borderRadius:10,border:"1px dashed #334155",background:"transparent",color:"#4ade80",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+      <span style={{fontSize:16}}>⊕</span> Add New Player
+    </button>
+  );
+
+  return (
+    <div style={{background:"#0f172a",border:"1px solid #22c55e",borderRadius:12,padding:"14px 14px",marginBottom:8}}>
+      <div style={{color:"#4ade80",fontSize:11,letterSpacing:1,marginBottom:10}}>NEW PLAYER</div>
+      <input value={name} onChange={e=>setName(e.target.value)} placeholder="Player name"
+        autoFocus
+        style={{width:"100%",background:"#1e293b",border:"1px solid #334155",borderRadius:9,padding:"9px 12px",color:"#f1f5f9",fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:"Georgia,serif",marginBottom:8}}/>
+      <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap"}}>
+        {["Batsman","Bowler","All-rounder","Wicket-keeper"].map(r=>(
+          <button key={r} onClick={()=>setRole(r)}
+            style={{padding:"5px 10px",borderRadius:8,border:role===r?"1px solid #4ade80":"1px solid #334155",background:role===r?"rgba(74,222,128,.1)":"transparent",color:role===r?"#4ade80":"#64748b",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            {r}
+          </button>
+        ))}
+      </div>
+      {err && <div style={{color:"#f87171",fontSize:11,marginBottom:8}}>{err}</div>}
+      <div style={{display:"flex",gap:8}}>
+        <button onClick={()=>{setOpen(false);setName("");setErr("");}}
+          style={{flex:1,padding:"8px 0",background:"none",border:"1px solid #334155",borderRadius:9,color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+          Cancel
+        </button>
+        <button onClick={save} disabled={saving||!name.trim()}
+          style={{flex:2,padding:"8px 0",background:name.trim()?"linear-gradient(135deg,#22c55e,#16a34a)":"#1e293b",border:"none",borderRadius:9,color:name.trim()?"#fff":"#334155",fontWeight:"bold",fontSize:13,cursor:name.trim()?"pointer":"not-allowed",fontFamily:"Georgia,serif"}}>
+          {saving?"Saving…":"✓ Add to List"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function TeamsScreen({ currentUser, onBack }) {
   const isAdmin = currentUser && ADMIN_EMAILS.includes(currentUser.email);
 
@@ -3087,9 +3298,23 @@ function TeamsScreen({ currentUser, onBack }) {
               <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:6}}>TEAM NAME</label>
               <input value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Mumbai Warriors" style={inputSt}/>
             </div>
-            <label style={{color:"#64748b",fontSize:11,letterSpacing:1,display:"block",marginBottom:8}}>PLAYERS ({form.playerIds.length} selected)</label>
-            {players.length===0 && <div style={{color:"#475569",fontSize:13,marginBottom:10}}>No registered players yet.</div>}
-            <div style={{maxHeight:"36vh",overflowY:"auto",display:"flex",flexDirection:"column",gap:6,marginBottom:6}}>
+
+            {/* Players header with count */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+              <label style={{color:"#64748b",fontSize:11,letterSpacing:1}}>PLAYERS ({form.playerIds.length} selected)</label>
+            </div>
+
+            {/* Quick-add new player inline */}
+            <QuickAddPlayer
+              currentUser={currentUser}
+              onAdded={(newP)=>{
+                setPlayers(prev=>[...prev,newP].sort((a,b)=>a.name.localeCompare(b.name)));
+                setForm(f=>({...f, playerIds:[...f.playerIds, newP.id]}));
+              }}
+            />
+
+            {players.length===0 && <div style={{color:"#475569",fontSize:13,marginBottom:10,marginTop:8}}>No players yet — add one above.</div>}
+            <div style={{maxHeight:"36vh",overflowY:"auto",display:"flex",flexDirection:"column",gap:6,marginBottom:6,marginTop:8}}>
               {players.map(p=>{
                 var on = form.playerIds.includes(p.id);
                 return (
@@ -3172,7 +3397,7 @@ function TeamsScreen({ currentUser, onBack }) {
             {isAdmin&&!iAmOwner && <span style={{color:"#a78bfa",fontSize:11}}>· Admin access</span>}
             {ownerCount > 1 && <span style={{color:"#64748b",fontSize:11}}>· {ownerCount} owners</span>}
           </div>
-          {teamPlayers.map(p=><PlayerStatsCard key={p.id} p={p}/>)}
+          {teamPlayers.map(p=><PlayerFullStats key={p.id} p={p}/>)}
         </div>
       </div>
     );
