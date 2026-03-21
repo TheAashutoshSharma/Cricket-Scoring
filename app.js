@@ -1339,7 +1339,7 @@ function App({ currentUser }) {
       _fbDB.ref("completedMatches").orderByChild("date").limitToLast(50).once("value", snap => {
         var val = snap.val();
         if (!val) return;
-        var fbEntries = Object.values(val).sort((a,b) => (b.date||"") > (a.date||"") ? 1 : -1);
+        var fbEntries = Object.values(val).map(e => ({...e, snapshot: normaliseMatch(e.snapshot)})).sort((a,b) => (b.date||"") > (a.date||"") ? 1 : -1);
         setMatchHistory(prev => {
           // Merge: Firebase entries take priority, dedupe by id
           var seen = new Set(fbEntries.map(e=>e.id));
@@ -1440,10 +1440,12 @@ function App({ currentUser }) {
   // Normalise match data from Firebase — Firebase drops empty arrays/nulls
   function normaliseMatch(v) {
     if (!v) return v;
-    if (v.teamA && !v.teamA.players) v.teamA.players = [];
-    if (v.teamA && !v.teamA.bowlers) v.teamA.bowlers = [];
-    if (v.teamB && !v.teamB.players) v.teamB.players = [];
-    if (v.teamB && !v.teamB.bowlers) v.teamB.bowlers = [];
+    if (!v.teamA) v.teamA = {name:"Team A", players:[], bowlers:[]};
+    if (!v.teamB) v.teamB = {name:"Team B", players:[], bowlers:[]};
+    if (!v.teamA.players) v.teamA.players = [];
+    if (!v.teamA.bowlers) v.teamA.bowlers = [];
+    if (!v.teamB.players) v.teamB.players = [];
+    if (!v.teamB.bowlers) v.teamB.bowlers = [];
     if (!v.ballLog) v.ballLog = [[],[]];
     else { if (!v.ballLog[0]) v.ballLog[0]=[]; if (!v.ballLog[1]) v.ballLog[1]=[]; }
     if (!v.inningsOver) v.inningsOver = [false, false];
@@ -1451,7 +1453,15 @@ function App({ currentUser }) {
     if (!v.wickets) v.wickets = [0,0];
     if (!v.overs) v.overs = [0,0];
     if (!v.balls) v.balls = [0,0];
+    if (!v.extras) v.extras = [0,0];
+    var eb = {wide:0,noBall:0,bye:0,legBye:0};
+    if (!v.extrasBreakdown) v.extrasBreakdown = [Object.assign({},eb), Object.assign({},eb)];
+    else {
+      if (!v.extrasBreakdown[0]) v.extrasBreakdown[0] = Object.assign({},eb);
+      if (!v.extrasBreakdown[1]) v.extrasBreakdown[1] = Object.assign({},eb);
+    }
     if (!v.currentBatsmen) v.currentBatsmen = [0,1];
+    if (!v.numPlayers) v.numPlayers = [v.teamA.players.length||2, v.teamB.players.length||2];
     return v;
   }
 
@@ -2164,7 +2174,7 @@ function App({ currentUser }) {
           {matchHistory.length===0 ? (
             <div style={{textAlign:"center",color:"#475569",padding:40}}>No matches saved yet</div>
           ) : matchHistory.map((e)=>(
-            <div key={e.id} onClick={()=>{setMatch(e.snapshot);setScreen("historycard");}}
+            <div key={e.id} onClick={()=>{setMatch(normaliseMatch(e.snapshot));setScreen("historycard");}}
               style={{background:"#1e293b",borderRadius:14,padding:"14px 16px",marginBottom:10,border:"1px solid #334155",cursor:"pointer"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                 <div style={{color:"#94a3b8",fontSize:11}}>{fmtDate(e.date)}</div>
@@ -2263,8 +2273,8 @@ function App({ currentUser }) {
             <h2 style={{color:"#fbbf24",margin:0,fontSize:16,letterSpacing:2}}>📋 SCORECARD</h2>
             <button onClick={()=>{setMatch(null);setScreen("history");}} style={S.btnSm}>← Back</button>
           </div>
-          <TCardH team={match.teamA} inn={0} opp={match.teamB}/>
-          {match.inningsOver[0]&&<TCardH team={match.teamB} inn={1} opp={match.teamA}/>}
+          {match.teamA&&match.teamB&&<TCardH team={match.teamA} inn={0} opp={match.teamB}/>}
+          {match.inningsOver&&match.inningsOver[0]&&match.teamB&&<TCardH team={match.teamB} inn={1} opp={match.teamA}/>}
         </div>
       </div>
     );
