@@ -102,6 +102,34 @@ const maxWkts = (m, bt) => (m.numPlayers ? m.numPlayers[bt] : 11);
 // Chase is won only in the 2nd innings (first innings must be complete)
 const chaseWon = (m) => m.inningsOver && m.inningsOver[0] && m.batting===1 && m.runs[1] > m.runs[0];
 
+// Normalise match data from Firebase — Firebase silently drops empty arrays/nulls
+function normaliseMatch(v) {
+  if (!v) return v;
+  if (!v.teamA) v.teamA = {name:"Team A", players:[], bowlers:[]};
+  if (!v.teamB) v.teamB = {name:"Team B", players:[], bowlers:[]};
+  if (!v.teamA.players) v.teamA.players = [];
+  if (!v.teamA.bowlers) v.teamA.bowlers = [];
+  if (!v.teamB.players) v.teamB.players = [];
+  if (!v.teamB.bowlers) v.teamB.bowlers = [];
+  if (!v.ballLog) v.ballLog = [[],[]];
+  else { if (!v.ballLog[0]) v.ballLog[0]=[]; if (!v.ballLog[1]) v.ballLog[1]=[]; }
+  if (!v.inningsOver) v.inningsOver = [false, false];
+  if (!v.runs) v.runs = [0,0];
+  if (!v.wickets) v.wickets = [0,0];
+  if (!v.overs) v.overs = [0,0];
+  if (!v.balls) v.balls = [0,0];
+  if (!v.extras) v.extras = [0,0];
+  var eb = {wide:0,noBall:0,bye:0,legBye:0};
+  if (!v.extrasBreakdown) v.extrasBreakdown = [Object.assign({},eb), Object.assign({},eb)];
+  else {
+    if (!v.extrasBreakdown[0]) v.extrasBreakdown[0] = Object.assign({},eb);
+    if (!v.extrasBreakdown[1]) v.extrasBreakdown[1] = Object.assign({},eb);
+  }
+  if (!v.currentBatsmen) v.currentBatsmen = [0,1];
+  if (!v.numPlayers) v.numPlayers = [v.teamA.players.length||2, v.teamB.players.length||2];
+  return v;
+}
+
 // ── EditModal — top-level so it never remounts on App re-render ──
 function EditModal({editing, editVal, setEditVal, onCommit, onCancel}) {
   const inputRef = useRef(null);
@@ -1368,6 +1396,7 @@ function App({ currentUser }) {
       });
 
       var fbEntries = Object.values(entries).sort((a,b) => (b.date||"") > (a.date||"") ? 1 : -1).slice(0, 50);
+      console.log("[History] loaded", fbEntries.length, "entries from Firebase");
       if (!fbEntries.length) return;
 
       setMatchHistory(prev => {
@@ -1463,34 +1492,6 @@ function App({ currentUser }) {
     }
   }, [match, currentUser]);
 
-
-  // Normalise match data from Firebase — Firebase drops empty arrays/nulls
-  function normaliseMatch(v) {
-    if (!v) return v;
-    if (!v.teamA) v.teamA = {name:"Team A", players:[], bowlers:[]};
-    if (!v.teamB) v.teamB = {name:"Team B", players:[], bowlers:[]};
-    if (!v.teamA.players) v.teamA.players = [];
-    if (!v.teamA.bowlers) v.teamA.bowlers = [];
-    if (!v.teamB.players) v.teamB.players = [];
-    if (!v.teamB.bowlers) v.teamB.bowlers = [];
-    if (!v.ballLog) v.ballLog = [[],[]];
-    else { if (!v.ballLog[0]) v.ballLog[0]=[]; if (!v.ballLog[1]) v.ballLog[1]=[]; }
-    if (!v.inningsOver) v.inningsOver = [false, false];
-    if (!v.runs) v.runs = [0,0];
-    if (!v.wickets) v.wickets = [0,0];
-    if (!v.overs) v.overs = [0,0];
-    if (!v.balls) v.balls = [0,0];
-    if (!v.extras) v.extras = [0,0];
-    var eb = {wide:0,noBall:0,bye:0,legBye:0};
-    if (!v.extrasBreakdown) v.extrasBreakdown = [Object.assign({},eb), Object.assign({},eb)];
-    else {
-      if (!v.extrasBreakdown[0]) v.extrasBreakdown[0] = Object.assign({},eb);
-      if (!v.extrasBreakdown[1]) v.extrasBreakdown[1] = Object.assign({},eb);
-    }
-    if (!v.currentBatsmen) v.currentBatsmen = [0,1];
-    if (!v.numPlayers) v.numPlayers = [v.teamA.players.length||2, v.teamB.players.length||2];
-    return v;
-  }
 
   function attachListener(code) {
     if (listRef.current) listRef.current.off();
