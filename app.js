@@ -1469,17 +1469,25 @@ function App({ currentUser }) {
     }).catch(err => console.warn("[History] userMatches load error:", err));
   }, [fbReady]);
 
-  // Restore saved match
+  // Restore saved match + screen on refresh
   useEffect(() => {
     try {
       var raw = localStorage.getItem(LOCAL_KEY);
       if (!raw) return;
       var d = JSON.parse(raw);
-      if (d && d.match) {
-        setMatch(d.match);
+      if (!d) return;
+      if (d.match) {
+        // Restore match screen
+        setMatch(normaliseMatch(d.match));
         setIsViewer(!!d.isViewer);
-        setScreen(d.isViewer ? "viewer" : "match");
+        var restoredScreen = d.screen || (d.isViewer ? "viewer" : "match");
+        // Only restore safe match-dependent screens
+        var safeMatchScreens = ["match", "viewer", "scorecard", "historycard"];
+        setScreen(safeMatchScreens.includes(restoredScreen) ? restoredScreen : (d.isViewer ? "viewer" : "match"));
         if (d.isViewer && d.match.matchCode) attachListener(d.match.matchCode);
+      } else if (d.screen) {
+        // Restore non-match screens (history, admin, setup)
+        setScreen(d.screen);
       }
     } catch(e) {}
   }, []);
@@ -1505,13 +1513,22 @@ function App({ currentUser }) {
     }
   }, [match ? match.needsNextBatter : null]);
 
-  // Persist locally
+  // Persist locally — save screen too so refresh restores the right view
   useEffect(() => {
     try {
-      if (match) localStorage.setItem(LOCAL_KEY, JSON.stringify({match, isViewer}));
-      else localStorage.removeItem(LOCAL_KEY);
+      if (match) {
+        localStorage.setItem(LOCAL_KEY, JSON.stringify({match, isViewer, screen}));
+      } else {
+        // No match — only persist non-match screens worth restoring
+        var screensToPersist = ["history", "admin", "setup"];
+        if (screensToPersist.includes(screen)) {
+          localStorage.setItem(LOCAL_KEY, JSON.stringify({screen}));
+        } else {
+          localStorage.removeItem(LOCAL_KEY);
+        }
+      }
     } catch(e) {}
-  }, [match, isViewer]);
+  }, [match, isViewer, screen]);
 
   // Sync to Firebase (scorer only)
   useEffect(() => {
