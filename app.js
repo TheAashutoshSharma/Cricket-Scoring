@@ -1655,7 +1655,7 @@ function App({ currentUser }) {
 
   function saveToHistory(m) {
     var entry = {
-      id: m.matchCode || Date.now(),
+      id: m.matchCode || String(Date.now()),
       date: new Date().toISOString(),
       teamA: m.teamA.name, teamB: m.teamB.name,
       runsA: m.runs[0], wicketsA: m.wickets[0], oversA: m.overs[0], ballsA: m.balls[0],
@@ -1663,18 +1663,16 @@ function App({ currentUser }) {
       totalOvers: m.totalOvers,
       snapshot: m
     };
-    // Save to Firebase so all users can see it
+    // Update state immediately so it shows in history right away
+    setMatchHistory(prev => {
+      var deduped = [entry, ...prev.filter(e => e.id !== entry.id)].slice(0, 50);
+      try { localStorage.setItem(HIST_KEY, JSON.stringify(deduped)); } catch(e) {}
+      return deduped;
+    });
+    // Save to Firebase so all other users can see it
     if (_fbDB && m.matchCode && m.matchCode !== "LOCAL") {
       _fbDB.ref("completedMatches/"+m.matchCode).set(entry).catch(()=>{});
     }
-    // Also keep local copy as fallback
-    try {
-      var raw = localStorage.getItem(HIST_KEY);
-      var hist = raw ? JSON.parse(raw) : [];
-      hist.unshift(entry);
-      if (hist.length > 50) hist = hist.slice(0, 50);
-      localStorage.setItem(HIST_KEY, JSON.stringify(hist));
-    } catch(e) {}
     // Push player stats to Firebase only for completed, non-abandoned matches
     if (!m.abandoned) updatePlayerStats(m);
   }
