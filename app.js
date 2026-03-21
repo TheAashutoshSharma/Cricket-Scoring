@@ -625,6 +625,8 @@ function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onCho
   const [flipping,  setFlipping] = React.useState(false);
   const [coinFace,  setCoinFace] = React.useState(null);
   const [call,      setCall]     = React.useState(null);
+  const [flipAngle, setFlipAngle] = React.useState(0);
+  const flipRafRef = React.useRef(null);
 
   // Use refs so setTimeout callback always gets latest values
   const callRef    = React.useRef(null);
@@ -641,14 +643,39 @@ function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onCho
     if (!myCall) return;
     setFlipping(true);
     setCoinFace(null);
-    setTimeout(() => {
-      var result = Math.random() < 0.5 ? "heads" : "tails";
-      var winner = result === myCall ? 0 : 1; // team A called myCall; if coin matches, team A wins
-      setCoinFace(result);
-      setFlipping(false);
-      onTossRef.current(winner);
-    }, 1300);
+    setFlipAngle(0);
+
+    var result = Math.random() < 0.5 ? "heads" : "tails";
+    var winner = result === myCall ? 0 : 1;
+    // Animate: spin 8 full rotations over 1.4s, land on result face
+    // heads = 0/360 deg, tails = 180 deg
+    var targetExtra = result === "heads" ? 0 : 180;
+    var totalRotation = 8 * 360 + targetExtra;
+    var duration = 1400;
+    var start = null;
+
+    function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+
+    function animate(ts) {
+      if (!start) start = ts;
+      var elapsed = ts - start;
+      var progress = Math.min(elapsed / duration, 1);
+      var angle = easeOut(progress) * totalRotation;
+      setFlipAngle(angle);
+      if (progress < 1) {
+        flipRafRef.current = requestAnimationFrame(animate);
+      } else {
+        setFlipAngle(totalRotation);
+        setFlipping(false);
+        setCoinFace(result);
+        onTossRef.current(winner);
+      }
+    }
+    flipRafRef.current = requestAnimationFrame(animate);
   }
+
+  // Cleanup RAF on unmount
+  React.useEffect(() => () => { if (flipRafRef.current) cancelAnimationFrame(flipRafRef.current); }, []);
 
   function redo() {
     setCoinFace(null);
@@ -722,22 +749,33 @@ function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onCho
 
   return (
     <div>
-      {/* Coin display */}
+      {/* Coin display — 3D flip animation */}
       <div style={{textAlign:"center",marginBottom:20}}>
-        <div style={{
-          width:90,height:90,borderRadius:"50%",margin:"0 auto 14px",
-          display:"flex",alignItems:"center",justifyContent:"center",
-          boxShadow: coinFace==="heads" ? "0 4px 20px rgba(212,160,23,.6)"
-            : coinFace==="tails" ? "0 4px 20px rgba(150,150,150,.5)"
-            : "0 4px 20px rgba(0,0,0,.5)",
-          transition:"all .3s",
-          background: flipping ? "linear-gradient(135deg,#fbbf24,#d97706)" : "transparent",
-          fontSize: flipping ? 40 : 0,
-        }}>
-          {flipping ? "🪙" : coinFace==="heads" ? <CoinHeads/> : coinFace==="tails" ? <CoinTails/> : <CoinBlank/>}
+        <div style={{perspective:"400px",width:100,height:100,margin:"0 auto 14px"}}>
+          <div style={{
+            width:100, height:100,
+            position:"relative",
+            transformStyle:"preserve-3d",
+            transform:`rotateY(${flipAngle}deg)`,
+            filter: coinFace==="heads" ? "drop-shadow(0 0 16px rgba(212,160,23,.7))"
+                  : coinFace==="tails" ? "drop-shadow(0 0 16px rgba(160,160,160,.5))"
+                  : flipping ? "drop-shadow(0 0 12px rgba(251,191,36,.4))"
+                  : "drop-shadow(0 2px 8px rgba(0,0,0,.6))",
+          }}>
+            {/* Front face — Heads */}
+            <div style={{position:"absolute",inset:0,backfaceVisibility:"hidden",WebkitBackfaceVisibility:"hidden",borderRadius:"50%",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <CoinHeads size={100}/>
+            </div>
+            {/* Back face — Tails */}
+            <div style={{position:"absolute",inset:0,backfaceVisibility:"hidden",WebkitBackfaceVisibility:"hidden",borderRadius:"50%",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",transform:"rotateY(180deg)"}}>
+              <CoinTails size={100}/>
+            </div>
+          </div>
         </div>
+        {flipping && <div style={{color:"#fbbf24",fontSize:13,letterSpacing:1,marginBottom:4}}>🪙 Flipping…</div>}
         {tossWon && <div style={{color:"#4ade80",fontSize:15,fontWeight:"bold",marginBottom:4}}>{winnerName} wins the toss!</div>}
-        {coinFace && <div style={{color:"#94a3b8",fontSize:12}}>Coin landed: <b>{coinFace}</b> · {coinFace==="heads"?"Ashoka Pillar":"₹10"}</div>}
+        {coinFace && !flipping && <div style={{color:"#94a3b8",fontSize:12}}>Coin landed: <b style={{color:"#fbbf24"}}>{coinFace}</b> · {coinFace==="heads"?"Ashoka Pillar":"₹10"}</div>}
+        {!coinFace && !flipping && !tossWon && <div style={{color:"#334155",fontSize:12,marginTop:4}}>Waiting for toss…</div>}
       </div>
 
       {/* Before toss: Team A calls */}
@@ -779,10 +817,7 @@ function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onCho
         </div>
       )}
 
-      {/* Flipping indicator */}
-      {flipping && (
-        <div style={{textAlign:"center",color:"#fbbf24",fontSize:14,padding:"12px 0"}}>🪙 Flipping…</div>
-      )}
+
 
       {/* After toss: winner picks bat or bowl */}
       {tossWon && (
