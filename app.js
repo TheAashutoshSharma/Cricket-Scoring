@@ -749,34 +749,38 @@ function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onCho
 
   return (
     <div>
-      {/* Coin display — 3D flip animation */}
-      <div style={{textAlign:"center",marginBottom:20}}>
-        <div style={{perspective:"400px",width:100,height:100,margin:"0 auto 14px"}}>
-          <div style={{
-            width:100, height:100,
-            position:"relative",
-            transformStyle:"preserve-3d",
-            transform:`rotateY(${flipAngle}deg)`,
-            filter: coinFace==="heads" ? "drop-shadow(0 0 16px rgba(212,160,23,.7))"
-                  : coinFace==="tails" ? "drop-shadow(0 0 16px rgba(160,160,160,.5))"
-                  : flipping ? "drop-shadow(0 0 12px rgba(251,191,36,.4))"
-                  : "drop-shadow(0 2px 8px rgba(0,0,0,.6))",
-          }}>
-            {/* Front face — Heads */}
-            <div style={{position:"absolute",inset:0,backfaceVisibility:"hidden",WebkitBackfaceVisibility:"hidden",borderRadius:"50%",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center"}}>
-              <CoinHeads size={100}/>
+      {/* Coin display — 3D flip animation (no backface-visibility, works on all browsers) */}
+      {(()=>{
+        // Determine visible face from angle: every 180deg alternates heads/tails
+        // Normalize angle to 0-360, heads shows when 0-90 or 270-360, tails when 90-270
+        var norm = ((flipAngle % 360) + 360) % 360;
+        var showingHeads = norm < 90 || norm >= 270;
+        // scaleX squish: coin appears thin at 90/270 (edge-on), full at 0/180
+        var scaleX = Math.abs(Math.cos(flipAngle * Math.PI / 180));
+        var glow = coinFace==="heads" ? "0 0 20px rgba(212,160,23,.8)"
+                 : coinFace==="tails" ? "0 0 20px rgba(160,160,160,.6)"
+                 : flipping ? "0 0 12px rgba(251,191,36,.3)"
+                 : "0 2px 8px rgba(0,0,0,.5)";
+        return (
+          <div style={{textAlign:"center",marginBottom:20}}>
+            <div style={{width:100,height:100,margin:"0 auto 14px",display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <div style={{
+                transform:`scaleX(${Math.max(scaleX, 0.05)})`,
+                transition: flipping ? "none" : "transform 0.05s",
+                borderRadius:"50%",
+                boxShadow: glow,
+                display:"flex",alignItems:"center",justifyContent:"center",
+              }}>
+                {showingHeads ? <CoinHeads size={100}/> : <CoinTails size={100}/>}
+              </div>
             </div>
-            {/* Back face — Tails */}
-            <div style={{position:"absolute",inset:0,backfaceVisibility:"hidden",WebkitBackfaceVisibility:"hidden",borderRadius:"50%",overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",transform:"rotateY(180deg)"}}>
-              <CoinTails size={100}/>
-            </div>
+            {flipping && <div style={{color:"#fbbf24",fontSize:13,letterSpacing:1,marginBottom:4}}>🪙 Flipping…</div>}
+            {tossWon && <div style={{color:"#4ade80",fontSize:15,fontWeight:"bold",marginBottom:4}}>{winnerName} wins the toss!</div>}
+            {coinFace && !flipping && <div style={{color:"#94a3b8",fontSize:12}}>Coin landed: <b style={{color:"#fbbf24"}}>{coinFace}</b> · {coinFace==="heads"?"Ashoka Pillar":"₹10"}</div>}
+            {!coinFace && !flipping && !tossWon && <div style={{color:"#334155",fontSize:12,marginTop:4}}>Waiting for toss…</div>}
           </div>
-        </div>
-        {flipping && <div style={{color:"#fbbf24",fontSize:13,letterSpacing:1,marginBottom:4}}>🪙 Flipping…</div>}
-        {tossWon && <div style={{color:"#4ade80",fontSize:15,fontWeight:"bold",marginBottom:4}}>{winnerName} wins the toss!</div>}
-        {coinFace && !flipping && <div style={{color:"#94a3b8",fontSize:12}}>Coin landed: <b style={{color:"#fbbf24"}}>{coinFace}</b> · {coinFace==="heads"?"Ashoka Pillar":"₹10"}</div>}
-        {!coinFace && !flipping && !tossWon && <div style={{color:"#334155",fontSize:12,marginTop:4}}>Waiting for toss…</div>}
-      </div>
+        );
+      })()}
 
       {/* Before toss: Team A calls */}
       {!tossWon && !flipping && (
