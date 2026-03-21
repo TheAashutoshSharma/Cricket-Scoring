@@ -484,7 +484,7 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
         <div style={{color:"#fbbf24",fontSize:12,fontWeight:"bold",marginBottom:8}}>⚙️ Required Firebase Rules</div>
         <pre style={{color:"#94a3b8",fontSize:10,lineHeight:1.7,margin:0,overflowX:"auto",whiteSpace:"pre-wrap"}}>{`{
   "rules": {
-    "matches":          { "$c": { ".read": true, ".write": true } },
+    "matches":          { ".read": true, ".write": true },
     "liveIndex":        { ".read": true, ".write": true },
     "completedMatches": { ".read": true, ".write": true },
     "userMatches":      { ".read": true, ".write": true },
@@ -1340,6 +1340,7 @@ function App({ currentUser }) {
   const [matchHistory, setMatchHistory] = useState([]);
   // Admin
   const [adminPin, setAdminPin] = useState("");
+  const [viewAsUser, setViewAsUser] = useState(false); // admin persona switcher
   // Live matches list for viewer
   const [liveMatches, setLiveMatches] = useState(null); // null=not loaded, []=empty
   const [loadingLive, setLoadingLive] = useState(false);
@@ -1355,33 +1356,19 @@ function App({ currentUser }) {
   // Init Firebase
   useEffect(() => { setFbReady(initFB()); }, []);
 
-  // Load match history — from Firebase completedMatches + matches index + local fallback
+  // Load match history — from matches/ in Firebase (source of truth)
   useEffect(() => {
-    // Load local first for instant display
+    // Show local cache instantly while Firebase loads
     try {
       var raw = localStorage.getItem(HIST_KEY);
       if (raw) setMatchHistory(JSON.parse(raw));
     } catch(e) {}
     if (!_fbDB) return;
 
-    // Load from completedMatches (new path) AND matches/ (all historical data)
-    Promise.all([
-      _fbDB.ref("completedMatches").orderByChild("date").limitToLast(100).once("value"),
-      _fbDB.ref("matches").once("value"),
-    ]).then(([cmSnap, mSnap]) => {
+    function buildEntries(mVal) {
       var entries = {};
-
-      // From completedMatches (already formatted)
-      var cmVal = cmSnap.val() || {};
-      Object.values(cmVal).forEach(e => {
-        if (e && e.id) entries[e.id] = {...e, snapshot: normaliseMatch(e.snapshot)};
-      });
-
-      // From matches/ — build entries for any not already in completedMatches
-      var mVal = mSnap.val() || {};
-      Object.values(mVal).forEach(m => {
+      Object.values(mVal||{}).forEach(m => {
         if (!m || !m.matchCode) return;
-        if (entries[m.matchCode]) return; // already have it from completedMatches
         if (!m.inningsOver || !m.inningsOver[0]) return; // skip in-progress
         var nm = normaliseMatch(JSON.parse(JSON.stringify(m)));
         entries[m.matchCode] = {
@@ -1394,11 +1381,11 @@ function App({ currentUser }) {
           snapshot: nm,
         };
       });
+      return Object.values(entries).sort((a,b) => (b.date||"") > (a.date||"") ? 1 : -1).slice(0, 50);
+    }
 
-      var fbEntries = Object.values(entries).sort((a,b) => (b.date||"") > (a.date||"") ? 1 : -1).slice(0, 50);
-      console.log("[History] loaded", fbEntries.length, "entries from Firebase");
+    function applyEntries(fbEntries) {
       if (!fbEntries.length) return;
-
       setMatchHistory(prev => {
         var seen = new Set(fbEntries.map(e=>e.id));
         var localOnly = (prev||[]).filter(e => !seen.has(e.id));
@@ -1406,7 +1393,41 @@ function App({ currentUser }) {
         try { localStorage.setItem(HIST_KEY, JSON.stringify(merged)); } catch(e) {}
         return merged;
       });
-    }).catch(err => console.warn("History load error:", err));
+    }
+
+    // Load from completedMatches first (fast, formatted)
+    _fbDB.ref("completedMatches").orderByChild("date").limitToLast(50).once("value")
+      .then(snap => {
+        var cmVal = snap.val() || {};
+        var cmEntries = Object.values(cmVal)
+          .filter(e => e && e.id)
+          .map(e => ({...e, snapshot: normaliseMatch(e.snapshot)}))
+          .sort((a,b) => (b.date||"") > (a.date||"") ? 1 : -1);
+        if (cmEntries.length) applyEntries(cmEntries);
+      })
+      .catch(() => {});
+
+    // Load from userMatches index — fetch each match individually (respects $c rule)
+    _fbDB.ref("userMatches").once("value").then(umSnap => {
+      var umVal = umSnap.val() || {};
+      // Collect all unique match codes across all users
+      var codes = {};
+      Object.values(umVal).forEach(userMap => {
+        if (!userMap || typeof userMap !== "object") return;
+        Object.keys(userMap).forEach(code => { codes[code] = true; });
+      });
+      var allCodes = Object.keys(codes);
+      if (!allCodes.length) return;
+      // Fetch each match individually (permitted by $c rule)
+      return Promise.all(
+        allCodes.map(code => _fbDB.ref("matches/"+code).once("value").then(s => s.val()).catch(()=>null))
+      );
+    }).then(matchArr => {
+      if (!matchArr) return;
+      var mVal = {};
+      matchArr.forEach(m => { if (m && m.matchCode) mVal[m.matchCode] = m; });
+      applyEntries(buildEntries(mVal));
+    }).catch(err => console.warn("[History] userMatches load error:", err));
   }, [fbReady]);
 
   // Restore saved match
@@ -2058,8 +2079,12 @@ function App({ currentUser }) {
   }
 
 
-  if (showPlayers) return <PlayersScreen currentUser={currentUser} onBack={()=>setShowPlayers(false)}/>;
-  if (showTeams)   return <TeamsScreen   currentUser={currentUser} onBack={()=>setShowTeams(false)}/>;
+  if (showPlayers) return <PlayersScreen currentUser={currentUser} isAdmin={isAdmin} onBack={()=>setShowPlayers(false)}/>;
+  if (showTeams)   return <TeamsScreen   currentUser={currentUser} isAdmin={isAdmin} onBack={()=>setShowTeams(false)}/>;
+
+  // Admin persona: isRealAdmin = actual admin email; isAdmin = real admin AND not in user-view mode
+  var isRealAdmin = !!(currentUser && ADMIN_EMAILS.includes(currentUser.email));
+  var isAdmin = isRealAdmin && !viewAsUser;
 
   if (screen==="home") return (
     <div style={{minHeight:"100dvh",background:"linear-gradient(170deg,#0c1828,#0f172a)",display:"flex",flexDirection:"column",alignItems:"center",padding:"28px 16px 40px",fontFamily:"Georgia,serif",overflowY:"auto"}}>
@@ -2090,6 +2115,14 @@ function App({ currentUser }) {
               ? <span style={{color:"#4ade80",fontSize:12}}>● Firebase connected</span>
               : <span style={{color:"#f59e0b",fontSize:12}}>⚠ Firebase offline</span>}
           </div>
+          {isRealAdmin && (
+            <div style={{marginTop:10}}>
+              <button onClick={()=>setViewAsUser(v=>!v)}
+                style={{background:viewAsUser?"rgba(251,191,36,.12)":"rgba(167,139,250,.12)",border:viewAsUser?"1px solid rgba(251,191,36,.4)":"1px solid rgba(167,139,250,.4)",borderRadius:10,padding:"5px 14px",color:viewAsUser?"#fbbf24":"#a78bfa",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif",letterSpacing:1}}>
+                {viewAsUser?"👤 Viewing as User  — switch to Admin 🔒":"🔒 Admin View — switch to User 👤"}
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Create */}
@@ -2167,7 +2200,7 @@ function App({ currentUser }) {
 
         <div style={{textAlign:"center",marginTop:4}}>
           <button onClick={()=>setScreen("admin")}
-            style={{background:"none",border:"none",color:currentUser&&ADMIN_EMAILS.includes(currentUser.email)?"#475569":"#1e293b",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}>
+            style={{background:"none",border:"none",color:isRealAdmin?"#475569":"#1e293b",fontSize:11,cursor:"pointer",fontFamily:"Georgia,serif"}}>
             ···
           </button>
         </div>
@@ -2221,7 +2254,7 @@ function App({ currentUser }) {
               </div>
             </div>
           ))}
-          {matchHistory.length > 0 && currentUser && ADMIN_EMAILS.includes(currentUser.email) && (
+          {matchHistory.length > 0 && isAdmin && (
             <button onClick={()=>setScreen("admin")}
               style={{width:"100%",marginTop:4,marginBottom:20,padding:"10px 0",background:"transparent",border:"1px solid #475569",borderRadius:10,color:"#64748b",fontSize:12,cursor:"pointer",fontFamily:"Georgia,serif"}}>
               🔒 Admin — Manage History
@@ -2312,7 +2345,7 @@ function App({ currentUser }) {
   // ADMIN
   if (screen==="admin") {
     const ADMIN_PIN = "1989";
-    var isAdminUser = currentUser && ADMIN_EMAILS.includes(currentUser.email);
+    var isAdminUser = isAdmin;
     var pinOk = isAdminUser || adminPin===ADMIN_PIN;
     return (
       <div style={S.page}>
@@ -3056,8 +3089,7 @@ function PlayerFullStats({ p }) {
 }
 
 // ── PlayersScreen — view/edit players ────────────────────────
-function PlayersScreen({ currentUser, onBack }) {
-  const isAdmin = currentUser && ADMIN_EMAILS.includes(currentUser.email);
+function PlayersScreen({ currentUser, isAdmin, onBack }) {
   const ROLES       = ["Batsman","Bowler","All-rounder","Wicket-keeper"];
   const BAT_STYLES  = ["Right-hand","Left-hand"];
   const BOWL_STYLES = ["Right-arm Fast","Right-arm Medium","Right-arm Off-spin","Left-arm Fast","Left-arm Medium","Left-arm Spin","N/A"];
@@ -3345,8 +3377,7 @@ function QuickAddPlayer({currentUser, onAdded}) {
   );
 }
 
-function TeamsScreen({ currentUser, onBack }) {
-  const isAdmin = currentUser && ADMIN_EMAILS.includes(currentUser.email);
+function TeamsScreen({ currentUser, isAdmin, onBack }) {
 
   const [teams,   setTeams]   = React.useState([]);
   const [players, setPlayers] = React.useState([]);
