@@ -456,12 +456,13 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
         <div style={{color:"#fbbf24",fontSize:12,fontWeight:"bold",marginBottom:8}}>⚙️ Required Firebase Rules</div>
         <pre style={{color:"#94a3b8",fontSize:10,lineHeight:1.7,margin:0,overflowX:"auto",whiteSpace:"pre-wrap"}}>{`{
   "rules": {
-    "matches":     { "$c": { ".read": true, ".write": true } },
-    "liveIndex":   { ".read": true, ".write": true },
-    "userMatches": { ".read": true, ".write": true },
-    "users":       { ".read": true, ".write": true },
-    "players":     { ".read": true, ".write": true },
-    "teams":       { ".read": true, ".write": true }
+    "matches":          { "$c": { ".read": true, ".write": true } },
+    "liveIndex":        { ".read": true, ".write": true },
+    "completedMatches": { ".read": true, ".write": true },
+    "userMatches":      { ".read": true, ".write": true },
+    "users":            { ".read": true, ".write": true },
+    "players":          { ".read": true, ".write": true },
+    "teams":            { ".read": true, ".write": true }
   }
 }`}</pre>
         <div style={{color:"#64748b",fontSize:10,marginTop:8}}>Firebase Console → Realtime Database → Rules</div>
@@ -1326,13 +1327,31 @@ function App({ currentUser }) {
   // Init Firebase
   useEffect(() => { setFbReady(initFB()); }, []);
 
-  // Load match history
+  // Load match history — from Firebase (shared) + local fallback
   useEffect(() => {
+    // Load local first for instant display
     try {
       var raw = localStorage.getItem(HIST_KEY);
       if (raw) setMatchHistory(JSON.parse(raw));
     } catch(e) {}
-  }, []);
+    // Then load from Firebase and merge
+    if (_fbDB) {
+      _fbDB.ref("completedMatches").orderByChild("date").limitToLast(50).once("value", snap => {
+        var val = snap.val();
+        if (!val) return;
+        var fbEntries = Object.values(val).sort((a,b) => (b.date||"") > (a.date||"") ? 1 : -1);
+        setMatchHistory(prev => {
+          // Merge: Firebase entries take priority, dedupe by id
+          var seen = new Set(fbEntries.map(e=>e.id));
+          var localOnly = prev.filter(e => !seen.has(e.id));
+          var merged = [...fbEntries, ...localOnly].slice(0, 50);
+          // Also update localStorage
+          try { localStorage.setItem(HIST_KEY, JSON.stringify(merged)); } catch(e) {}
+          return merged;
+        });
+      }).catch(()=>{});
+    }
+  }, [fbReady]);
 
   // Restore saved match
   useEffect(() => {
@@ -1635,22 +1654,26 @@ function App({ currentUser }) {
   }
 
   function saveToHistory(m) {
+    var entry = {
+      id: m.matchCode || Date.now(),
+      date: new Date().toISOString(),
+      teamA: m.teamA.name, teamB: m.teamB.name,
+      runsA: m.runs[0], wicketsA: m.wickets[0], oversA: m.overs[0], ballsA: m.balls[0],
+      runsB: m.runs[1], wicketsB: m.wickets[1], oversB: m.overs[1], ballsB: m.balls[1],
+      totalOvers: m.totalOvers,
+      snapshot: m
+    };
+    // Save to Firebase so all users can see it
+    if (_fbDB && m.matchCode && m.matchCode !== "LOCAL") {
+      _fbDB.ref("completedMatches/"+m.matchCode).set(entry).catch(()=>{});
+    }
+    // Also keep local copy as fallback
     try {
       var raw = localStorage.getItem(HIST_KEY);
       var hist = raw ? JSON.parse(raw) : [];
-      var entry = {
-        id: Date.now(),
-        date: new Date().toISOString(),
-        teamA: m.teamA.name, teamB: m.teamB.name,
-        runsA: m.runs[0], wicketsA: m.wickets[0], oversA: m.overs[0], ballsA: m.balls[0],
-        runsB: m.runs[1], wicketsB: m.wickets[1], oversB: m.overs[1], ballsB: m.balls[1],
-        totalOvers: m.totalOvers,
-        snapshot: m
-      };
       hist.unshift(entry);
       if (hist.length > 50) hist = hist.slice(0, 50);
       localStorage.setItem(HIST_KEY, JSON.stringify(hist));
-      setMatchHistory(hist);
     } catch(e) {}
     // Push player stats to Firebase only for completed, non-abandoned matches
     if (!m.abandoned) updatePlayerStats(m);
@@ -2100,13 +2123,11 @@ function App({ currentUser }) {
           )}
         </div>
 
-        {/* History button */}
-        {matchHistory.length > 0 && (
-          <button onClick={()=>setScreen("history")}
-            style={{width:"100%",marginBottom:14,padding:"12px 0",background:"transparent",border:"1px solid #334155",borderRadius:12,color:"#64748b",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",letterSpacing:1}}>
-            📚 Match History ({matchHistory.length})
-          </button>
-        )}
+        {/* History button — always show for logged in users */}
+        <button onClick={()=>setScreen("history")}
+          style={{width:"100%",marginBottom:14,padding:"12px 0",background:"transparent",border:"1px solid #334155",borderRadius:12,color:"#64748b",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif",letterSpacing:1}}>
+          📚 Match History{matchHistory.length > 0 ? " ("+matchHistory.length+")" : ""}
+        </button>
 
         <div style={{textAlign:"center",marginTop:4}}>
           <button onClick={()=>setScreen("admin")}
