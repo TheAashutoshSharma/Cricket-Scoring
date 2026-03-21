@@ -1327,30 +1327,57 @@ function App({ currentUser }) {
   // Init Firebase
   useEffect(() => { setFbReady(initFB()); }, []);
 
-  // Load match history — from Firebase (shared) + local fallback
+  // Load match history — from Firebase completedMatches + matches index + local fallback
   useEffect(() => {
     // Load local first for instant display
     try {
       var raw = localStorage.getItem(HIST_KEY);
       if (raw) setMatchHistory(JSON.parse(raw));
     } catch(e) {}
-    // Then load from Firebase and merge
-    if (_fbDB) {
-      _fbDB.ref("completedMatches").orderByChild("date").limitToLast(50).once("value", snap => {
-        var val = snap.val();
-        if (!val) return;
-        var fbEntries = Object.values(val).map(e => ({...e, snapshot: normaliseMatch(e.snapshot)})).sort((a,b) => (b.date||"") > (a.date||"") ? 1 : -1);
-        setMatchHistory(prev => {
-          // Merge: Firebase entries take priority, dedupe by id
-          var seen = new Set(fbEntries.map(e=>e.id));
-          var localOnly = prev.filter(e => !seen.has(e.id));
-          var merged = [...fbEntries, ...localOnly].slice(0, 50);
-          // Also update localStorage
-          try { localStorage.setItem(HIST_KEY, JSON.stringify(merged)); } catch(e) {}
-          return merged;
-        });
-      }).catch(()=>{});
-    }
+    if (!_fbDB) return;
+
+    // Load from completedMatches (new path) AND matches/ (all historical data)
+    Promise.all([
+      _fbDB.ref("completedMatches").orderByChild("date").limitToLast(100).once("value"),
+      _fbDB.ref("matches").once("value"),
+    ]).then(([cmSnap, mSnap]) => {
+      var entries = {};
+
+      // From completedMatches (already formatted)
+      var cmVal = cmSnap.val() || {};
+      Object.values(cmVal).forEach(e => {
+        if (e && e.id) entries[e.id] = {...e, snapshot: normaliseMatch(e.snapshot)};
+      });
+
+      // From matches/ — build entries for any not already in completedMatches
+      var mVal = mSnap.val() || {};
+      Object.values(mVal).forEach(m => {
+        if (!m || !m.matchCode) return;
+        if (entries[m.matchCode]) return; // already have it from completedMatches
+        if (!m.inningsOver || !m.inningsOver[0]) return; // skip in-progress
+        var nm = normaliseMatch(JSON.parse(JSON.stringify(m)));
+        entries[m.matchCode] = {
+          id: m.matchCode,
+          date: m.createdAt ? new Date(m.createdAt).toISOString() : new Date().toISOString(),
+          teamA: nm.teamA.name, teamB: nm.teamB.name,
+          runsA: nm.runs[0], wicketsA: nm.wickets[0], oversA: nm.overs[0], ballsA: nm.balls[0],
+          runsB: nm.runs[1], wicketsB: nm.wickets[1], oversB: nm.overs[1], ballsB: nm.balls[1],
+          totalOvers: nm.totalOvers,
+          snapshot: nm,
+        };
+      });
+
+      var fbEntries = Object.values(entries).sort((a,b) => (b.date||"") > (a.date||"") ? 1 : -1).slice(0, 50);
+      if (!fbEntries.length) return;
+
+      setMatchHistory(prev => {
+        var seen = new Set(fbEntries.map(e=>e.id));
+        var localOnly = (prev||[]).filter(e => !seen.has(e.id));
+        var merged = [...fbEntries, ...localOnly].slice(0, 50);
+        try { localStorage.setItem(HIST_KEY, JSON.stringify(merged)); } catch(e) {}
+        return merged;
+      });
+    }).catch(err => console.warn("History load error:", err));
   }, [fbReady]);
 
   // Restore saved match
