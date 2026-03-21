@@ -1317,9 +1317,7 @@ function App({ currentUser }) {
   const [liveError,   setLiveError]   = useState("");
   const listRef = useRef(null);
   const scorerLockRef = useRef(null);
-  const scorerRequestRef = useRef(null); // listener for incoming handover requests
   const [scorerToast, setScorerToast] = useState("");
-  const [handoverRequest, setHandoverRequest] = useState(null); // {uid, name} pending approval
   // Players & Teams
   const [showPlayers,    setShowPlayers]    = useState(false);
   const [showTeams,      setShowTeams]      = useState(false);
@@ -1419,6 +1417,25 @@ function App({ currentUser }) {
     }
   }, [match, currentUser]);
 
+
+  // Normalise match data from Firebase — Firebase drops empty arrays/nulls
+  function normaliseMatch(v) {
+    if (!v) return v;
+    if (v.teamA && !v.teamA.players) v.teamA.players = [];
+    if (v.teamA && !v.teamA.bowlers) v.teamA.bowlers = [];
+    if (v.teamB && !v.teamB.players) v.teamB.players = [];
+    if (v.teamB && !v.teamB.bowlers) v.teamB.bowlers = [];
+    if (!v.ballLog) v.ballLog = [[],[]];
+    else { if (!v.ballLog[0]) v.ballLog[0]=[]; if (!v.ballLog[1]) v.ballLog[1]=[]; }
+    if (!v.inningsOver) v.inningsOver = [false, false];
+    if (!v.runs) v.runs = [0,0];
+    if (!v.wickets) v.wickets = [0,0];
+    if (!v.overs) v.overs = [0,0];
+    if (!v.balls) v.balls = [0,0];
+    if (!v.currentBatsmen) v.currentBatsmen = [0,1];
+    return v;
+  }
+
   function attachListener(code) {
     if (listRef.current) listRef.current.off();
     if (!_fbDB) return;
@@ -1427,17 +1444,13 @@ function App({ currentUser }) {
     var first = true;
     ref.on("value", snap => {
       var v = snap.val();
+      var v = normaliseMatch(snap.val());
+      if (!v) return;
       if (first) {
         first = false;
-        if (!v) {
-          // Match not found in Firebase — show error on home
-          setLiveError("Match not found or no longer available.");
-          setLoadingLive(false);
-          return;
-        }
         setMatch(v); setIsViewer(true); setScreen("viewer");
       } else {
-        if (v) setMatch(v);
+        setMatch(v);
       }
     }, err => console.warn("FB listener error:", err.message));
   }
@@ -1488,7 +1501,7 @@ function App({ currentUser }) {
     var iAmCreator = isMatchCreator(m);
 
     _fbDB.ref("matches/"+code).once("value", snap => {
-      var latest = snap.val();
+      var latest = normaliseMatch(snap.val());
       if (!latest) return;
       var existingScorer = latest.scorerUid;
 
@@ -1512,7 +1525,6 @@ function App({ currentUser }) {
         setIsViewer(false);
         setScreen("match");
         watchScorerLock(code);
-        watchHandoverRequests(code);
       });
     });
   }
@@ -1532,28 +1544,8 @@ function App({ currentUser }) {
     if (listRef.current) listRef.current.off();
     var ref = _fbDB.ref("matches/"+code);
     listRef.current = ref;
-    ref.on("value", snap => { var v = snap.val(); if (v) setMatch(v); },
+    ref.on("value", snap => { var v = normaliseMatch(snap.val()); if (v) setMatch(v); },
       err => console.warn("FB listener error:", err.message));
-  }
-
-  // Watch for incoming handover requests (called when you become scorer)
-  function watchHandoverRequests(code) {
-    if (scorerRequestRef.current) { scorerRequestRef.current.off(); }
-    if (!_fbDB || !currentUser) return;
-    scorerRequestRef.current = _fbDB.ref("matches/"+code+"/scorerRequest");
-    scorerRequestRef.current.on("value", snap => {
-      var req = snap.val();
-      if (req && req.uid && req.uid !== currentUser.uid) {
-        setHandoverRequest(req); // show approve/decline banner
-      } else {
-        setHandoverRequest(null);
-      }
-    });
-  }
-
-  function stopWatchingRequests() {
-    if (scorerRequestRef.current) { scorerRequestRef.current.off(); scorerRequestRef.current = null; }
-    setHandoverRequest(null);
   }
 
   // Viewer requests handover from active scorer
@@ -1570,7 +1562,6 @@ function App({ currentUser }) {
   function approveHandover(m, req) {
     if (!_fbDB || !m || !m.matchCode || !req) return;
     var code = m.matchCode;
-    stopWatchingRequests();
     // Write new scorer, clear request
     _fbDB.ref("matches/"+code).update({
       scorerUid: req.uid, scorerName: req.name,
@@ -1583,7 +1574,7 @@ function App({ currentUser }) {
       if (listRef.current) listRef.current.off();
       var ref = _fbDB.ref("matches/"+code);
       listRef.current = ref;
-      ref.on("value", snap => { var v = snap.val(); if (v) setMatch(v); },
+      ref.on("value", snap => { var v = normaliseMatch(snap.val()); if (v) setMatch(v); },
         err => console.warn("FB listener:", err.message));
     });
   }
@@ -1592,13 +1583,11 @@ function App({ currentUser }) {
   function declineHandover(m) {
     if (!_fbDB || !m || !m.matchCode) return;
     _fbDB.ref("matches/"+m.matchCode+"/scorerRequest").remove();
-    setHandoverRequest(null);
   }
 
   // Release scoring fully (match end / leave)
   function releaseScoring(code) {
     if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
-    stopWatchingRequests();
     if (_fbDB && code && code !== "LOCAL") {
       _fbDB.ref("matches/"+code).update({ scorerUid: null, scorerName: null, scorerHeartbeat: null, scorerRequest: null });
     }
@@ -1622,7 +1611,6 @@ function App({ currentUser }) {
     setScreen("match");
     if (currentUser && code !== "LOCAL") {
       watchScorerLock(code);
-      watchHandoverRequests(code);
     }
     // Immediately register in liveIndex so it appears in viewer list
     if (fbReady && code !== "LOCAL" && _fbDB) {
@@ -1734,7 +1722,6 @@ function App({ currentUser }) {
     if (!confirm(msg)) return;
     if (match && match.matchCode && !isViewer) releaseScoring(match.matchCode);
     detach();
-    stopWatchingRequests();
     setMatch(null); setHistory([]); setSetup(blankSetup());
     setIsViewer(false); setScreen("home");
   }
@@ -2439,18 +2426,21 @@ function App({ currentUser }) {
   if (!match) return null;
 
   // ── Derived match values ──────────────────────────────────────
-  var bt       = match.batting;
+  var bt       = match.batting||0;
   var bTeam    = bt===0?match.teamA:match.teamB;
   var wTeam    = bt===0?match.teamB:match.teamA;
+  // Guard against missing/corrupt nested data (can happen during Firebase sync)
+  if (!bTeam||!bTeam.players||!wTeam||!wTeam.bowlers) return null;
   var bTeamKey = bt===0?"A":"B";
   var wTeamKey = bt===0?"B":"A";
-  var striker    = bTeam.players[match.currentBatsmen[match.striker]];
-  var nonStriker = bTeam.players[match.currentBatsmen[1-match.striker]];
-  var bowler     = wTeam.bowlers[match.currentBowler];
+  var striker    = bTeam.players[match.currentBatsmen&&match.currentBatsmen[match.striker||0]];
+  var nonStriker = bTeam.players[match.currentBatsmen&&match.currentBatsmen[1-(match.striker||0)]];
+  var bowler     = wTeam.bowlers[match.currentBowler||0];
   var target     = bt===1?match.runs[0]+1:null;
   var needed     = target?target-match.runs[1]:null;
   var ballsLeft  = (match.totalOvers-match.overs[bt])*6-match.balls[bt];
-  var lastBalls  = match.ballLog[bt].slice(-12);
+  var lastBalls  = (match.ballLog&&match.ballLog[bt])||[];
+  lastBalls      = lastBalls.slice(-12);
 
   // ── Shared UI blocks ──────────────────────────────────────────
   function ScoreHeader() {
@@ -2744,13 +2734,13 @@ function App({ currentUser }) {
         </div>
 
         {/* Handover approval banner */}
-        {handoverRequest && (
+        {match&&match.scorerRequest&&currentUser&&match.scorerRequest.uid!==currentUser.uid && (
           <div style={{margin:"10px 12px 0",background:"rgba(251,191,36,.08)",border:"1px solid rgba(251,191,36,.4)",borderRadius:14,padding:"12px 16px"}}>
             <div style={{color:"#fbbf24",fontSize:13,fontWeight:"bold",marginBottom:8}}>
-              ✋ {handoverRequest.name} wants to score
+              ✋ {match.scorerRequest.name} wants to score
             </div>
             <div style={{display:"flex",gap:8}}>
-              <button onClick={()=>approveHandover(match, handoverRequest)}
+              <button onClick={()=>approveHandover(match, match.scorerRequest)}
                 style={{flex:1,padding:"9px 0",background:"linear-gradient(135deg,#4ade80,#16a34a)",border:"none",borderRadius:10,color:"#0f172a",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Georgia,serif"}}>
                 ✓ Approve
               </button>
@@ -2782,9 +2772,10 @@ function App({ currentUser }) {
               m2.currentBatsmen = [0,1];
               m2.currentBowler = 0;
               m2.needsBowler = true; // must pick first bowler of 2nd innings
-              // Clear bowlers for the team that will bowl in 2nd innings (team that batted 1st)
-              var bowlingTeam2 = m2.battingFirst===0 ? m2.teamA : m2.teamB;
-              bowlingTeam2.bowlers = [];
+              // In 2nd innings (batting=1), teamB is bowling — clear their bowlers for fresh start
+              m2.teamB.bowlers = [];
+              // Also reset currentBowler
+              m2.currentBowler = 0;
               return m2;
             })}
               style={{background:"#16a34a",color:"#fff",border:"none",borderRadius:10,padding:"12px 28px",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Georgia,serif"}}>
