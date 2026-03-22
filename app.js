@@ -1429,7 +1429,6 @@ function AuthGate({children}) {
               </div>
             </div>
           )}
-        </div>
 
         <div style={{textAlign:"center",marginTop:24}}>
           <span style={{color:SP.textDim,fontSize:13}}>New to the league? </span>
