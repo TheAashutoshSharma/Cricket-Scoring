@@ -2710,40 +2710,37 @@ function App({ currentUser }) {
 
   // ── Shared UI blocks ──────────────────────────────────────────
   function ScoreHeader() {
-    var inn = bt===0?"1ST INNINGS":"2ND INNINGS";
-    var crr = match.balls[bt]===0&&match.overs[bt]===0?"-":((match.runs[bt]/((match.overs[bt]*6+match.balls[bt])/6))).toFixed(2);
     return (
-      <div style={{background:SP.bg2,padding:"20px 20px 16px",marginBottom:0}}>
+      <div style={{margin:"10px 12px",background:"linear-gradient(135deg,#0f1f40,#111827)",borderRadius:16,padding:"16px 18px",border:"1px solid rgba(102,157,255,.15)"}}>
         {match.matchCode&&match.matchCode!=="LOCAL"&&(
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
-              {isViewer?<span className="sp-live-dot"/>:<span style={{fontSize:10}}>📡</span>}
-              <span style={{color:SP.textDim,fontSize:9,letterSpacing:2.5,fontWeight:"700",textTransform:"uppercase"}}>{isViewer?"Live":"Broadcasting"}</span>
+              {isViewer?<span className="sp-live-dot"/>:<span style={{color:SP.textDim,fontSize:10,letterSpacing:1}}>📡 BROADCASTING</span>}
+              {isViewer&&<span style={{color:SP.textDim,fontSize:10,letterSpacing:2}}>LIVE</span>}
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:6,padding:"3px 10px",background:SP.bg3,borderRadius:999}}>
-              <span style={{color:SP.textDim,fontSize:9,letterSpacing:1.5}}>CODE</span>
-              <span style={{color:SP.secondary,fontWeight:"800",fontSize:14,fontFamily:"monospace",letterSpacing:4}}>{match.matchCode}</span>
+            <div style={{background:"rgba(102,157,255,.1)",border:"1px solid rgba(102,157,255,.25)",borderRadius:8,padding:"4px 12px",display:"flex",alignItems:"center",gap:8}}>
+              <span style={{color:SP.textDim,fontSize:10}}>CODE</span>
+              <span style={{color:SP.secondary,fontWeight:"bold",fontSize:18,fontFamily:"monospace",letterSpacing:4}}>{match.matchCode}</span>
             </div>
           </div>
         )}
-        <div style={S.lbl}>{inn} • {bTeam.name}</div>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",marginBottom:target?16:0}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:target?10:0}}>
           <div>
-            <div style={{lineHeight:1,marginBottom:4}}>
-              <span style={{color:SP.secondary,fontSize:56,fontWeight:"900",letterSpacing:-2,fontFamily:"Lexend,Georgia,sans-serif"}}>{match.runs[bt]}</span>
-              <span style={{color:SP.textDim,fontSize:32,fontWeight:"300"}}>/{match.wickets[bt]}</span>
+            <div style={{color:SP.secondary,fontSize:10,letterSpacing:2,marginBottom:4,fontWeight:"700"}}>BATTING</div>
+            <div style={{color:"#fff",fontWeight:"bold",fontSize:18,fontFamily:"Lexend,Georgia,sans-serif"}}>{bTeam.name}</div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{lineHeight:1}}>
+              <span style={{color:"#fff",fontSize:34,fontWeight:"bold"}}>{match.runs[bt]}</span>
+              <span style={{color:SP.textDim,fontSize:22}}>/{match.wickets[bt]}</span>
             </div>
-            <div style={{color:SP.textSec,fontSize:14,fontWeight:"500"}}>Overs {match.overs[bt]}.{match.balls[bt]} <span style={{color:SP.textDim,fontWeight:"300"}}>• CRR {crr}</span></div>
+            <div style={{color:SP.textDim,fontSize:13,marginTop:2}}>{match.overs[bt]}.{match.balls[bt]} / {match.totalOvers} ov</div>
           </div>
         </div>
         {target&&(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
-            {[["TARGET",target],["NEED",needed],["BALLS",ballsLeft]].map(([l,v])=>(
-              <div key={l} style={{background:SP.bg3,borderRadius:8,padding:"10px 12px",textAlign:"center"}}>
-                <div style={{...S.lbl,marginBottom:4}}>{l}</div>
-                <div style={{color:"#fff",fontSize:20,fontWeight:"800",fontFamily:"Lexend,Georgia,sans-serif"}}>{v}</div>
-              </div>
-            ))}
+          <div style={{background:"rgba(255,112,114,.08)",border:"1px solid rgba(255,112,114,.2)",borderRadius:10,padding:"8px 14px",display:"flex",gap:16}}>
+            <span style={{color:"rgba(255,160,160,.8)",fontSize:13}}>Target: <b style={{color:"#fff"}}>{target}</b></span>
+            <span style={{color:"rgba(255,160,160,.8)",fontSize:13}}>Need: <b style={{color:"#fff"}}>{needed}</b> off <b style={{color:"#fff"}}>{ballsLeft}</b> balls</span>
           </div>
         )}
       </div>
@@ -2752,27 +2749,33 @@ function App({ currentUser }) {
 
   function BatterCard({editable}) {
     return (
-      <div style={{background:SP.bg2,borderRadius:12,marginBottom:8}}>
+      <div style={{...S.card}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <span style={S.lbl}>BATTERS</span>
+          {editable&&<span style={{color:SP.textDim,fontSize:10}}>✏ tap name to edit</span>}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 32px 32px 32px 32px 44px",gap:4,marginBottom:6}}>
+          {["NAME","R","B","4s","6s","SR"].map(h=><span key={h} style={{color:SP.textDim,fontSize:10,textAlign:h==="NAME"?"left":"center",fontWeight:"600"}}>{h}</span>)}
+        </div>
         {[
-          {p:striker, si:match.currentBatsmen[match.striker], isStriker:true},
-          {p:nonStriker&&match.currentBatsmen[0]!==match.currentBatsmen[1]?nonStriker:null, si:match.currentBatsmen[1-match.striker], isStriker:false},
-        ].map(({p,si,isStriker})=>p&&(
-          <div key={si} style={{padding:"14px 16px",borderBottom:isStriker?"1px solid "+SP.bg3:"none",borderLeft:isStriker?"3px solid "+SP.secondary:"3px solid transparent",borderRadius:isStriker?"12px 12px 0 0":"0 0 12px 12px"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-              <div>
-                {editable
-                  ?<span onClick={()=>startEdit(bTeamKey,"player",si,p.name)} style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif",cursor:"pointer",borderBottom:"1px dashed "+SP.textDim}}>{p.name}{isStriker?"*":""}</span>
-                  :<span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>{p.name}{isStriker?"*":""}</span>
-                }
-                <div style={{color:SP.textDim,fontSize:9,letterSpacing:2,fontWeight:"700",marginTop:2}}>{isStriker?"STRIKER":"NON-STRIKER"}</div>
-              </div>
-              {isStriker&&<span style={{color:SP.secondary,fontSize:18}}>★</span>}
+          {p:striker,    si:match.currentBatsmen[match.striker],   isStriker:true},
+          {p:nonStriker && match.currentBatsmen[0]!==match.currentBatsmen[1] ? nonStriker : null, si:match.currentBatsmen[1-match.striker], isStriker:false},
+        ].map(({p,si,isStriker})=> p&&(
+          <div key={si} style={{display:"grid",gridTemplateColumns:"1fr 32px 32px 32px 32px 44px",gap:4,padding:"8px 0",borderTop:"1px solid "+SP.bg4,alignItems:"center"}}>
+            <div style={{display:"flex",alignItems:"center",gap:5,overflow:"hidden"}}>
+              <span style={{color:SP.secondary,fontSize:13,flexShrink:0}}>{isStriker?"🏏":"   "}</span>
+              {editable
+                ? <span onClick={()=>startEdit(bTeamKey,"player",si,p.name)}
+                    style={{color:isStriker?"#fff":SP.textSec,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"pointer",borderBottom:"1px dashed "+SP.textDim,fontFamily:"Lexend,Georgia,sans-serif",fontWeight:isStriker?"700":"400"}}>
+                    {p.name}
+                  </span>
+                : <span style={{color:isStriker?"#fff":SP.textSec,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"Lexend,Georgia,sans-serif",fontWeight:isStriker?"700":"400"}}>{p.name}</span>}
             </div>
-            <div style={{display:"flex",alignItems:"baseline",gap:8}}>
-              <span style={{color:"#fff",fontSize:28,fontWeight:"800",letterSpacing:-1,fontFamily:"Lexend,Georgia,sans-serif"}}>{p.runs}</span>
-              <span style={{color:SP.textDim,fontSize:14}}>({p.balls})</span>
-              <span style={{color:SP.secondary,fontSize:12,marginLeft:"auto",fontWeight:"700"}}>SR {srFn(p)}</span>
-            </div>
+            <span style={{color:SP.secondary,fontWeight:"bold",fontSize:15,textAlign:"center"}}>{p.runs}</span>
+            <span style={{color:SP.textSec,fontSize:13,textAlign:"center"}}>{p.balls}</span>
+            <span style={{color:"#60a5fa",fontSize:13,textAlign:"center"}}>{p.fours}</span>
+            <span style={{color:SP.primary,fontSize:13,textAlign:"center"}}>{p.sixes}</span>
+            <span style={{color:SP.textDim,fontSize:12,textAlign:"center"}}>{srFn(p)}</span>
           </div>
         ))}
       </div>
@@ -2781,18 +2784,21 @@ function App({ currentUser }) {
 
   function BowlerCard({editable}) {
     return (
-      <div style={{background:SP.bg2,borderRadius:12,padding:"14px 16px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",borderLeft:"3px solid "+SP.bg4}}>
+      <div style={{...S.card,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{...S.lbl,marginBottom:4}}>Current Bowler — {wTeam.name}</div>
+          <div style={{color:SP.textDim,fontSize:10,marginBottom:3,letterSpacing:1,fontWeight:"600"}}>BOWLING — {wTeam.name}</div>
           {editable
-            ?<span onClick={()=>startEdit(wTeamKey,"bowler",match.currentBowler,bowler?bowler.name:"")} style={{color:"#fff",fontSize:15,fontWeight:"700",cursor:"pointer",borderBottom:"1px dashed "+SP.textDim,fontFamily:"Lexend,Georgia,sans-serif"}}>{bowler?bowler.name:"—"}</span>
-            :<span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>{bowler?bowler.name:"—"}</span>}
+            ? <span onClick={()=>startEdit(wTeamKey,"bowler",match.currentBowler,bowler?bowler.name:"")}
+                style={{color:"#fff",fontSize:15,cursor:"pointer",borderBottom:"1px dashed "+SP.textDim,fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"600"}}>
+                {bowler?bowler.name:""}
+              </span>
+            : <span style={{color:"#fff",fontSize:15,fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"600"}}>{bowler?bowler.name:""}</span>}
         </div>
-        <div style={{display:"flex",gap:16,flexShrink:0}}>
+        <div style={{display:"flex",gap:14,flexShrink:0}}>
           {bowler&&[["O",bowler.overs+"."+bowler.balls],["R",bowler.runs],["W",bowler.wickets]].map(([l,v])=>(
             <div key={l} style={{textAlign:"center"}}>
-              <div style={{...S.lbl,marginBottom:2}}>{l}</div>
-              <div style={{color:l==="W"?SP.tertiary:"#fff",fontWeight:"800",fontSize:18,fontFamily:"Lexend,Georgia,sans-serif"}}>{v}</div>
+              <div style={{color:SP.textDim,fontSize:10,fontWeight:"600"}}>{l}</div>
+              <div style={{color:l==="W"?SP.tertiary:"#fff",fontWeight:"bold",fontSize:16,fontFamily:"Lexend,Georgia,sans-serif"}}>{v}</div>
             </div>
           ))}
         </div>
@@ -2803,15 +2809,12 @@ function App({ currentUser }) {
   function BallLog() {
     if (!lastBalls.length) return null;
     return (
-      <div style={{background:SP.bg2,borderRadius:12,padding:"12px 16px",marginBottom:8}}>
-        <div style={{...S.lbl,marginBottom:8}}>This Over</div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {lastBalls.map((b,i)=>(
-            <div key={i} style={{width:38,height:38,borderRadius:"50%",background:bBg(b),display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:12,fontWeight:"800",fontFamily:"Lexend,Georgia,sans-serif",boxShadow:b.r===6?"0 0 10px rgba(156,255,147,.3)":b.r===4?"0 0 10px rgba(102,157,255,.3)":"none"}}>
-              {bTxt(b)}
-            </div>
-          ))}
-        </div>
+      <div style={{marginBottom:10,display:"flex",gap:6,flexWrap:"wrap"}}>
+        {lastBalls.map((b,i)=>(
+          <div key={i} style={{width:36,height:36,borderRadius:"50%",background:bBg(b),display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:12,fontWeight:"bold",fontFamily:"Lexend,Georgia,sans-serif",boxShadow:b.r===6?"0 0 8px rgba(156,255,147,.4)":b.r===4?"0 0 8px rgba(102,157,255,.3)":"none"}}>
+            {bTxt(b)}
+          </div>
+        ))}
       </div>
     );
   }
@@ -2975,23 +2978,24 @@ function App({ currentUser }) {
           </div>
         ) : null}
 
-        {/* Match top bar */}
-        <div style={{...S.topBar}}>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontSize:16}}>🏏</span>
-            <span style={{color:"#fff",fontSize:13,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>STADIUM PULSE</span>
-            {syncing&&<span style={{color:SP.secondary,fontSize:10,fontWeight:"700"}}>↑</span>}
-          </div>
-          <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <button onClick={()=>setScreen("scorecard")} style={S.btnSm}>📊</button>
-            {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
-              <button onClick={()=>handOffScoring(match)} style={{...S.btnSm,color:SP.textDim}}>↪</button>
-            )}
+        {/* Scorer identity banner */}
+        <div style={{background:SP.bg2,borderBottom:"1px solid "+SP.bg3,padding:"7px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <span style={{color:SP.textSec,fontSize:12,fontFamily:"Lexend,Georgia,sans-serif"}}>🏏 Scoring: <b style={{color:"#fff"}}>{match.scorerName || (currentUser&&(currentUser.displayName||currentUser.email)) || "You"}</b>
+            {syncing&&<span style={{color:SP.secondary,fontSize:10,marginLeft:6}}>↑</span>}
+          </span>
+          <div style={{display:"flex",gap:6}}>
             <button onClick={undo} disabled={!history.length}
-              style={{...S.btnSm,opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent"}}>
-              ↩
+              style={{...S.btnSm,opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",padding:"4px 10px",fontSize:11}}>
+              ↩ Undo
             </button>
-            <button onClick={resetAll} style={{...S.btnSm,color:SP.tertiary,borderColor:"rgba(255,112,114,.2)"}}>✕</button>
+            <button onClick={()=>setScreen("scorecard")} style={{...S.btnSm,padding:"4px 10px",fontSize:11}}>📋</button>
+            {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
+              <button onClick={()=>handOffScoring(match)}
+                style={{...S.btnSm,color:SP.textDim,padding:"4px 10px",fontSize:11}}>
+                ↪ Hand Off
+              </button>
+            )}
+            <button onClick={resetAll} style={{...S.btnSm,padding:"4px 10px",fontSize:11}}>🔄</button>
           </div>
         </div>
 
@@ -3065,63 +3069,39 @@ function App({ currentUser }) {
         {!match.inningsOver[bt]&&(
           <div style={{padding:"0 12px"}}>
 
-            {/* Ball input panel */}
-            <div style={{background:SP.bg2,borderRadius:12,padding:"16px",marginBottom:8}}>
-              <div style={S.lbl}>Input Ball Data</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:10}}>
-                {[0,1,2,3].map(r=>(
-                  <button key={r} onClick={()=>addRuns(r)} className="sp-run-btn"
-                    style={{background:SP.bg3,color:"#fff",touchAction:"manipulation"}}>
+            {/* RUNS */}
+            <div style={S.card}>
+              <div style={S.lbl}>RUNS</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6}}>
+                {[0,1,2,3,4,5,6].map(r=>(
+                  <button key={r} onClick={()=>addRuns(r)}
+                    style={{padding:"14px 0",borderRadius:10,border:"none",
+                      background:r===6?"rgba(156,255,147,.15)":r===4?"rgba(102,157,255,.15)":SP.bg4,
+                      color:r===6?SP.primary:r===4?SP.secondary:"#fff",
+                      fontWeight:"bold",fontSize:18,cursor:"pointer",touchAction:"manipulation",
+                      fontFamily:"Lexend,Georgia,sans-serif",
+                      boxShadow:r===6?"0 0 12px rgba(156,255,147,.15)":r===4?"0 0 12px rgba(102,157,255,.12)":"none"}}>
                     {r}
                   </button>
                 ))}
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-                <button onClick={()=>addRuns(4)} className="sp-action-btn"
-                  style={{background:SP.primary,color:"#00440a",touchAction:"manipulation"}}>
-                  <div style={{fontSize:9,letterSpacing:2,marginBottom:2}}>BOUNDARY</div>
-                  <div style={{fontSize:22,fontWeight:"900"}}>4</div>
-                </button>
-                <button onClick={()=>addRuns(6)} className="sp-action-btn"
-                  style={{background:"linear-gradient(135deg,#9cff93,#00fc40)",color:"#00440a",touchAction:"manipulation"}}>
-                  <div style={{fontSize:9,letterSpacing:2,marginBottom:2}}>SIXER</div>
-                  <div style={{fontSize:22,fontWeight:"900"}}>6</div>
-                </button>
-              </div>
-
-              {/* Wicket & Extra in same panel */}
-              <button onClick={()=>addRuns(0)} className="sp-action-btn"
-                style={{width:"100%",background:SP.tertiary,color:"#490009",touchAction:"manipulation",marginBottom:10}}>
-                <div style={{fontSize:9,letterSpacing:2,marginBottom:2}}>WICKET</div>
-                <div style={{fontSize:18,fontWeight:"900"}}>W ×</div>
-              </button>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                <button onClick={()=>setScreen("scorecard")} className="sp-action-btn"
-                  style={{background:SP.bg3,color:SP.textSec,touchAction:"manipulation"}}>
-                  EXTRA
-                </button>
-                <button onClick={undo} disabled={!history.length} className="sp-action-btn"
-                  style={{background:SP.bg3,color:history.length?"#fb923c":SP.textDim,opacity:history.length?1:.4,touchAction:"manipulation"}}>
-                  UNDO LAST
-                </button>
-              </div>
             </div>
 
-            {/* EXTRAS actual panel */}
+            {/* EXTRAS */}
             <div style={S.card}>
-              <div style={S.lbl}>Extras</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+              <div style={S.lbl}>EXTRAS</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
                 {["Wide","No Ball"].map(ex=>(
-                  <button key={ex} onClick={()=>setPendingExtra(ex)} className="sp-action-btn"
-                    style={{background:SP.bg4,color:"#c4b5fd",border:"1px solid rgba(167,139,250,.2)",touchAction:"manipulation"}}>
-                    {ex}
+                  <button key={ex} onClick={()=>setPendingExtra(ex)}
+                    style={{padding:"12px 0",borderRadius:10,border:"none",background:"rgba(167,139,250,.15)",color:"#c4b5fd",fontWeight:"bold",fontSize:12,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif"}}>
+                    {ex} ›
                   </button>
                 ))}
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
                 {["Bye","Leg Bye"].map(ex=>(
-                  <button key={ex} onClick={()=>addRuns(1,ex)} className="sp-action-btn"
-                    style={{background:SP.bg4,color:SP.textSec,touchAction:"manipulation"}}>
+                  <button key={ex} onClick={()=>addRuns(1,ex)}
+                    style={{padding:"12px 0",borderRadius:10,border:"none",background:SP.bg4,color:SP.textSec,fontWeight:"bold",fontSize:12,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif"}}>
                     {ex} +1
                   </button>
                 ))}
@@ -3130,16 +3110,16 @@ function App({ currentUser }) {
 
             {/* WICKET */}
             <div style={S.card}>
-              <div style={S.lbl}>Wicket Type</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+              <div style={S.lbl}>WICKET</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6}}>
                 {HOW_OUT.map(how=>(
-                  <button key={how} onClick={()=>addWicket(how)} className="sp-action-btn"
-                    style={{background:"rgba(255,112,114,.1)",color:SP.tertiary,border:"1px solid rgba(255,112,114,.2)",touchAction:"manipulation"}}>
+                  <button key={how} onClick={()=>addWicket(how)}
+                    style={{padding:"12px 0",borderRadius:10,border:"none",background:"rgba(255,112,114,.12)",color:SP.tertiary,fontWeight:"bold",fontSize:12,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif"}}>
                     {how}
                   </button>
                 ))}
-                <button onClick={()=>addWicket(RET_HURT)} className="sp-action-btn"
-                  style={{background:"rgba(8,145,178,.12)",color:"#67e8f9",border:"1px solid rgba(14,116,144,.4)",gridColumn:"span 3",touchAction:"manipulation"}}>
+                <button onClick={()=>addWicket(RET_HURT)}
+                  style={{padding:"13px 0",borderRadius:10,border:"none",background:"rgba(8,145,178,.15)",color:"#67e8f9",fontWeight:"bold",fontSize:13,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",gridColumn:"span 3",marginTop:4}}>
                   🩹 Retired Hurt
                 </button>
               </div>
