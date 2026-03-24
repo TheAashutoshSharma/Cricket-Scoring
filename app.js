@@ -1457,6 +1457,15 @@ function App({ currentUser }) {
   const [viewAsUser, setViewAsUser] = useState(false); // admin persona switcher
   // Live matches list for viewer
   const [homeTab, setHomeTab] = useState("home"); // "home"|"live"|"profile"
+  const [userPlayerId, setUserPlayerId] = useState(null); // current user's playerId from DB
+
+  // Load current user's playerId from users/{uid}
+  useEffect(() => {
+    if (!currentUser || !_fbDB) return;
+    _fbDB.ref("users/"+currentUser.uid+"/playerId").once("value", snap => {
+      if (snap.val()) setUserPlayerId(snap.val());
+    });
+  }, [currentUser]);
   const [userPlayerId, setUserPlayerId] = useState(null); // linked player id for current user
   const [liveMatches, setLiveMatches] = useState(null); // null=not loaded, []=empty
   const [loadingLive, setLoadingLive] = useState(false);
@@ -2490,10 +2499,7 @@ function App({ currentUser }) {
               })()}
               {/* Actions */}
               <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
-                <button onClick={()=>{
-                    // Use stored playerId if available, else fall back to uid
-                    setShowPlayers(userPlayerId || currentUser.uid);
-                  }}
+                <button onClick={()=>setShowPlayers(userPlayerId || currentUser.uid)}
                   style={{...S.btnSm,width:"100%",padding:"13px",textAlign:"left",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <span>🏏 My Player Profile</span><span style={{color:SP.secondary}}>›</span>
                 </button>
@@ -2501,7 +2507,7 @@ function App({ currentUser }) {
                   style={{...S.btnSm,width:"100%",padding:"13px",textAlign:"left",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center",color:"#a78bfa",borderColor:"rgba(167,139,250,.3)"}}>
                   <span>🔒 Admin Panel</span><span>›</span>
                 </button>}
-                <button onClick={()=>{initFB();_fbAuth&&_fbAuth.signOut();}}
+                <button onClick={()=>{setUserPlayerId(null);setHomeTab("home");initFB();_fbAuth&&_fbAuth.signOut();}}
                   style={{...S.btnSm,width:"100%",padding:"13px",textAlign:"center",fontSize:13,color:SP.tertiary,borderColor:"rgba(255,112,114,.25)",marginTop:4}}>
                   Sign Out
                 </button>
