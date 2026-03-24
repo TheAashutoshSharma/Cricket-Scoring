@@ -3814,7 +3814,7 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
             {icon:"📚",label:"History",tab:"history"},
             {icon:"👤",label:"Profile",tab:"profile"},
           ].map(({icon,label,tab})=>(
-            <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}}}
+            <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}onBack();}}
               style={{...S.navItem,color:tab==="Profile"?SP.secondary:SP.textDim,background:tab==="Profile"?"rgba(102,157,255,.1)":"transparent"}}>
               <span style={{fontSize:20}}>{icon}</span>
               <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
