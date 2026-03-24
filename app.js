@@ -1467,6 +1467,7 @@ function App({ currentUser }) {
   const [adminPin, setAdminPin] = useState("");
   const [viewAsUser, setViewAsUser] = useState(false); // admin persona switcher
   // Live matches list for viewer
+  const [homeTab, setHomeTab] = useState("home"); // "home"|"live"|"profile"
   const [liveMatches, setLiveMatches] = useState(null); // null=not loaded, []=empty
   const [loadingLive, setLoadingLive] = useState(false);
   const [liveError,   setLiveError]   = useState("");
@@ -2229,16 +2230,18 @@ function App({ currentUser }) {
   var isAdmin = isRealAdmin && !viewAsUser;
 
   if (screen==="home") {
+    var activeTab = homeTab || "home";
+    function navTab(tab) { setHomeTab(tab); }
     var BottomNav = (
       <nav style={S.bottomNav}>
         {[
-          {icon:"🏠",label:"Home",scr:"home"},
-          {icon:"📡",label:"Live",scr:"live_tab"},
-          {icon:"📚",label:"History",scr:"history"},
-          {icon:"👤",label:"Profile",scr:"profile_tab"},
-        ].map(({icon,label,scr})=>(
-          <div key={scr} onClick={scr==="home"?null:scr==="history"?()=>setScreen("history"):null}
-            style={{...S.navItem,color:scr==="home"?SP.secondary:SP.textDim,background:scr==="home"?"rgba(102,157,255,.1)":"transparent"}}>
+          {icon:"🏠",label:"Home",tab:"home"},
+          {icon:"📡",label:"Live",tab:"live"},
+          {icon:"📚",label:"History",tab:"history"},
+          {icon:"👤",label:"Profile",tab:"profile"},
+        ].map(({icon,label,tab})=>(
+          <div key={tab} onClick={tab==="history"?()=>setScreen("history"):()=>navTab(tab)}
+            style={{...S.navItem,color:activeTab===tab?SP.secondary:SP.textDim,background:activeTab===tab?"rgba(102,157,255,.1)":"transparent"}}>
             <span style={{fontSize:20}}>{icon}</span>
             <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
           </div>
@@ -2270,6 +2273,8 @@ function App({ currentUser }) {
           </button>
         </div>}
 
+        {/* ── HOME TAB ── */}
+        {activeTab==="home"&&<div>
         {/* Hero CTA */}
         <div style={{margin:"16px 0 12px",background:SP.bg2,borderRadius:12,padding:"24px 20px",borderLeft:"4px solid "+SP.primary,overflow:"hidden",position:"relative"}}>
           <div style={{position:"absolute",right:-30,top:-30,width:120,height:120,background:"radial-gradient(circle,rgba(156,255,147,.08) 0%,transparent 70%)",pointerEvents:"none"}}/>
@@ -2371,6 +2376,114 @@ function App({ currentUser }) {
         <div style={{textAlign:"center",marginTop:6,paddingBottom:8}}>
           <button onClick={()=>setScreen("admin")} style={{background:"none",border:"none",color:isRealAdmin?SP.textDim:"#1a1919",fontSize:11,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>···</button>
         </div>
+        </div>}{/* end home tab */}
+
+        {/* ── LIVE TAB ── */}
+        {activeTab==="live"&&<div style={{paddingTop:16}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+            <h3 style={{color:"#fff",fontSize:18,fontWeight:"700",margin:0,fontFamily:"Lexend,Georgia,sans-serif"}}>Live Matches</h3>
+            <button onClick={fetchLiveMatches} disabled={loadingLive}
+              style={{...S.btnSm,color:SP.secondary,borderColor:"rgba(102,157,255,.25)"}}>
+              {loadingLive?"Loading…":liveMatches===null?"🔍 Find":"↻ Refresh"}
+            </button>
+          </div>
+          {liveError&&<div style={{color:SP.tertiary,fontSize:12,padding:"10px 14px",background:"rgba(255,112,114,.08)",borderRadius:8,marginBottom:12}}>{liveError}</div>}
+          {liveMatches===null&&!loadingLive&&(
+            <div style={{background:SP.bg2,borderRadius:12,padding:"40px 20px",textAlign:"center"}}>
+              <div style={{fontSize:32,marginBottom:12}}>📡</div>
+              <div style={{color:SP.textSec,fontSize:14,marginBottom:4,fontWeight:"600"}}>Find live matches</div>
+              <div style={{color:SP.textDim,fontSize:12,marginBottom:20}}>Tap Find to load matches in progress</div>
+              <button onClick={fetchLiveMatches} disabled={loadingLive} className="sp-btn-primary" style={{maxWidth:200,margin:"0 auto"}}>
+                🔍 Find Matches
+              </button>
+            </div>
+          )}
+          {liveMatches!==null&&liveMatches.length===0&&(
+            <div style={{background:SP.bg2,borderRadius:12,padding:"40px 20px",textAlign:"center",color:SP.textDim,fontSize:13}}>No live matches right now</div>
+          )}
+          {liveMatches!==null&&liveMatches.map(m=>(
+            <div key={m.code} onClick={()=>joinByCode(m.code)}
+              style={{background:SP.bg2,borderRadius:12,padding:"16px",marginBottom:10,cursor:"pointer",borderLeft:"3px solid "+SP.secondary}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                <span style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span className="sp-live-dot"/>
+                  <span style={{color:SP.primary,fontSize:9,letterSpacing:2,fontWeight:"700"}}>LIVE</span>
+                </span>
+                <span style={{color:SP.textDim,fontSize:11}}>{m.totalOvers} overs</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{color:m.batting===0?SP.secondary:SP.textSec,fontSize:13,fontWeight:"700",marginBottom:2,fontFamily:"Lexend,Georgia,sans-serif"}}>{m.teamA}</div>
+                  <div style={{color:"#fff",fontSize:24,fontWeight:"800",letterSpacing:-0.5,fontFamily:"Lexend,Georgia,sans-serif"}}>{m.runs&&m.runs[0]!==undefined?m.runs[0]:0}<span style={{color:SP.textDim,fontSize:16,fontWeight:"300"}}>/{m.wickets&&m.wickets[0]!==undefined?m.wickets[0]:0}</span></div>
+                </div>
+                <div style={{color:SP.textDim,fontSize:12,fontWeight:"700"}}>VS</div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{color:m.batting===1?SP.secondary:SP.textSec,fontSize:13,fontWeight:"700",marginBottom:2,fontFamily:"Lexend,Georgia,sans-serif"}}>{m.teamB}</div>
+                  <div style={{color:"#fff",fontSize:24,fontWeight:"800",letterSpacing:-0.5,fontFamily:"Lexend,Georgia,sans-serif"}}>{m.runs&&m.runs[1]!==undefined?m.runs[1]:0}<span style={{color:SP.textDim,fontSize:16,fontWeight:"300"}}>/{m.wickets&&m.wickets[1]!==undefined?m.wickets[1]:0}</span></div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>}{/* end live tab */}
+
+        {/* ── PROFILE TAB ── */}
+        {activeTab==="profile"&&<div style={{paddingTop:16}}>
+          {currentUser ? (
+            <div>
+              {/* Avatar */}
+              <div style={{textAlign:"center",marginBottom:24}}>
+                <div style={{width:80,height:80,borderRadius:"50%",background:"linear-gradient(135deg,"+SP.secondary+",rgba(102,157,255,.3))",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",fontSize:32}}>
+                  {(currentUser.displayName||currentUser.email||"?")[0].toUpperCase()}
+                </div>
+                <div style={{color:"#fff",fontSize:18,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif",marginBottom:4}}>{currentUser.displayName||"Player"}</div>
+                <div style={{color:SP.textDim,fontSize:13}}>{currentUser.email}</div>
+              </div>
+              {/* Stats summary */}
+              <div style={{background:SP.bg2,borderRadius:12,padding:"16px",marginBottom:10}}>
+                <div style={S.lbl}>Season Stats</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginTop:8}}>
+                  {[
+                    ["Matches",matchHistory.length],
+                    ["Won",matchHistory.filter(e=>e.snapshot&&e.snapshot.inningsOver&&e.snapshot.inningsOver[1]).length],
+                    ["History",matchHistory.length],
+                  ].map(([label,val])=>(
+                    <div key={label} style={{textAlign:"center",background:SP.bg3,borderRadius:10,padding:"12px 8px"}}>
+                      <div style={{color:"#fff",fontSize:22,fontWeight:"800",fontFamily:"Lexend,Georgia,sans-serif"}}>{val}</div>
+                      <div style={{color:SP.textDim,fontSize:10,fontWeight:"700",letterSpacing:1,marginTop:2}}>{label.toUpperCase()}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {/* Actions */}
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                <button onClick={()=>setShowPlayers(true)}
+                  style={{...S.btnSm,width:"100%",padding:"13px",textAlign:"left",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span>🏏 My Player Profile</span><span style={{color:SP.secondary}}>›</span>
+                </button>
+                <button onClick={()=>setScreen("history")}
+                  style={{...S.btnSm,width:"100%",padding:"13px",textAlign:"left",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span>📚 Match History</span><span style={{color:SP.secondary}}>›</span>
+                </button>
+                {isRealAdmin&&<button onClick={()=>setScreen("admin")}
+                  style={{...S.btnSm,width:"100%",padding:"13px",textAlign:"left",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center",color:"#a78bfa",borderColor:"rgba(167,139,250,.3)"}}>
+                  <span>🔒 Admin Panel</span><span>›</span>
+                </button>}
+                <button onClick={()=>{initFB();_fbAuth&&_fbAuth.signOut();}}
+                  style={{...S.btnSm,width:"100%",padding:"13px",textAlign:"center",fontSize:13,color:SP.tertiary,borderColor:"rgba(255,112,114,.25)",marginTop:8}}>
+                  Sign Out
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={{textAlign:"center",padding:"40px 20px"}}>
+              <div style={{fontSize:48,marginBottom:16}}>👤</div>
+              <div style={{color:"#fff",fontSize:16,fontWeight:"700",marginBottom:8,fontFamily:"Lexend,Georgia,sans-serif"}}>Not signed in</div>
+              <div style={{color:SP.textDim,fontSize:13,marginBottom:24}}>Sign in to track your stats and history</div>
+              <button onClick={()=>{initFB();_fbAuth&&_fbAuth.signOut();window.location.reload();}} className="sp-btn-primary" style={{maxWidth:200,margin:"0 auto"}}>Sign In</button>
+            </div>
+          )}
+        </div>}{/* end profile tab */}
+
       </div>
       {BottomNav}
     </div>
