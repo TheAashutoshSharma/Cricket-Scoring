@@ -1466,7 +1466,7 @@ function App({ currentUser }) {
       if (snap.val()) setUserPlayerId(snap.val());
     });
   }, [currentUser]);
-  const [userPlayerId, setUserPlayerId] = useState(null); // linked player id for current user
+  //const [userPlayerId, setUserPlayerId] = useState(null); // linked player id for current user
   const [liveMatches, setLiveMatches] = useState(null); // null=not loaded, []=empty
   const [loadingLive, setLoadingLive] = useState(false);
   const [liveError,   setLiveError]   = useState("");
