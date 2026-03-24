@@ -2580,7 +2580,7 @@ function App({ currentUser }) {
           )}
         </div>
       </div>
-          <nav style={S.bottomNav}>
+      <nav style={S.bottomNav}>
         {[
           {icon:"🏠",label:"Home",tab:"home"},
           {icon:"📡",label:"Live",tab:"live"},
