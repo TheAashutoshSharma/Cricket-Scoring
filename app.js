@@ -3517,9 +3517,10 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
       setPlayers(list);
       setLoading(false);
       if (autoOpenId) {
-        var found = list.find(p => p.id === autoOpenId || p.uid === autoOpenId);
+        // Search by player id first, then by linked uid
+        var found = list.find(p => p.id === autoOpenId) || list.find(p => p.uid === autoOpenId || p.createdBy === autoOpenId);
         if (found) { setSel(found); setView("detail"); }
-        else { setView("noprofile"); }
+        else { setView("list"); } // no profile yet — show list so they can add one
       }
     }, () => setLoading(false));
   }
@@ -3583,7 +3584,14 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
       batting:  { matches:0, innings:0, runs:0, balls:0, outs:0, fours:0, sixes:0, highScore:0, fifties:0, hundreds:0 },
       bowling:  { overs:0, balls:0, runs:0, wickets:0, maidens:0, bestWickets:0, bestRuns:999 },
     };
-    _fbDB.ref("players/"+id).set(p).then(() => {
+    var writes = [_fbDB.ref("players/"+id).set(p)];
+    // Only write users/{uid}/playerId if not already set (first player = primary profile)
+    writes.push(
+      _fbDB.ref("users/"+currentUser.uid+"/playerId").once("value").then(snap => {
+        if (!snap.val()) return _fbDB.ref("users/"+currentUser.uid+"/playerId").set(id);
+      })
+    );
+    Promise.all(writes).then(() => {
       setPlayers(ps => [...ps, p].sort((a,b)=>a.name.localeCompare(b.name)));
       setSel(p); setView("detail"); setSaving(false);
     }).catch(e => { setErr(e.message); setSaving(false); });
@@ -3603,11 +3611,16 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
           </div>
           <div style={{background:SP.bg3,borderRadius:12,padding:"40px 24px",textAlign:"center",border:"1px solid rgba(73,72,71,.25)",marginTop:20}}>
             <div style={{fontSize:48,marginBottom:16}}>🏏</div>
-            <div style={{color:"#fff",fontSize:16,fontWeight:"700",marginBottom:8,fontFamily:"Lexend,Georgia,sans-serif"}}>No Player Profile Linked</div>
+            <div style={{color:"#fff",fontSize:16,fontWeight:"700",marginBottom:8,fontFamily:"Lexend,Georgia,sans-serif"}}>No Player Profile Yet</div>
             <div style={{color:SP.textDim,fontSize:13,marginBottom:24,lineHeight:1.6}}>
-              Your account is not linked to a player card yet.<br/>
-              Register as a Player (not Viewer) to get your own profile with stats.
+              Create your player profile to track your stats across matches.
             </div>
+            {currentUser && (
+              <button onClick={()=>{setEditForm({name:"",role:"Batsman",batStyle:"Right-hand",bowlStyle:"Right-arm Medium",dob:""});setView("add");}}
+                style={{padding:"13px 28px",background:SP.primary,border:"none",borderRadius:12,color:"#0f172a",fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+                + Create My Profile
+              </button>
+            )}
           </div>
         </div>
         <nav style={S.bottomNav}>
