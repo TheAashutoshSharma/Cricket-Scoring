@@ -3570,20 +3570,22 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
 
   function saveNewPlayer() {
     if (!editForm.name.trim()) return setErr("Name is required");
+    if (!currentUser) return setErr("You must be logged in to add a player");
     setSaving(true); setErr("");
     var id = "P_" + Date.now() + "_" + Math.random().toString(36).slice(2,6);
     var p = {
       id, name: editForm.name.trim(), role: editForm.role||"Batsman",
       batStyle: editForm.batStyle||"Right-hand", bowlStyle: editForm.bowlStyle||"Right-arm Medium",
       dob: editForm.dob||null,
-      createdBy: currentUser ? currentUser.uid : null,
+      uid: currentUser.uid,
+      createdBy: currentUser.uid,
       createdAt: Date.now(),
       batting:  { matches:0, innings:0, runs:0, balls:0, outs:0, fours:0, sixes:0, highScore:0, fifties:0, hundreds:0 },
       bowling:  { overs:0, balls:0, runs:0, wickets:0, maidens:0, bestWickets:0, bestRuns:999 },
     };
     _fbDB.ref("players/"+id).set(p).then(() => {
       setPlayers(ps => [...ps, p].sort((a,b)=>a.name.localeCompare(b.name)));
-      setView("list"); setSaving(false);
+      setSel(p); setView("detail"); setSaving(false);
     }).catch(e => { setErr(e.message); setSaving(false); });
   }
 
@@ -3672,6 +3674,9 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
               <label style={{...S.lbl,display:"block",marginBottom:6}}>DATE OF BIRTH <span style={{color:"#334155"}}>(optional)</span></label>
               <input value={editForm.dob||""} onChange={e=>setEditForm(f=>({...f,dob:e.target.value}))} type="date" style={{...inSt,colorScheme:"dark"}}/>
             </div>
+          </div>
+          <div style={{background:"rgba(156,255,147,.06)",border:"1px solid rgba(156,255,147,.15)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
+            <div style={{color:SP.primary,fontSize:11}}>✓ This player will be linked to your account — you'll be able to edit their profile and they'll show as your registered player.</div>
           </div>
           <div style={{background:"rgba(251,191,36,.06)",border:"1px solid rgba(251,191,36,.15)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
             <div style={{color:SP.textDim,fontSize:11}}>🔒 Stats (matches, runs, wickets etc.) are updated automatically from match scorecards and cannot be edited manually.</div>
@@ -3763,10 +3768,10 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
             <button onClick={onBack} style={S.btnSm}>← Back</button>
             <h2 style={{color:SP.primary,margin:0,fontSize:16,letterSpacing:2}}>🏏 PLAYERS</h2>
           </div>
-          {isAdmin && (
+          {currentUser && (
             <button onClick={()=>{setEditForm({name:"",role:"Batsman",batStyle:"Right-hand",bowlStyle:"Right-arm Medium",dob:""});setView("add");}}
               style={{padding:"7px 14px",background:SP.primary,border:"none",borderRadius:10,color:"#0f172a",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
-              + Add
+              + Add Player
             </button>
           )}
         </div>
@@ -3775,7 +3780,8 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
         {loading && <div style={{color:SP.textDim,textAlign:"center",padding:40}}>Loading…</div>}
         {!loading && filtered.length===0 && (
           <div style={{color:SP.textDim,textAlign:"center",padding:40,lineHeight:1.8}}>
-            No players yet.<br/><span style={{fontSize:12}}>Players are created when someone registers as a player.</span>
+            No players yet.<br/>
+            <span style={{fontSize:12}}>{currentUser ? "Tap \"+ Add Player\" above to add the first one." : "Log in to add players."}</span>
           </div>
         )}
         {filtered.map(p=>(
