@@ -3069,6 +3069,7 @@ function App({ currentUser }) {
           ))}
         </nav>
       </div>
+    </div>
   );
   } // end viewer
 
