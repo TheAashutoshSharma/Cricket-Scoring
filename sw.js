@@ -1,5 +1,5 @@
 // Cricket Scorer PWA - Service Worker
-const CACHE_NAME = 'cricket-scorer-v3';
+const CACHE_NAME = 'cricket-scorer-v5';
 
 // Only cache third-party CDN libraries (they never change)
 const CDN_ASSETS = [
@@ -16,33 +16,35 @@ self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(CACHE_NAME).then(cache => cache.addAll(CDN_ASSETS))
   );
-  self.skipWaiting();
+  self.skipWaiting(); // activate immediately
 });
 
-// Activate — clean old caches
+// Activate — clean old caches, claim clients, reload all tabs
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    )
+    ).then(() => self.clients.claim())
+     .then(() => {
+       return self.clients.matchAll({ type: 'window' }).then(clients => {
+         clients.forEach(client => client.navigate(client.url));
+       });
+     })
   );
-  self.clients.claim();
 });
 
 // Fetch strategy:
-// - app.js, index.html, manifest.json → network-first (always get latest)
-// - CDN libs → cache-first (they never change)
+// - local files (app.js, index.html) → network-first, no-store
+// - CDN libs → cache-first
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   const isLocal = url.origin === self.location.origin;
   const isCDN   = url.hostname === 'cdnjs.cloudflare.com';
 
   if (isLocal) {
-    // Network-first for all local files (app.js, index.html, icons, etc.)
     e.respondWith(
-      fetch(e.request)
+      fetch(e.request, { cache: 'no-store' })
         .then(response => {
-          // Cache icons locally (they change rarely) but NOT app.js / index.html
           const path = url.pathname;
           if (path.startsWith('/icons/')) {
             const clone = response.clone();
@@ -50,10 +52,9 @@ self.addEventListener('fetch', (e) => {
           }
           return response;
         })
-        .catch(() => caches.match(e.request)) // fallback to cache if offline
+        .catch(() => caches.match(e.request))
     );
   } else if (isCDN) {
-    // Cache-first for CDN libs
     e.respondWith(
       caches.match(e.request).then(cached => {
         if (cached) return cached;
