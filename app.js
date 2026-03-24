@@ -1281,7 +1281,7 @@ function AuthGate({children}) {
           <div style={{width:72,height:72,background:"#1a1919",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",boxShadow:"0 8px 32px rgba(0,0,0,.5)"}}>
             <span style={{fontSize:34}}>🏏</span>
           </div>
-          <h1 style={{color:"#fff",fontSize:28,fontWeight:"900",letterSpacing:-1,margin:"0 0 6px",fontFamily:"Lexend,Georgia,sans-serif",fontStyle:"italic"}}>THIRD UPMIRE</h1>
+          <h1 style={{color:"#fff",fontSize:28,fontWeight:"900",letterSpacing:-1,margin:"0 0 6px",fontFamily:"Lexend,Georgia,sans-serif",fontStyle:"italic"}}>STADIUM PULSE</h1>
           <p style={{color:SP.textDim,fontSize:10,letterSpacing:3,margin:0,fontWeight:"600",textTransform:"uppercase"}}>Enter the Arena</p>
         </div>
 
@@ -2252,7 +2252,7 @@ function App({ currentUser }) {
       <header style={S.topBar}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <span style={{fontSize:20}}>🏏</span>
-          <span style={{color:"#fff",fontSize:16,fontWeight:"900",letterSpacing:-0.5,fontFamily:"Lexend,Georgia,sans-serif"}}>STADIUM PULSE 1</span>
+          <span style={{color:"#fff",fontSize:16,fontWeight:"900",letterSpacing:-0.5,fontFamily:"Lexend,Georgia,sans-serif"}}>STADIUM PULSE</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",background:SP.bg3,borderRadius:999,border:"1px solid rgba(73,72,71,.2)"}}>
@@ -3018,7 +3018,7 @@ function App({ currentUser }) {
         <div style={{...S.topBar}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:16}}>🏏</span>
-            <span style={{color:"#fff",fontSize:13,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>STADIUM PULSE 2</span>
+            <span style={{color:"#fff",fontSize:13,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>STADIUM PULSE</span>
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
             <button onClick={()=>setScreen("scorecard")} style={S.btnSm}>📊</button>
