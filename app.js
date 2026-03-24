@@ -1457,6 +1457,7 @@ function App({ currentUser }) {
   const [viewAsUser, setViewAsUser] = useState(false); // admin persona switcher
   // Live matches list for viewer
   const [homeTab, setHomeTab] = useState("home"); // "home"|"live"|"profile"
+  const [userPlayerId, setUserPlayerId] = useState(null); // linked player id for current user
   const [liveMatches, setLiveMatches] = useState(null); // null=not loaded, []=empty
   const [loadingLive, setLoadingLive] = useState(false);
   const [liveError,   setLiveError]   = useState("");
@@ -1470,6 +1471,14 @@ function App({ currentUser }) {
 
   // Init Firebase
   useEffect(() => { setFbReady(initFB()); }, []);
+
+  // Load the current user's linked playerId from the users node
+  useEffect(() => {
+    if (!currentUser || !_fbDB) return;
+    _fbDB.ref("users/" + currentUser.uid + "/playerId").once("value", snap => {
+      if (snap.val()) setUserPlayerId(snap.val());
+    }).catch(() => {});
+  }, [currentUser]);
 
   // Load match history — from matches/ in Firebase (source of truth)
   useEffect(() => {
@@ -2406,16 +2415,23 @@ function App({ currentUser }) {
                   if (!e.snapshot) return false;
                   var nm = e.snapshot;
                   var allPlayers = [...((nm.teamA&&nm.teamA.players)||[]),...((nm.teamB&&nm.teamB.players)||[])];
-                  return allPlayers.some(p=>p&&(p.playerId===currentUser.uid||(myName&&p.name&&p.name.toLowerCase()===myName.toLowerCase())));
+                  return allPlayers.some(p=>p&&(
+                    p.playerId===currentUser.uid ||
+                    (userPlayerId && p.playerId===userPlayerId) ||
+                    (myName&&p.name&&p.name.toLowerCase()===myName.toLowerCase())
+                  ));
                 });
                 var myRuns = 0, myWickets = 0, myMatches50 = 0;
                 myMatches.forEach(e=>{
                   var nm = e.snapshot;
                   var allP = [...((nm.teamA&&nm.teamA.players)||[]),...((nm.teamB&&nm.teamB.players)||[])];
-                  var me = allP.find(p=>p&&(p.playerId===currentUser.uid||(myName&&p.name&&p.name.toLowerCase()===myName.toLowerCase())));
+                  var me = allP.find(p=>p&&(p.playerId===currentUser.uid||(userPlayerId&&p.playerId===userPlayerId)||(myName&&p.name&&p.name.toLowerCase()===myName.toLowerCase())));
                   if (me) { myRuns+=me.runs||0; myWickets+=(me.wickets||0); if((me.runs||0)>=50)myMatches50++; }
                   var allBowlers = [...((nm.teamA&&nm.teamA.bowlers)||[]),...((nm.teamB&&nm.teamB.bowlers)||[])];
-                  var meBowl = allBowlers.find(b=>b&&myName&&b.name&&b.name.toLowerCase()===myName.toLowerCase());
+                  var meBowl = allBowlers.find(b=>b&&(
+                    (userPlayerId&&b.playerId===userPlayerId)||
+                    (myName&&b.name&&b.name.toLowerCase()===myName.toLowerCase())
+                  ));
                   if (meBowl) myWickets+=meBowl.wickets||0;
                 });
                 return (
@@ -2440,16 +2456,20 @@ function App({ currentUser }) {
                   if (!e.snapshot) return false;
                   var nm = e.snapshot;
                   var allPlayers = [...((nm.teamA&&nm.teamA.players)||[]),...((nm.teamB&&nm.teamB.players)||[])];
-                  return allPlayers.some(p=>p&&(p.playerId===currentUser.uid||(myName&&p.name&&p.name.toLowerCase()===myName.toLowerCase())));
+                  return allPlayers.some(p=>p&&(
+                    p.playerId===currentUser.uid ||
+                    (userPlayerId && p.playerId===userPlayerId) ||
+                    (myName&&p.name&&p.name.toLowerCase()===myName.toLowerCase())
+                  ));
                 });
                 if (!myMatches.length) return null;
                 return (
                   <div style={{background:SP.bg2,borderRadius:12,padding:"16px",marginBottom:10}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                      <div style={S.lbl}>My Matches</div>
+                      <div style={S.lbl}>My Match History</div>
                       <span style={{color:SP.textDim,fontSize:11}}>{myMatches.length} match{myMatches.length!==1?"es":""}</span>
                     </div>
-                    {myMatches.slice(0,5).map(e=>(
+                    {myMatches.map(e=>(
                       <div key={e.id} onClick={()=>{setMatch(normaliseMatch(e.snapshot));setScreen("historycard");}}
                         style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderTop:"1px solid "+SP.bg3,cursor:"pointer"}}>
                         <div>
@@ -2470,7 +2490,10 @@ function App({ currentUser }) {
               })()}
               {/* Actions */}
               <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
-                <button onClick={()=>setShowPlayers(currentUser.uid)}
+                <button onClick={()=>{
+                    // Use stored playerId if available, else fall back to uid
+                    setShowPlayers(userPlayerId || currentUser.uid);
+                  }}
                   style={{...S.btnSm,width:"100%",padding:"13px",textAlign:"left",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <span>🏏 My Player Profile</span><span style={{color:SP.secondary}}>›</span>
                 </button>
@@ -2736,15 +2759,6 @@ function App({ currentUser }) {
           <div style={{background:SP.bg2,borderRadius:12,padding:22,border:"none"}}>
             {s.step===0&&(
               <div>
-                {/* Quick team picker buttons */}
-                <div style={{display:"flex",gap:8,marginBottom:16}}>
-                  {["A","B"].map(slot=>(
-                    <button key={slot} onClick={()=>setTeamPickerSlot(slot)}
-                      style={{flex:1,padding:"9px 0",background:"rgba(156,255,147,.06)",border:"1px solid rgba(251,191,36,.25)",borderRadius:10,color:SP.primary,fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"bold"}}>
-                      👥 Pick Team {slot} from Saved
-                    </button>
-                  ))}
-                </div>
                 {[["TEAM 1 NAME","teamAName"],["TEAM 2 NAME","teamBName"]].map(([lbl,key])=>(
                   <div key={key} style={{marginBottom:14}}>
                     <label style={{color:SP.textDim,fontSize:11,display:"block",marginBottom:6,letterSpacing:1}}>{lbl}</label>
@@ -3041,6 +3055,21 @@ function App({ currentUser }) {
         )}
         <div style={{textAlign:"center",padding:"14px 0",color:"#334155",fontSize:11}}>Updates every ball automatically</div>
       </div>
+
+    <nav style={S.bottomNav}>
+        {[
+          {icon:"🏠",label:"Home",tab:"home"},
+          {icon:"📡",label:"Live",tab:"live"},
+          {icon:"📚",label:"History",tab:"history"},
+          {icon:"👤",label:"Profile",tab:"profile"},
+        ].map(({icon,label,tab})=>(
+          <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}}}
+            style={{...S.navItem,color:SP.textDim}}>
+            <span style={{fontSize:20}}>{icon}</span>
+            <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
+          </div>
+        ))}
+      </nav>
     </div>
   );
   } // end viewer
@@ -3353,6 +3382,20 @@ function App({ currentUser }) {
           </div>
         )}
       </div>
+    <nav style={S.bottomNav}>
+        {[
+          {icon:"🏠",label:"Home",tab:"home"},
+          {icon:"📡",label:"Live",tab:"live"},
+          {icon:"📚",label:"History",tab:"history"},
+          {icon:"👤",label:"Profile",tab:"profile"},
+        ].map(({icon,label,tab})=>(
+          <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}}}
+            style={{...S.navItem,color:SP.textDim}}>
+            <span style={{fontSize:20}}>{icon}</span>
+            <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
+          </div>
+        ))}
+      </nav>
     </div>
   );
 }
@@ -3477,6 +3520,7 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
       if (autoOpenId) {
         var found = list.find(p => p.id === autoOpenId || p.uid === autoOpenId);
         if (found) { setSel(found); setView("detail"); }
+        else { setView("noprofile"); }
       }
     }, () => setLoading(false));
   }
@@ -3546,6 +3590,42 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
 
   var filtered = players.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
   var inSt = {width:"100%",background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:10,padding:"12px 14px",color:"#fff",fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:"Lexend,Georgia,sans-serif"};
+
+  // ── No profile linked ──
+  if (view==="noprofile") {
+    return (
+      <div style={{...S.page,paddingBottom:88}}>
+        <div style={{...S.wrap, padding:"0 16px"}}>
+          <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",gap:12}}>
+            <button onClick={onBack} style={S.btnSm}>← Back</button>
+            <h2 style={{color:SP.primary,margin:0,fontSize:16,letterSpacing:2}}>MY PLAYER PROFILE</h2>
+          </div>
+          <div style={{background:SP.bg3,borderRadius:12,padding:"40px 24px",textAlign:"center",border:"1px solid rgba(73,72,71,.25)",marginTop:20}}>
+            <div style={{fontSize:48,marginBottom:16}}>🏏</div>
+            <div style={{color:"#fff",fontSize:16,fontWeight:"700",marginBottom:8,fontFamily:"Lexend,Georgia,sans-serif"}}>No Player Profile Linked</div>
+            <div style={{color:SP.textDim,fontSize:13,marginBottom:24,lineHeight:1.6}}>
+              Your account is not linked to a player card yet.<br/>
+              Register as a Player (not Viewer) to get your own profile with stats.
+            </div>
+          </div>
+        </div>
+        <nav style={S.bottomNav}>
+          {[
+            {icon:"🏠",label:"Home",tab:"home"},
+            {icon:"📡",label:"Live",tab:"live"},
+            {icon:"📚",label:"History",tab:"history"},
+            {icon:"👤",label:"Profile",tab:"profile"},
+          ].map(({icon,label,tab})=>(
+            <div key={tab} onClick={()=>{if(tab==="history")setScreen&&setScreen("history");else{setHomeTab&&setHomeTab(tab);setScreen&&setScreen("home");}}}
+              style={{...S.navItem,color:SP.textDim}}>
+              <span style={{fontSize:20}}>{icon}</span>
+              <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
+            </div>
+          ))}
+        </nav>
+      </div>
+    );
+  }
 
   // ── Edit / Add form ──
   if (view==="edit" || view==="add") {
@@ -3988,6 +4068,20 @@ function TeamsScreen({ currentUser, isAdmin, onBack, setScreen, setHomeTab }) {
           </div>
           {teamPlayers.map(p=><PlayerFullStats key={p.id} p={p}/>)}
         </div>
+          <nav style={S.bottomNav}>
+      {[
+        {icon:"🏠",label:"Home",tab:"home"},
+        {icon:"📡",label:"Live",tab:"live"},
+        {icon:"📚",label:"History",tab:"history"},
+        {icon:"👤",label:"Profile",tab:"profile"},
+      ].map(({icon,label,tab})=>(
+        <div key={tab} onClick={()=>{if(tab==="history")setScreen&&setScreen("history");else{setHomeTab&&setHomeTab(tab);setScreen&&setScreen("home");}}}
+          style={{...S.navItem,color:SP.textDim}}>
+          <span style={{fontSize:20}}>{icon}</span>
+          <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
+        </div>
+      ))}
+    </nav>
       </div>
     );
   }
