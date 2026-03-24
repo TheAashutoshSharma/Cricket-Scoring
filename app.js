@@ -1415,18 +1415,7 @@ function AuthGate({children}) {
               <div style={{height:28}}/>
               {err&&<div style={{color:"#ff716c",fontSize:12,marginBottom:14,padding:"10px 14px",background:"rgba(255,113,108,.08)",borderRadius:8,border:"1px solid rgba(255,113,108,.2)"}}>{err}</div>}
               <button onClick={handleLogin} disabled={busy} className="sp-btn-primary">{busy?"Signing in…":"Log in to Field ⚡"}</button>
-              <div style={{margin:"24px 0",display:"flex",alignItems:"center",gap:12}}>
-                <div style={{flex:1,height:1,background:"#262626"}}/>
-                <span style={{color:SP.textDim,fontSize:9,letterSpacing:2,fontWeight:"700",textTransform:"uppercase"}}>Squad Access</span>
-                <div style={{flex:1,height:1,background:"#262626"}}/>
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                {[["G","Google","#fff"],["🍎","Apple","#fff"]].map(([ico,lbl,c])=>(
-                  <button key={lbl} disabled style={{padding:"13px 0",background:SP.bg4,border:"1px solid rgba(73,72,71,.3)",borderRadius:8,color:c,fontSize:12,cursor:"not-allowed",fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"700",letterSpacing:1,opacity:.5}}>
-                    {ico} {lbl.toUpperCase()}
-                  </button>
-                ))}
-              </div>
+
             </div>
           )}
 
@@ -2222,8 +2211,8 @@ function App({ currentUser }) {
   }
 
 
-  if (showPlayers) return <PlayersScreen currentUser={currentUser} isAdmin={isAdmin} onBack={()=>setShowPlayers(false)}/>;
-  if (showTeams)   return <TeamsScreen   currentUser={currentUser} isAdmin={isAdmin} onBack={()=>setShowTeams(false)}/>;
+  if (showPlayers) return <PlayersScreen currentUser={currentUser} isAdmin={isAdmin} onBack={()=>setShowPlayers(false)} initialPlayerId={showPlayers!==true?showPlayers:null} setScreen={setScreen} setHomeTab={setHomeTab}/>;
+  if (showTeams)   return <TeamsScreen   currentUser={currentUser} isAdmin={isAdmin} onBack={()=>setShowTeams(false)} setScreen={setScreen} setHomeTab={setHomeTab}/>;
 
   // Admin persona: isRealAdmin = actual admin email; isAdmin = real admin AND not in user-view mode
   var isRealAdmin = !!(currentUser && ADMIN_EMAILS.includes(currentUser.email));
@@ -2345,34 +2334,6 @@ function App({ currentUser }) {
           ))}
         </div>
 
-        {/* Recent matches */}
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <h3 style={{color:"#fff",fontSize:16,fontWeight:"700",margin:0,fontFamily:"Lexend,Georgia,sans-serif"}}>Recent Matches</h3>
-          <button onClick={()=>setScreen("history")} style={{background:"none",border:"none",color:SP.secondary,fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"700"}}>View All</button>
-        </div>
-        {matchHistory.length===0&&<div style={{background:SP.bg2,borderRadius:12,padding:"20px",textAlign:"center",color:SP.textDim,fontSize:12,marginBottom:12}}>No completed matches yet</div>}
-        {matchHistory.slice(0,3).map(e=>(
-          <div key={e.id} onClick={()=>{setMatch(normaliseMatch(e.snapshot));setScreen("historycard");}}
-            style={{background:SP.bg2,borderRadius:12,padding:"14px 16px",marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-            <div style={{flex:1}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                <span style={{color:"#fff",fontWeight:"700",fontSize:13,fontFamily:"Lexend,Georgia,sans-serif"}}>{e.teamA}</span>
-                <span style={{color:SP.textDim,fontSize:10}}>vs</span>
-                <span style={{color:"#fff",fontWeight:"700",fontSize:13,fontFamily:"Lexend,Georgia,sans-serif"}}>{e.teamB}</span>
-              </div>
-              <div style={{color:SP.textDim,fontSize:11}}>{new Date(e.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}</div>
-            </div>
-            <div style={{textAlign:"right"}}>
-              <div style={{color:SP.secondary,fontSize:11,fontWeight:"700"}}>
-                {e.snapshot&&e.snapshot.inningsOver&&e.snapshot.inningsOver[1]
-                  ?(e.runsB>e.runsA?e.teamB+" won":e.runsA>e.runsB?e.teamA+" won":"Tied")
-                  :"Incomplete"}
-              </div>
-              <span style={{fontSize:16,color:SP.textDim}}>›</span>
-            </div>
-          </div>
-        ))}
-
         <div style={{textAlign:"center",marginTop:6,paddingBottom:8}}>
           <button onClick={()=>setScreen("admin")} style={{background:"none",border:"none",color:isRealAdmin?SP.textDim:"#1a1919",fontSize:11,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>···</button>
         </div>
@@ -2438,38 +2399,87 @@ function App({ currentUser }) {
                 <div style={{color:"#fff",fontSize:18,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif",marginBottom:4}}>{currentUser.displayName||"Player"}</div>
                 <div style={{color:SP.textDim,fontSize:13}}>{currentUser.email}</div>
               </div>
-              {/* Stats summary */}
-              <div style={{background:SP.bg2,borderRadius:12,padding:"16px",marginBottom:10}}>
-                <div style={S.lbl}>Season Stats</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginTop:8}}>
-                  {[
-                    ["Matches",matchHistory.length],
-                    ["Won",matchHistory.filter(e=>e.snapshot&&e.snapshot.inningsOver&&e.snapshot.inningsOver[1]).length],
-                    ["History",matchHistory.length],
-                  ].map(([label,val])=>(
-                    <div key={label} style={{textAlign:"center",background:SP.bg3,borderRadius:10,padding:"12px 8px"}}>
-                      <div style={{color:"#fff",fontSize:22,fontWeight:"800",fontFamily:"Lexend,Georgia,sans-serif"}}>{val}</div>
-                      <div style={{color:SP.textDim,fontSize:10,fontWeight:"700",letterSpacing:1,marginTop:2}}>{label.toUpperCase()}</div>
+              {/* Season Stats — only matches the current user played in */}
+              {(()=>{
+                var myName = currentUser.displayName||"";
+                var myMatches = matchHistory.filter(e=>{
+                  if (!e.snapshot) return false;
+                  var nm = e.snapshot;
+                  var allPlayers = [...((nm.teamA&&nm.teamA.players)||[]),...((nm.teamB&&nm.teamB.players)||[])];
+                  return allPlayers.some(p=>p&&(p.playerId===currentUser.uid||(myName&&p.name&&p.name.toLowerCase()===myName.toLowerCase())));
+                });
+                var myRuns = 0, myWickets = 0, myMatches50 = 0;
+                myMatches.forEach(e=>{
+                  var nm = e.snapshot;
+                  var allP = [...((nm.teamA&&nm.teamA.players)||[]),...((nm.teamB&&nm.teamB.players)||[])];
+                  var me = allP.find(p=>p&&(p.playerId===currentUser.uid||(myName&&p.name&&p.name.toLowerCase()===myName.toLowerCase())));
+                  if (me) { myRuns+=me.runs||0; myWickets+=(me.wickets||0); if((me.runs||0)>=50)myMatches50++; }
+                  var allBowlers = [...((nm.teamA&&nm.teamA.bowlers)||[]),...((nm.teamB&&nm.teamB.bowlers)||[])];
+                  var meBowl = allBowlers.find(b=>b&&myName&&b.name&&b.name.toLowerCase()===myName.toLowerCase());
+                  if (meBowl) myWickets+=meBowl.wickets||0;
+                });
+                return (
+                  <div style={{background:SP.bg2,borderRadius:12,padding:"16px",marginBottom:10}}>
+                    <div style={{...S.lbl,marginBottom:8}}>My Season Stats</div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
+                      {[["Matches",myMatches.length],["Runs",myRuns],["Wickets",myWickets],["50s",myMatches50]].map(([label,val])=>(
+                        <div key={label} style={{textAlign:"center",background:SP.bg3,borderRadius:10,padding:"10px 4px"}}>
+                          <div style={{color:"#fff",fontSize:20,fontWeight:"800",fontFamily:"Lexend,Georgia,sans-serif"}}>{val}</div>
+                          <div style={{color:SP.textDim,fontSize:9,fontWeight:"700",letterSpacing:1,marginTop:2}}>{label.toUpperCase()}</div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
+                    {myMatches.length===0&&<div style={{color:SP.textDim,fontSize:12,textAlign:"center",marginTop:8}}>No matches found for your player name</div>}
+                  </div>
+                );
+              })()}
+              {/* My Match History */}
+              {(()=>{
+                var myName = currentUser.displayName||"";
+                var myMatches = matchHistory.filter(e=>{
+                  if (!e.snapshot) return false;
+                  var nm = e.snapshot;
+                  var allPlayers = [...((nm.teamA&&nm.teamA.players)||[]),...((nm.teamB&&nm.teamB.players)||[])];
+                  return allPlayers.some(p=>p&&(p.playerId===currentUser.uid||(myName&&p.name&&p.name.toLowerCase()===myName.toLowerCase())));
+                });
+                if (!myMatches.length) return null;
+                return (
+                  <div style={{background:SP.bg2,borderRadius:12,padding:"16px",marginBottom:10}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                      <div style={S.lbl}>My Matches</div>
+                      <span style={{color:SP.textDim,fontSize:11}}>{myMatches.length} match{myMatches.length!==1?"es":""}</span>
+                    </div>
+                    {myMatches.slice(0,5).map(e=>(
+                      <div key={e.id} onClick={()=>{setMatch(normaliseMatch(e.snapshot));setScreen("historycard");}}
+                        style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderTop:"1px solid "+SP.bg3,cursor:"pointer"}}>
+                        <div>
+                          <div style={{color:"#fff",fontSize:13,fontWeight:"600",fontFamily:"Lexend,Georgia,sans-serif"}}>{e.teamA} vs {e.teamB}</div>
+                          <div style={{color:SP.textDim,fontSize:11}}>{new Date(e.date).toLocaleDateString("en-IN",{day:"numeric",month:"short"})}</div>
+                        </div>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{color:SP.secondary,fontSize:11,fontWeight:"700"}}>
+                            {e.snapshot&&e.snapshot.inningsOver&&e.snapshot.inningsOver[1]
+                              ?(e.runsB>e.runsA?e.teamB+" won":e.runsA>e.runsB?e.teamA+" won":"Tied"):"In Progress"}
+                          </div>
+                          <span style={{color:SP.textDim,fontSize:14}}>›</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
               {/* Actions */}
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                <button onClick={()=>setShowPlayers(true)}
+              <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+                <button onClick={()=>setShowPlayers(currentUser.uid)}
                   style={{...S.btnSm,width:"100%",padding:"13px",textAlign:"left",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <span>🏏 My Player Profile</span><span style={{color:SP.secondary}}>›</span>
-                </button>
-                <button onClick={()=>setScreen("history")}
-                  style={{...S.btnSm,width:"100%",padding:"13px",textAlign:"left",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span>📚 Match History</span><span style={{color:SP.secondary}}>›</span>
                 </button>
                 {isRealAdmin&&<button onClick={()=>setScreen("admin")}
                   style={{...S.btnSm,width:"100%",padding:"13px",textAlign:"left",fontSize:13,display:"flex",justifyContent:"space-between",alignItems:"center",color:"#a78bfa",borderColor:"rgba(167,139,250,.3)"}}>
                   <span>🔒 Admin Panel</span><span>›</span>
                 </button>}
                 <button onClick={()=>{initFB();_fbAuth&&_fbAuth.signOut();}}
-                  style={{...S.btnSm,width:"100%",padding:"13px",textAlign:"center",fontSize:13,color:SP.tertiary,borderColor:"rgba(255,112,114,.25)",marginTop:8}}>
+                  style={{...S.btnSm,width:"100%",padding:"13px",textAlign:"center",fontSize:13,color:SP.tertiary,borderColor:"rgba(255,112,114,.25)",marginTop:4}}>
                   Sign Out
                 </button>
               </div>
@@ -2547,6 +2557,20 @@ function App({ currentUser }) {
           )}
         </div>
       </div>
+          <nav style={S.bottomNav}>
+        {[
+          {icon:"🏠",label:"Home",tab:"home"},
+          {icon:"📡",label:"Live",tab:"live"},
+          {icon:"📚",label:"History",tab:"history"},
+          {icon:"👤",label:"Profile",tab:"profile"},
+        ].map(({icon,label,tab})=>(
+          <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}}}
+            style={{...S.navItem,color:tab==="history"?SP.secondary:SP.textDim,background:tab==="history"?"rgba(102,157,255,.1)":"transparent"}}>
+            <span style={{fontSize:20}}>{icon}</span>
+            <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
+          </div>
+        ))}
+      </nav>
     );
   }
 
@@ -2613,7 +2637,7 @@ function App({ currentUser }) {
       );
     }
     return (
-      <div style={S.page}>
+      <div style={{...S.page,paddingBottom:88}}>
         <div style={{...S.wrap,padding:"0 12px"}}>
           <div style={{...S.topBar,position:"static",padding:"12px 16px",marginBottom:8}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -2624,6 +2648,20 @@ function App({ currentUser }) {
           {match.teamA&&match.teamB&&<TCardH team={match.teamA} inn={0} opp={match.teamB}/>}
           {match.inningsOver&&match.inningsOver[0]&&match.teamB&&<TCardH team={match.teamB} inn={1} opp={match.teamA}/>}
         </div>
+            <nav style={S.bottomNav}>
+        {[
+          {icon:"🏠",label:"Home",tab:"home"},
+          {icon:"📡",label:"Live",tab:"live"},
+          {icon:"📚",label:"History",tab:"history"},
+          {icon:"👤",label:"Profile",tab:"profile"},
+        ].map(({icon,label,tab})=>(
+          <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}}}
+            style={{...S.navItem,color:SP.textDim}}>
+            <span style={{fontSize:20}}>{icon}</span>
+            <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
+          </div>
+        ))}
+      </nav>
       </div>
     );
   }
@@ -2635,11 +2673,11 @@ function App({ currentUser }) {
     var isAdminUser = isAdmin;
     var pinOk = isAdminUser || adminPin===ADMIN_PIN;
     return (
-      <div style={S.page}>
+      <div style={{...S.page,paddingBottom:88}}>
         <div style={{...S.wrap,padding:"0 12px"}}>
           <div style={{...S.topBar,position:"static",padding:"12px 16px",marginBottom:8}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <button onClick={()=>{setScreen("home");setAdminPin("");}} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
+              <button onClick={()=>{setScreen("home");setAdminPin("");}}} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
               <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Admin</span>
             </div>
           </div>
@@ -2658,6 +2696,20 @@ function App({ currentUser }) {
             <AdminPanel matchHistory={matchHistory} setMatchHistory={setMatchHistory} currentUser={currentUser} onDone={()=>{setScreen("home");setAdminPin("");}}/>
           )}
         </div>
+            <nav style={S.bottomNav}>
+        {[
+          {icon:"🏠",label:"Home",tab:"home"},
+          {icon:"📡",label:"Live",tab:"live"},
+          {icon:"📚",label:"History",tab:"history"},
+          {icon:"👤",label:"Profile",tab:"profile"},
+        ].map(({icon,label,tab})=>(
+          <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}}}
+            style={{...S.navItem,color:SP.textDim}}>
+            <span style={{fontSize:20}}>{icon}</span>
+            <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
+          </div>
+        ))}
+      </nav>
       </div>
     );
   }
@@ -3058,7 +3110,7 @@ function App({ currentUser }) {
       );
     }
     return (
-      <div style={S.page}>
+      <div style={{...S.page,paddingBottom:88}}>
         <div style={{...S.wrap,padding:"0 12px"}}>
           <div style={{...S.topBar,position:"static",padding:"12px 16px",marginBottom:8}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -3069,6 +3121,20 @@ function App({ currentUser }) {
           <TCard team={match.teamA} inn={0} opp={match.teamB}/>
           {(match.batting===1||match.inningsOver[0])&&<TCard team={match.teamB} inn={1} opp={match.teamA}/>}
         </div>
+            <nav style={S.bottomNav}>
+        {[
+          {icon:"🏠",label:"Home",tab:"home"},
+          {icon:"📡",label:"Live",tab:"live"},
+          {icon:"📚",label:"History",tab:"history"},
+          {icon:"👤",label:"Profile",tab:"profile"},
+        ].map(({icon,label,tab})=>(
+          <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}}}
+            style={{...S.navItem,color:SP.textDim}}>
+            <span style={{fontSize:20}}>{icon}</span>
+            <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
+          </div>
+        ))}
+      </nav>
       </div>
     );
   }
@@ -3382,7 +3448,7 @@ function PlayerFullStats({ p }) {
 }
 
 // ── PlayersScreen — view/edit players ────────────────────────
-function PlayersScreen({ currentUser, isAdmin, onBack }) {
+function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScreen, setHomeTab }) {
   const ROLES       = ["Batsman","Bowler","All-rounder","Wicket-keeper"];
   const BAT_STYLES  = ["Right-hand","Left-hand"];
   const BOWL_STYLES = ["Right-arm Fast","Right-arm Medium","Right-arm Off-spin","Left-arm Fast","Left-arm Medium","Left-arm Spin","N/A"];
@@ -3396,17 +3462,26 @@ function PlayersScreen({ currentUser, isAdmin, onBack }) {
   const [err,     setErr]     = React.useState("");
   const [search,  setSearch]  = React.useState("");
 
-  React.useEffect(() => { loadPlayers(); }, []);
+  React.useEffect(() => {
+    loadPlayers(initialPlayerId);
+  }, []);
 
-  function loadPlayers() {
+  function loadPlayers(autoOpenId) {
     if (!_fbDB) return;
     setLoading(true);
     _fbDB.ref("players").once("value", snap => {
       var val = snap.val() || {};
-      setPlayers(Object.values(val).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+      var list = Object.values(val).sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+      setPlayers(list);
       setLoading(false);
+      if (autoOpenId) {
+        var found = list.find(p => p.id === autoOpenId || p.uid === autoOpenId);
+        if (found) { setSel(found); setView("detail"); }
+      }
     }, () => setLoading(false));
   }
+
+
 
   function canEdit(p) {
     if (!currentUser) return false;
@@ -3476,7 +3551,7 @@ function PlayersScreen({ currentUser, isAdmin, onBack }) {
   if (view==="edit" || view==="add") {
     var isAdd = view==="add";
     return (
-      <div style={S.page}>
+      <div style={{...S.page,paddingBottom:88}}>
         <div style={{...S.wrap, padding:"0 16px"}}>
           <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",gap:12}}>
             <button onClick={()=>{setView(isAdd?"list":"detail");setErr("");}} style={S.btnSm}>← Back</button>
@@ -3529,6 +3604,20 @@ function PlayersScreen({ currentUser, isAdmin, onBack }) {
           </button>
         </div>
       </div>
+    <nav style={S.bottomNav}>
+      {[
+        {icon:"🏠",label:"Home",tab:"home"},
+        {icon:"📡",label:"Live",tab:"live"},
+        {icon:"📚",label:"History",tab:"history"},
+        {icon:"👤",label:"Profile",tab:"profile"},
+      ].map(({icon,label,tab})=>(
+        <div key={tab} onClick={()=>{if(tab==="history")setScreen&&setScreen("history");else{setHomeTab&&setHomeTab(tab);setScreen&&setScreen("home");}}}
+          style={{...S.navItem,color:SP.textDim}}>
+          <span style={{fontSize:20}}>{icon}</span>
+          <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
+        </div>
+      ))}
+    </nav>
     );
   }
 
@@ -3536,7 +3625,7 @@ function PlayersScreen({ currentUser, isAdmin, onBack }) {
   if (view==="detail" && sel) {
     var editable = canEdit(sel);
     return (
-      <div style={S.page}>
+      <div style={{...S.page,paddingBottom:88}}>
         <div style={{...S.wrap, padding:"0 16px"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 0 10px"}}>
             <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -3569,6 +3658,20 @@ function PlayersScreen({ currentUser, isAdmin, onBack }) {
           <PlayerFullStats p={sel} />
         </div>
       </div>
+    <nav style={S.bottomNav}>
+      {[
+        {icon:"🏠",label:"Home",tab:"home"},
+        {icon:"📡",label:"Live",tab:"live"},
+        {icon:"📚",label:"History",tab:"history"},
+        {icon:"👤",label:"Profile",tab:"profile"},
+      ].map(({icon,label,tab})=>(
+        <div key={tab} onClick={()=>{if(tab==="history")setScreen&&setScreen("history");else{setHomeTab&&setHomeTab(tab);setScreen&&setScreen("home");}}}
+          style={{...S.navItem,color:SP.textDim}}>
+          <span style={{fontSize:20}}>{icon}</span>
+          <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
+        </div>
+      ))}
+    </nav>
     );
   }
 
@@ -3601,6 +3704,20 @@ function PlayersScreen({ currentUser, isAdmin, onBack }) {
         ))}
       </div>
     </div>
+    <nav style={S.bottomNav}>
+      {[
+        {icon:"🏠",label:"Home",tab:"home"},
+        {icon:"📡",label:"Live",tab:"live"},
+        {icon:"📚",label:"History",tab:"history"},
+        {icon:"👤",label:"Profile",tab:"profile"},
+      ].map(({icon,label,tab})=>(
+        <div key={tab} onClick={()=>{if(tab==="history")setScreen&&setScreen("history");else{setHomeTab&&setHomeTab(tab);setScreen&&setScreen("home");}}}
+          style={{...S.navItem,color:SP.textDim}}>
+          <span style={{fontSize:20}}>{icon}</span>
+          <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
+        </div>
+      ))}
+    </nav>
   );
 }
 
@@ -3670,7 +3787,7 @@ function QuickAddPlayer({currentUser, onAdded}) {
   );
 }
 
-function TeamsScreen({ currentUser, isAdmin, onBack }) {
+function TeamsScreen({ currentUser, isAdmin, onBack, setScreen, setHomeTab }) {
 
   const [teams,   setTeams]   = React.useState([]);
   const [players, setPlayers] = React.useState([]);
@@ -3759,7 +3876,7 @@ function TeamsScreen({ currentUser, isAdmin, onBack }) {
     // For owner selection, show registered players that are also users
     var registeredPlayers = players.filter(p=>p.uid);
     return (
-      <div style={S.page}>
+      <div style={{...S.page,paddingBottom:88}}>
         <div style={{...S.wrap, padding:"0 16px"}}>
           <div style={{padding:"16px 0 12px",display:"flex",alignItems:"center",gap:12}}>
             <button onClick={()=>{setView(isEdit?"detail":"list");setErr("");}} style={S.btnSm}>← Back</button>
