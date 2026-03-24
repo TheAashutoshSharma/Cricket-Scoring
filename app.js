@@ -2700,7 +2700,7 @@ function App({ currentUser }) {
         <div style={{...S.wrap,padding:"0 12px"}}>
           <div style={{...S.topBar,position:"static",padding:"12px 16px",marginBottom:8}}>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <button onClick={()=>{setScreen("home");setAdminPin("");}}} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
+              <button onClick={()=>{setScreen("home");setAdminPin("");}} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
               <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Admin</span>
             </div>
           </div>
