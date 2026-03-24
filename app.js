@@ -4106,7 +4106,7 @@ function TeamsScreen({ currentUser, isAdmin, onBack, setScreen, setHomeTab }) {
         //    </div>
         //  ))}
         //</nav>
-      </div>
+      //</div>
     );
   }
 
