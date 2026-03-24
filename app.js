@@ -2670,21 +2670,21 @@ function App({ currentUser }) {
           </div>
           {match.teamA&&match.teamB&&<TCardH team={match.teamA} inn={0} opp={match.teamB}/>}
           {match.inningsOver&&match.inningsOver[0]&&match.teamB&&<TCardH team={match.teamB} inn={1} opp={match.teamA}/>}
+          <nav style={S.bottomNav}>
+            {[
+              {icon:"🏠",label:"Home",tab:"home"},
+              {icon:"📡",label:"Live",tab:"live"},
+              {icon:"📚",label:"History",tab:"history"},
+              {icon:"👤",label:"Profile",tab:"profile"},
+            ].map(({icon,label,tab})=>(
+              <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}}}
+                style={{...S.navItem,color:SP.textDim}}>
+                <span style={{fontSize:20}}>{icon}</span>
+                <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
+              </div>
+            ))}
+          </nav>
         </div>
-            <nav style={S.bottomNav}>
-        {[
-          {icon:"🏠",label:"Home",tab:"home"},
-          {icon:"📡",label:"Live",tab:"live"},
-          {icon:"📚",label:"History",tab:"history"},
-          {icon:"👤",label:"Profile",tab:"profile"},
-        ].map(({icon,label,tab})=>(
-          <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}}}
-            style={{...S.navItem,color:SP.textDim}}>
-            <span style={{fontSize:20}}>{icon}</span>
-            <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
-          </div>
-        ))}
-      </nav>
       </div>
     );
   }
@@ -2718,21 +2718,21 @@ function App({ currentUser }) {
           ) : (
             <AdminPanel matchHistory={matchHistory} setMatchHistory={setMatchHistory} currentUser={currentUser} onDone={()=>{setScreen("home");setAdminPin("");}}/>
           )}
+          <nav style={S.bottomNav}>
+            {[
+              {icon:"🏠",label:"Home",tab:"home"},
+              {icon:"📡",label:"Live",tab:"live"},
+              {icon:"📚",label:"History",tab:"history"},
+              {icon:"👤",label:"Profile",tab:"profile"},
+            ].map(({icon,label,tab})=>(
+              <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}}}
+                style={{...S.navItem,color:SP.textDim}}>
+                <span style={{fontSize:20}}>{icon}</span>
+                <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
+              </div>
+            ))}
+          </nav>
         </div>
-            <nav style={S.bottomNav}>
-        {[
-          {icon:"🏠",label:"Home",tab:"home"},
-          {icon:"📡",label:"Live",tab:"live"},
-          {icon:"📚",label:"History",tab:"history"},
-          {icon:"👤",label:"Profile",tab:"profile"},
-        ].map(({icon,label,tab})=>(
-          <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}}}
-            style={{...S.navItem,color:SP.textDim}}>
-            <span style={{fontSize:20}}>{icon}</span>
-            <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
-          </div>
-        ))}
-      </nav>
       </div>
     );
   }
@@ -3381,7 +3381,7 @@ function App({ currentUser }) {
           </div>
         )}
       </div>
-    <nav style={S.bottomNav}>
+      <nav style={S.bottomNav}>
         {[
           {icon:"🏠",label:"Home",tab:"home"},
           {icon:"📡",label:"Live",tab:"live"},
