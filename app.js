@@ -3054,23 +3054,21 @@ function App({ currentUser }) {
           </div>
         )}
         <div style={{textAlign:"center",padding:"14px 0",color:"#334155",fontSize:11}}>Updates every ball automatically</div>
+        <nav style={S.bottomNav}>
+          {[
+            {icon:"🏠",label:"Home",tab:"home"},
+            {icon:"📡",label:"Live",tab:"live"},
+            {icon:"📚",label:"History",tab:"history"},
+            {icon:"👤",label:"Profile",tab:"profile"},
+          ].map(({icon,label,tab})=>(
+            <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}}}
+              style={{...S.navItem,color:SP.textDim}}>
+              <span style={{fontSize:20}}>{icon}</span>
+              <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
+            </div>
+          ))}
+        </nav>
       </div>
-
-    <nav style={S.bottomNav}>
-        {[
-          {icon:"🏠",label:"Home",tab:"home"},
-          {icon:"📡",label:"Live",tab:"live"},
-          {icon:"📚",label:"History",tab:"history"},
-          {icon:"👤",label:"Profile",tab:"profile"},
-        ].map(({icon,label,tab})=>(
-          <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}}}
-            style={{...S.navItem,color:SP.textDim}}>
-            <span style={{fontSize:20}}>{icon}</span>
-            <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
-          </div>
-        ))}
-      </nav>
-    </div>
   );
   } // end viewer
 
@@ -3683,21 +3681,21 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
             {saving?"Saving…":isAdd?"Register Player":"Save Changes"}
           </button>
         </div>
+        <nav style={S.bottomNav}>
+          {[
+            {icon:"🏠",label:"Home",tab:"home"},
+            {icon:"📡",label:"Live",tab:"live"},
+            {icon:"📚",label:"History",tab:"history"},
+            {icon:"👤",label:"Profile",tab:"profile"},
+          ].map(({icon,label,tab})=>(
+            <div key={tab} onClick={()=>{if(tab==="history")setScreen&&setScreen("history");else{setHomeTab&&setHomeTab(tab);setScreen&&setScreen("home");}}}
+              style={{...S.navItem,color:SP.textDim}}>
+              <span style={{fontSize:20}}>{icon}</span>
+              <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
+            </div>
+          ))}
+        </nav>
       </div>
-    <nav style={S.bottomNav}>
-      {[
-        {icon:"🏠",label:"Home",tab:"home"},
-        {icon:"📡",label:"Live",tab:"live"},
-        {icon:"📚",label:"History",tab:"history"},
-        {icon:"👤",label:"Profile",tab:"profile"},
-      ].map(({icon,label,tab})=>(
-        <div key={tab} onClick={()=>{if(tab==="history")setScreen&&setScreen("history");else{setHomeTab&&setHomeTab(tab);setScreen&&setScreen("home");}}}
-          style={{...S.navItem,color:SP.textDim}}>
-          <span style={{fontSize:20}}>{icon}</span>
-          <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
-        </div>
-      ))}
-    </nav>
     );
   }
 
@@ -3737,21 +3735,21 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
           </div>
           <PlayerFullStats p={sel} />
         </div>
+        <nav style={S.bottomNav}>
+          {[
+            {icon:"🏠",label:"Home",tab:"home"},
+            {icon:"📡",label:"Live",tab:"live"},
+            {icon:"📚",label:"History",tab:"history"},
+            {icon:"👤",label:"Profile",tab:"profile"},
+          ].map(({icon,label,tab})=>(
+            <div key={tab} onClick={()=>{if(tab==="history")setScreen&&setScreen("history");else{setHomeTab&&setHomeTab(tab);setScreen&&setScreen("home");}}}
+              style={{...S.navItem,color:SP.textDim}}>
+              <span style={{fontSize:20}}>{icon}</span>
+              <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
+            </div>
+          ))}
+        </nav>
       </div>
-    <nav style={S.bottomNav}>
-      {[
-        {icon:"🏠",label:"Home",tab:"home"},
-        {icon:"📡",label:"Live",tab:"live"},
-        {icon:"📚",label:"History",tab:"history"},
-        {icon:"👤",label:"Profile",tab:"profile"},
-      ].map(({icon,label,tab})=>(
-        <div key={tab} onClick={()=>{if(tab==="history")setScreen&&setScreen("history");else{setHomeTab&&setHomeTab(tab);setScreen&&setScreen("home");}}}
-          style={{...S.navItem,color:SP.textDim}}>
-          <span style={{fontSize:20}}>{icon}</span>
-          <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
-        </div>
-      ))}
-    </nav>
     );
   }
 
@@ -3783,21 +3781,21 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
           <PlayerStatsCard key={p.id} p={p} onClick={()=>{setSel(p);setView("detail");}}/>
         ))}
       </div>
+      <nav style={S.bottomNav}>
+        {[
+          {icon:"🏠",label:"Home",tab:"home"},
+          {icon:"📡",label:"Live",tab:"live"},
+          {icon:"📚",label:"History",tab:"history"},
+          {icon:"👤",label:"Profile",tab:"profile"},
+        ].map(({icon,label,tab})=>(
+          <div key={tab} onClick={()=>{if(tab==="history")setScreen&&setScreen("history");else{setHomeTab&&setHomeTab(tab);setScreen&&setScreen("home");}}}
+            style={{...S.navItem,color:SP.textDim}}>
+            <span style={{fontSize:20}}>{icon}</span>
+            <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
+          </div>
+        ))}
+      </nav>
     </div>
-    <nav style={S.bottomNav}>
-      {[
-        {icon:"🏠",label:"Home",tab:"home"},
-        {icon:"📡",label:"Live",tab:"live"},
-        {icon:"📚",label:"History",tab:"history"},
-        {icon:"👤",label:"Profile",tab:"profile"},
-      ].map(({icon,label,tab})=>(
-        <div key={tab} onClick={()=>{if(tab==="history")setScreen&&setScreen("history");else{setHomeTab&&setHomeTab(tab);setScreen&&setScreen("home");}}}
-          style={{...S.navItem,color:SP.textDim}}>
-          <span style={{fontSize:20}}>{icon}</span>
-          <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
-        </div>
-      ))}
-    </nav>
   );
 }
 
