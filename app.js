@@ -1398,7 +1398,7 @@ function AuthGate({children}) {
             <div>
               <div style={{marginBottom:20}}>
                 <label style={S.lbl}>Email Address</label>
-                <input value={email} onChange={e=>{setEmail(e.target.value);clearForm();}} type="email" placeholder="player@stadiumpulse.com" className="sp-input"
+                <input value={email} onChange={e=>{setEmail(e.target.value);clearForm();}} type="email" placeholder="player@cricketpulse.com" className="sp-input"
                   onKeyDown={e=>{if(e.key==="Enter")handleLogin();}}/>
               </div>
               <div style={{marginBottom:6}}>
@@ -2261,7 +2261,7 @@ function App({ currentUser }) {
       <header style={S.topBar}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <span style={{fontSize:20}}>🏏</span>
-          <span style={{color:"#fff",fontSize:16,fontWeight:"900",letterSpacing:-0.5,fontFamily:"Lexend,Georgia,sans-serif"}}>STADIUM PULSE</span>
+          <span style={{color:"#fff",fontSize:16,fontWeight:"900",letterSpacing:-0.5,fontFamily:"Lexend,Georgia,sans-serif"}}>CRICKET PULSE</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
           <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",background:SP.bg3,borderRadius:999,border:"1px solid rgba(73,72,71,.2)"}}>
@@ -3024,7 +3024,7 @@ function App({ currentUser }) {
         <div style={{...S.topBar}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <span style={{fontSize:16}}>🏏</span>
-            <span style={{color:"#fff",fontSize:13,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>STADIUM PULSE</span>
+            <span style={{color:"#fff",fontSize:13,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>CRICKET PULSE</span>
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
             <button onClick={()=>setScreen("scorecard")} style={S.btnSm}>📊</button>
