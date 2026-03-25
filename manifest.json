@@ -1,7 +1,7 @@
 {
-  "name": "Cricket Scorer",
-  "short_name": "Cricket",
-  "description": "Professional Cricket Scorecard & Live Scoring App",
+  "name": "Cricket Pulse",
+  "short_name": "Cricket Pulse",
+  "description": "Cricket Scorecard & Live Scoring App",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
