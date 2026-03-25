@@ -1281,7 +1281,7 @@ function AuthGate({children}) {
           <div style={{width:72,height:72,background:"#1a1919",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",boxShadow:"0 8px 32px rgba(0,0,0,.5)"}}>
             <span style={{fontSize:34}}>🏏</span>
           </div>
-          <h1 style={{color:"#fff",fontSize:28,fontWeight:"900",letterSpacing:-1,margin:"0 0 6px",fontFamily:"Lexend,Georgia,sans-serif",fontStyle:"italic"}}>STADIUM PULSE</h1>
+          <h1 style={{color:"#fff",fontSize:28,fontWeight:"900",letterSpacing:-1,margin:"0 0 6px",fontFamily:"Lexend,Georgia,sans-serif",fontStyle:"italic"}}>CRICKET PULSE</h1>
           <p style={{color:SP.textDim,fontSize:10,letterSpacing:3,margin:0,fontWeight:"600",textTransform:"uppercase"}}>Enter the Arena</p>
         </div>
 
