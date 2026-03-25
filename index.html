@@ -6,11 +6,10 @@
   <meta name="theme-color" content="#0f172a" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="CricScore" />
-  <meta name="description" content="Professional Cricket Scorecard App" />
+  <meta name="apple-mobile-web-app-title" content="Stadium Pulse" />
+  <meta name="description" content="Cricket Scorecard App" />
 
-  <!-- App title — keep in sync with APP_NAME in app.js -->
-  <title>CricScore 🏏</title>
+  <title>Stadium Pulse 🏏</title>
 
   <!-- PWA Manifest -->
   <link rel="manifest" href="manifest.json" />
@@ -35,6 +34,144 @@
     /* Install banner */
     #install-banner {
       display: none;
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: #1e3a5f;
+      border-top: 2px solid #1d4ed8;
+      padding: 14px 20px;
+      z-index: 9999;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    #install-banner.show { display: flex; }
+    #install-banner p { color: #e2e8f0; font-size: 13px; flex: 1; }
+    #install-banner button {
+      background: #fbbf24; color: #0f172a;
+      border: none; border-radius: 8px;
+      padding: 8px 16px; font-weight: bold;
+      font-size: 13px; cursor: pointer; white-space: nowrap;
+    }
+    #install-banner .dismiss {
+      background: transparent; color: #64748b;
+      border: 1px solid #475569; margin-left: 0;
+    }
+
+    /* iOS install tip */
+    #ios-tip {
+      display: none;
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      background: #1e293b;
+      border-top: 2px solid #334155;
+      padding: 16px 20px 28px;
+      z-index: 9999;
+      text-align: center;
+    }
+    #ios-tip.show { display: block; }
+    #ios-tip p { color: #e2e8f0; font-size: 14px; margin-bottom: 8px; }
+    #ios-tip small { color: #64748b; font-size: 12px; }
+    #ios-tip .close-tip {
+      position: absolute; top: 12px; right: 16px;
+      background: none; border: none; color: #64748b;
+      font-size: 20px; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <!-- Cache-buster: unregister old SWs and clear all caches on every load -->
+  <script>
+    (function() {
+      // Unregister all service workers
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(regs) {
+          regs.forEach(function(reg) { reg.unregister(); });
+        });
+      }
+      // Clear all caches
+      if ('caches' in window) {
+        caches.keys().then(function(names) {
+          names.forEach(function(name) { caches.delete(name); });
+        });
+      }
+    })();
+  </script>
+
+  <div id="app"></div>
+
+  <!-- Install Banner (Android/Chrome) -->
+  <div id="install-banner">
+    <p>🏏 Install Stadium Pulse for offline use!</p>
+    <button class="dismiss" onclick="dismissBanner()">✕</button>
+    <button onclick="installApp()">Install</button>
+  </div>
+
+  <!-- iOS Install Tip -->
+  <div id="ios-tip">
+    <button class="close-tip" onclick="document.getElementById('ios-tip').classList.remove('show')">✕</button>
+    <p>📲 Install on iPhone</p>
+    <small>Tap <strong>Share</strong> (□↑) then <strong>"Add to Home Screen"</strong></small>
+  </div>
+
+  <!-- Firebase SDK (v9 compat) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.2/firebase-app-compat.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.2/firebase-database-compat.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.2/firebase-auth-compat.min.js"></script>
+
+  <!-- React + Babel (no build step needed!) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+
+  <script src="app.js?v=1774134206" type="text/babel"></script>
+
+  <script>
+    // ── PWA Install Logic ──
+    let deferredPrompt = null;
+
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      document.getElementById('install-banner').classList.add('show');
+    });
+
+    function installApp() {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then(() => {
+          deferredPrompt = null;
+          dismissBanner();
+        });
+      }
+    }
+
+    function dismissBanner() {
+      document.getElementById('install-banner').classList.remove('show');
+      sessionStorage.setItem('banner-dismissed', '1');
+    }
+
+    window.addEventListener('appinstalled', () => dismissBanner());
+
+    // Show iOS tip if on Safari and not installed
+    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    if (isIos && !isInStandaloneMode && !sessionStorage.getItem('ios-tip-dismissed')) {
+      setTimeout(() => document.getElementById('ios-tip').classList.add('show'), 2000);
+    }
+
+    // ── Service Worker ──
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js?v=1774134206')
+        .then(r => {
+          console.log('SW registered:', r.scope);
+          // Force immediate update check
+          r.update();
+        })
+        .catch(e => console.error('SW error:', e));
+    }
+  </script>
+</body>
+</html>      display: none;
       position: fixed;
       bottom: 0; left: 0; right: 0;
       background: #1e3a5f;
