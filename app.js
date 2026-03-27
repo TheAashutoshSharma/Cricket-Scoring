@@ -1201,7 +1201,8 @@ function AuthGate({children}) {
         };
         await _fbDB.ref("players/"+playerId).set(playerRecord);
         // Store playerId on user record for easy lookup
-        await _fbDB.ref("users/"+uid+"/playerId").set(playerId);
+        // Write both legacy playerId and new playerIds array
+        await _fbDB.ref("users/"+uid).update({ playerId: playerId, playerIds: [playerId] });
       }
     } catch(e) {
       setErr(friendlyError(e.code));
@@ -1459,11 +1460,14 @@ function App({ currentUser }) {
   const [homeTab, setHomeTab] = useState("home"); // "home"|"live"|"profile"
   const [userPlayerId, setUserPlayerId] = useState(null); // current user's playerId from DB
 
-  // Load current user's playerId from users/{uid}
+  // Load current user's linked playerIds from users/{uid}
   useEffect(() => {
     if (!currentUser || !_fbDB) return;
-    _fbDB.ref("users/"+currentUser.uid+"/playerId").once("value", snap => {
-      if (snap.val()) setUserPlayerId(snap.val());
+    _fbDB.ref("users/"+currentUser.uid).once("value", snap => {
+      var rec = snap.val() || {};
+      // Support both legacy single playerId and new playerIds array
+      if (rec.playerIds && rec.playerIds.length) setUserPlayerId(rec.playerIds[0]);
+      else if (rec.playerId) setUserPlayerId(rec.playerId);
     });
   }, [currentUser]);
   //const [userPlayerId, setUserPlayerId] = useState(null); // linked player id for current user
@@ -1472,6 +1476,7 @@ function App({ currentUser }) {
   const [liveError,   setLiveError]   = useState("");
   const listRef = useRef(null);
   const scorerLockRef = useRef(null);
+  const scorerRequestRef = useRef(null);
   const [scorerToast, setScorerToast] = useState("");
   // Players & Teams
   const [showPlayers,    setShowPlayers]    = useState(false);
@@ -1579,6 +1584,7 @@ function App({ currentUser }) {
         var safeMatchScreens = ["match", "viewer", "scorecard", "historycard"];
         setScreen(safeMatchScreens.includes(restoredScreen) ? restoredScreen : (d.isViewer ? "viewer" : "match"));
         if (d.isViewer && d.match.matchCode) attachListener(d.match.matchCode);
+        else if (!d.isViewer && d.match.matchCode && d.match.matchCode !== "LOCAL" && currentUser) watchScorerLock(d.match.matchCode);
       } else if (d.screen) {
         // Restore non-match screens (history, admin, setup)
         setScreen(d.screen);
@@ -1629,10 +1635,25 @@ function App({ currentUser }) {
     if (!match || isViewer || !fbReady || !match.matchCode || match.matchCode==="LOCAL") return;
     setSyncing(true);
     var code = match.matchCode;
-    // Write full match data
-    _fbDB.ref("matches/"+code).set(match)
-      .then(()=>setSyncing(false))
-      .catch(()=>setSyncing(false));
+    // We write the full match with .set(), but scorerRequest is owned by the handover
+    // flow (written by viewers). We must not clobber it. Strategy: snapshot the current
+    // scorerRequest from Firebase first, then write match + re-attach scorerRequest.
+    var ref = _fbDB.ref("matches/"+code);
+    // Read the scorer-lock fields before writing — these are owned by the lock/handover
+    // system and must never be clobbered by the scorer's ball-by-ball sync.
+    ref.once("value", snap => {
+      var live = snap.val() || {};
+      var matchToWrite = {
+        ...match,
+        scorerUid:        live.scorerUid        || match.scorerUid        || null,
+        scorerName:       live.scorerName       || match.scorerName       || null,
+        scorerHeartbeat:  live.scorerHeartbeat  || match.scorerHeartbeat  || null,
+        scorerRequest:    live.scorerRequest    || match.scorerRequest    || null,
+      };
+      ref.set(matchToWrite)
+        .then(()=>setSyncing(false))
+        .catch(()=>setSyncing(false));
+    });
     // Write/update live index entry (small summary for listing)
     var bothOver = match.inningsOver && match.inningsOver[0] && match.inningsOver[1];
     var bt = match.batting||0;
@@ -1671,14 +1692,24 @@ function App({ currentUser }) {
     listRef.current = ref;
     var first = true;
     ref.on("value", snap => {
-      var v = snap.val();
       var v = normaliseMatch(snap.val());
       if (!v) return;
       if (first) {
         first = false;
         setMatch(v); setIsViewer(true); setScreen("viewer");
       } else {
-        setMatch(v);
+        // Check if we've just been approved as the new scorer
+        var myUid = currentUser && currentUser.uid;
+        if (myUid && v.scorerUid === myUid) {
+          // We are now the scorer — stop read-only listener and take over
+          if (listRef.current) { listRef.current.off(); listRef.current = null; }
+          setMatch(v);
+          setIsViewer(false);
+          setScreen("match");
+          watchScorerLock(code);
+        } else {
+          setMatch(v);
+        }
       }
     }, err => console.warn("FB listener error:", err.message));
   }
@@ -1697,11 +1728,13 @@ function App({ currentUser }) {
   }
 
   // Watch scorerUid — if it changes to someone else's uid, drop to viewer
+  // Also watch scorerRequest so the scorer sees handover requests instantly
+  // and the banner clears immediately when a request is declined.
   function watchScorerLock(code) {
     if (scorerLockRef.current) { scorerLockRef.current.off(); }
     if (!_fbDB || !currentUser) return;
     var myUid = currentUser.uid;
-    var firstFire = true; // ignore the initial value event
+    var firstFire = true; // ignore the initial value event on scorerUid
     scorerLockRef.current = _fbDB.ref("matches/"+code+"/scorerUid");
     scorerLockRef.current.on("value", snap => {
       if (firstFire) { firstFire = false; return; } // skip initial read
@@ -1709,11 +1742,19 @@ function App({ currentUser }) {
       if (newScorer && newScorer !== myUid) {
         // Someone else claimed — drop to viewer
         if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
+        if (scorerRequestRef.current) { scorerRequestRef.current.off(); scorerRequestRef.current = null; }
         setIsViewer(true);
         setScreen("viewer");
-        setScorerToast((snap.val()||"Someone") + " is now scoring");
+        setScorerToast((newScorer||"Someone") + " is now scoring");
         setTimeout(()=>setScorerToast(""), 4000);
       }
+    });
+    // Listen for incoming handover requests (and their removal on decline)
+    if (scorerRequestRef.current) { scorerRequestRef.current.off(); }
+    scorerRequestRef.current = _fbDB.ref("matches/"+code+"/scorerRequest");
+    scorerRequestRef.current.on("value", snap => {
+      var req = snap.val();
+      setMatch(prev => prev ? {...prev, scorerRequest: req || null} : prev);
     });
   }
 
@@ -1763,6 +1804,7 @@ function App({ currentUser }) {
     var code = m.matchCode;
     // 1. Stop scorer lock watcher first (prevents self-trigger on null write)
     if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
+    if (scorerRequestRef.current) { scorerRequestRef.current.off(); scorerRequestRef.current = null; }
     // 2. Clear scorer slot in Firebase
     _fbDB.ref("matches/"+code).update({ scorerUid: null, scorerName: null, scorerHeartbeat: null });
     // 3. Switch to viewer mode
@@ -1797,6 +1839,7 @@ function App({ currentUser }) {
     }).then(() => {
       // Current scorer drops to viewer
       if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
+      if (scorerRequestRef.current) { scorerRequestRef.current.off(); scorerRequestRef.current = null; }
       setIsViewer(true);
       setScreen("viewer");
       if (listRef.current) listRef.current.off();
@@ -1816,6 +1859,7 @@ function App({ currentUser }) {
   // Release scoring fully (match end / leave)
   function releaseScoring(code) {
     if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
+    if (scorerRequestRef.current) { scorerRequestRef.current.off(); scorerRequestRef.current = null; }
     if (_fbDB && code && code !== "LOCAL") {
       _fbDB.ref("matches/"+code).update({ scorerUid: null, scorerName: null, scorerHeartbeat: null, scorerRequest: null });
     }
@@ -2229,12 +2273,12 @@ function App({ currentUser }) {
   }
 
 
-  if (showPlayers) return <PlayersScreen currentUser={currentUser} isAdmin={isAdmin} onBack={()=>setShowPlayers(false)} initialPlayerId={showPlayers!==true?showPlayers:null} setScreen={setScreen} setHomeTab={setHomeTab}/>;
-  if (showTeams)   return <TeamsScreen   currentUser={currentUser} isAdmin={isAdmin} onBack={()=>setShowTeams(false)} setScreen={setScreen} setHomeTab={setHomeTab}/>;
-
   // Admin persona: isRealAdmin = actual admin email; isAdmin = real admin AND not in user-view mode
   var isRealAdmin = !!(currentUser && ADMIN_EMAILS.includes(currentUser.email));
   var isAdmin = isRealAdmin && !viewAsUser;
+
+  if (showPlayers) return <PlayersScreen currentUser={currentUser} isAdmin={isAdmin} onBack={()=>setShowPlayers(false)} initialPlayerId={showPlayers!==true?showPlayers:null} setScreen={setScreen} setHomeTab={setHomeTab}/>;
+  if (showTeams)   return <TeamsScreen   currentUser={currentUser} isAdmin={isAdmin} onBack={()=>setShowTeams(false)} setScreen={setScreen} setHomeTab={setHomeTab}/>;
 
   if (screen==="home") {
     var activeTab = homeTab || "home";
@@ -3038,6 +3082,17 @@ function App({ currentUser }) {
             <button onClick={resetAll} style={{...S.btnSm,color:SP.tertiary,borderColor:"rgba(255,112,114,.2)"}}>✕</button>
           </div>
         </div>
+        {/* Scorer info strip */}
+        <div style={{background:SP.bg2,borderBottom:"1px solid "+SP.bg3,padding:"6px 14px",display:"flex",alignItems:"center",gap:8}}>
+          {match&&match.scorerName
+            ? <span style={{color:SP.textSec,fontSize:12,fontFamily:"Lexend,Georgia,sans-serif"}}>🏏 <b style={{color:"#fff"}}>{match.scorerName}</b> is scoring</span>
+            : <span style={{color:SP.textDim,fontSize:12,fontFamily:"Lexend,Georgia,sans-serif"}}>No active scorer</span>}
+          {match&&match.scorerRequest&&(
+            <span style={{marginLeft:"auto",color:SP.textDim,fontSize:11}}>
+              ✋ {match.scorerRequest.name} requesting…
+            </span>
+          )}
+        </div>
         <ScoreHeader/>
         <div style={{padding:"0 12px"}}>
           <BatterCard editable={false}/>
@@ -3509,9 +3564,20 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
   const [saving,  setSaving]  = React.useState(false);
   const [err,     setErr]     = React.useState("");
   const [search,  setSearch]  = React.useState("");
+  const [users,   setUsers]   = React.useState([]); // all registered users, admin only
 
   React.useEffect(() => {
     loadPlayers(initialPlayerId);
+    if (isAdmin && _fbDB) {
+      _fbDB.ref("users").once("value", snap => {
+        var val = snap.val() || {};
+        // Inject the Firebase key as uid on each user record (uid is the key, not stored in the record)
+        var list = Object.entries(val)
+          .filter(([,u])=>u&&u.name)
+          .map(([uid,u])=>({...u, uid}));
+        setUsers(list);
+      });
+    }
   }, []);
 
   function loadPlayers(autoOpenId) {
@@ -3549,10 +3615,18 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
   }
 
   function openEdit(p) {
+    // Find linked user name if any
+    var linkedUser = p.uid ? users.find(u=>u.uid===p.uid||Object.keys(u).some(k=>u.uid===p.uid)) : null;
+    var linkedName = "";
+    if (p.uid && users.length) {
+      var lu = users.find(u=>u.uid===p.uid);
+      if (lu) linkedName = lu.name||lu.email||p.uid;
+    }
     setEditForm({
       name: p.name||"", role: p.role||"Batsman",
       batStyle: p.batStyle||"Right-hand", bowlStyle: p.bowlStyle||"Right-arm Medium",
       dob: p.dob||"",
+      linkedUid: p.uid||"", linkedName,
     });
     setSel(p); setErr(""); setView("edit");
   }
@@ -3575,6 +3649,52 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
     }).catch(e => { setErr(e.message); setSaving(false); });
   }
 
+  function linkUser(playerId, uid, userName) {
+    if (!_fbDB) return;
+    // Write uid onto player record
+    _fbDB.ref("players/"+playerId+"/uid").set(uid);
+    // Add to user's playerIds array; also set playerId if not already set (primary)
+    _fbDB.ref("users/"+uid).once("value", snap => {
+      var rec = snap.val() || {};
+      var existing = Array.isArray(rec.playerIds) ? rec.playerIds : (rec.playerId ? [rec.playerId] : []);
+      if (!existing.includes(playerId)) {
+        var updated2 = { playerIds: [...existing, playerId] };
+        if (!rec.playerId) updated2.playerId = playerId; // set primary if none
+        _fbDB.ref("users/"+uid).update(updated2);
+      }
+    });
+    // Update local state
+    var updated = {...sel, uid};
+    setPlayers(ps => ps.map(p => p.id===playerId ? updated : p));
+    setSel(updated);
+    setEditForm(f => ({...f, linkedUid: uid, linkedName: userName}));
+  }
+
+  function unlinkUser(playerId) {
+    if (!_fbDB || !sel.uid) return;
+    var prevUid = sel.uid;
+    _fbDB.ref("players/"+playerId+"/uid").remove();
+    // Remove from user's playerIds array; also clear playerId if it matches
+    _fbDB.ref("users/"+prevUid).once("value", snap => {
+      var rec = snap.val() || {};
+      var existing = Array.isArray(rec.playerIds) ? rec.playerIds : (rec.playerId ? [rec.playerId] : []);
+      var newIds = existing.filter(id => id !== playerId);
+      var updates = { playerIds: newIds.length ? newIds : null };
+      // If primary playerId matched, update to next in list or remove
+      if (rec.playerId === playerId) updates.playerId = newIds[0] || null;
+      _fbDB.ref("users/"+prevUid).update(updates);
+      // Reload users
+      _fbDB.ref("users").once("value", s2 => {
+        var val = s2.val() || {};
+        setUsers(Object.entries(val).filter(([,u])=>u&&u.name).map(([uid,u])=>({...u,uid})));
+      });
+    });
+    var updated = {...sel, uid: null};
+    setPlayers(ps => ps.map(p => p.id===playerId ? updated : p));
+    setSel(updated);
+    setEditForm(f => ({...f, linkedUid: "", linkedName: ""}));
+  }
+
   function saveNewPlayer() {
     if (!editForm.name.trim()) return setErr("Name is required");
     if (!currentUser) return setErr("You must be logged in to add a player");
@@ -3591,10 +3711,16 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
       bowling:  { overs:0, balls:0, runs:0, wickets:0, maidens:0, bestWickets:0, bestRuns:999 },
     };
     var writes = [_fbDB.ref("players/"+id).set(p)];
-    // Only write users/{uid}/playerId if not already set (first player = primary profile)
+    // Write to playerIds array; set playerId as primary if first
     writes.push(
-      _fbDB.ref("users/"+currentUser.uid+"/playerId").once("value").then(snap => {
-        if (!snap.val()) return _fbDB.ref("users/"+currentUser.uid+"/playerId").set(id);
+      _fbDB.ref("users/"+currentUser.uid).once("value").then(snap => {
+        var rec = snap.val() || {};
+        var existing = Array.isArray(rec.playerIds) ? rec.playerIds : (rec.playerId ? [rec.playerId] : []);
+        if (!existing.includes(id)) {
+          var updates = { playerIds: [...existing, id] };
+          if (!rec.playerId) updates.playerId = id;
+          return _fbDB.ref("users/"+currentUser.uid).update(updates);
+        }
       })
     );
     Promise.all(writes).then(() => {
@@ -3694,9 +3820,69 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
               <input value={editForm.dob||""} onChange={e=>setEditForm(f=>({...f,dob:e.target.value}))} type="date" style={{...inSt,colorScheme:"dark"}}/>
             </div>
           </div>
-          <div style={{background:"rgba(156,255,147,.06)",border:"1px solid rgba(156,255,147,.15)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
-            <div style={{color:SP.primary,fontSize:11}}>✓ This player will be linked to your account — you'll be able to edit their profile and they'll show as your registered player.</div>
-          </div>
+          {!isAdd && isAdmin && (
+            <div style={{background:"rgba(102,157,255,.06)",border:"1px solid rgba(102,157,255,.2)",borderRadius:10,padding:"14px",marginBottom:14}}>
+              <div style={{...S.lbl,marginBottom:10,color:SP.secondary}}>🔗 LINK USER ACCOUNT</div>
+              {/* Show currently linked user (if any) with unlink button */}
+              {sel.uid && (()=>{
+                var lu = users.find(u=>u.uid===sel.uid);
+                var displayName = lu ? (lu.name||lu.email) : (editForm.linkedName||sel.uid);
+                return (
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:"rgba(156,255,147,.06)",borderRadius:8,marginBottom:10,border:"1px solid rgba(156,255,147,.15)"}}>
+                    <div>
+                      <div style={{color:"#fff",fontSize:13,fontWeight:"700"}}>{displayName}</div>
+                      {lu&&lu.email&&<div style={{color:SP.textDim,fontSize:11}}>{lu.email}</div>}
+                      <div style={{color:SP.primary,fontSize:11,marginTop:2}}>✓ Currently linked</div>
+                    </div>
+                    <button onClick={()=>unlinkUser(sel.id)}
+                      style={{padding:"6px 12px",background:"transparent",border:"1px solid rgba(255,112,114,.3)",borderRadius:8,color:SP.tertiary,fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+                      Unlink
+                    </button>
+                  </div>
+                );
+              })()}
+              {/* User list — all users can be linked; already-linked-to-this-player shown as linked */}
+              {users.filter(u=>u.uid).length===0 ? (
+                <div style={{color:SP.textDim,fontSize:12}}>No registered users found.</div>
+              ) : (
+                <div>
+                  <div style={{color:SP.textDim,fontSize:12,marginBottom:8}}>
+                    {sel.uid ? "Link additional user accounts:" : "Associate this player with a user account:"}
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:220,overflowY:"auto"}}>
+                    {users.filter(u=>u.uid&&u.name).sort((a,b)=>(a.name||"").localeCompare(b.name||"")).map(u=>{
+                      var isLinkedToThis = sel.uid === u.uid;
+                      return (
+                        <div key={u.uid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:isLinkedToThis?"rgba(156,255,147,.06)":SP.bg4,borderRadius:8,border:isLinkedToThis?"1px solid rgba(156,255,147,.15)":"none"}}>
+                          <div>
+                            <div style={{color:"#fff",fontSize:13}}>{u.name}</div>
+                            <div style={{color:SP.textDim,fontSize:11}}>{u.email}</div>
+                            {isLinkedToThis&&<div style={{color:SP.primary,fontSize:10,marginTop:2}}>✓ Linked to this player</div>}
+                          </div>
+                          {isLinkedToThis ? (
+                            <button onClick={()=>unlinkUser(sel.id)}
+                              style={{padding:"5px 12px",background:"transparent",border:"1px solid rgba(255,112,114,.3)",borderRadius:8,color:SP.tertiary,fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+                              Unlink
+                            </button>
+                          ) : (
+                            <button onClick={()=>linkUser(sel.id,u.uid,u.name)}
+                              style={{padding:"5px 12px",background:SP.secondary,border:"none",borderRadius:8,color:"#001f49",fontSize:12,fontWeight:"700",cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+                              Link
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          {!isAdmin && !isAdd && (
+            <div style={{background:"rgba(156,255,147,.06)",border:"1px solid rgba(156,255,147,.15)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
+              <div style={{color:SP.primary,fontSize:11}}>✓ This player will be linked to your account — you'll be able to edit their profile and they'll show as your registered player.</div>
+            </div>
+          )}
           <div style={{background:"rgba(251,191,36,.06)",border:"1px solid rgba(251,191,36,.15)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
             <div style={{color:SP.textDim,fontSize:11}}>🔒 Stats (matches, runs, wickets etc.) are updated automatically from match scorecards and cannot be edited manually.</div>
           </div>
