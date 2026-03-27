@@ -3527,7 +3527,11 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
     if (isAdmin && _fbDB) {
       _fbDB.ref("users").once("value", snap => {
         var val = snap.val() || {};
-        setUsers(Object.values(val).filter(u=>u&&u.name));
+        // Inject the Firebase key as uid on each user record (uid is the key, not stored in the record)
+        var list = Object.entries(val)
+          .filter(([,u])=>u&&u.name)
+          .map(([uid,u])=>({...u, uid}));
+        setUsers(list);
       });
     }
   }, []);
@@ -3621,6 +3625,11 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
     // Only clear playerId from user if it points to this player
     _fbDB.ref("users/"+prevUid+"/playerId").once("value", snap => {
       if (snap.val() === playerId) _fbDB.ref("users/"+prevUid+"/playerId").remove();
+      // Reload users so the list reflects the change immediately
+      _fbDB.ref("users").once("value", s2 => {
+        var val = s2.val() || {};
+        setUsers(Object.entries(val).filter(([,u])=>u&&u.name).map(([uid,u])=>({...u,uid})));
+      });
     });
     var updated = {...sel, uid: null};
     setPlayers(ps => ps.map(p => p.id===playerId ? updated : p));
