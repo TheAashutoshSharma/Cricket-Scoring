@@ -1476,6 +1476,7 @@ function App({ currentUser }) {
   const [liveError,   setLiveError]   = useState("");
   const listRef = useRef(null);
   const scorerLockRef = useRef(null);
+  const scorerRequestRef = useRef(null);
   const [scorerToast, setScorerToast] = useState("");
   // Players & Teams
   const [showPlayers,    setShowPlayers]    = useState(false);
@@ -1583,6 +1584,7 @@ function App({ currentUser }) {
         var safeMatchScreens = ["match", "viewer", "scorecard", "historycard"];
         setScreen(safeMatchScreens.includes(restoredScreen) ? restoredScreen : (d.isViewer ? "viewer" : "match"));
         if (d.isViewer && d.match.matchCode) attachListener(d.match.matchCode);
+        else if (!d.isViewer && d.match.matchCode && d.match.matchCode !== "LOCAL" && currentUser) watchScorerLock(d.match.matchCode);
       } else if (d.screen) {
         // Restore non-match screens (history, admin, setup)
         setScreen(d.screen);
@@ -1633,8 +1635,10 @@ function App({ currentUser }) {
     if (!match || isViewer || !fbReady || !match.matchCode || match.matchCode==="LOCAL") return;
     setSyncing(true);
     var code = match.matchCode;
-    // Write full match data
-    _fbDB.ref("matches/"+code).set(match)
+    // Write full match data — exclude scorerRequest (owned by Firebase handover flow)
+    var matchToWrite = {...match};
+    delete matchToWrite.scorerRequest;
+    _fbDB.ref("matches/"+code).set(matchToWrite)
       .then(()=>setSyncing(false))
       .catch(()=>setSyncing(false));
     // Write/update live index entry (small summary for listing)
@@ -1675,14 +1679,24 @@ function App({ currentUser }) {
     listRef.current = ref;
     var first = true;
     ref.on("value", snap => {
-      var v = snap.val();
       var v = normaliseMatch(snap.val());
       if (!v) return;
       if (first) {
         first = false;
         setMatch(v); setIsViewer(true); setScreen("viewer");
       } else {
-        setMatch(v);
+        // Check if we've just been approved as the new scorer
+        var myUid = currentUser && currentUser.uid;
+        if (myUid && v.scorerUid === myUid) {
+          // We are now the scorer — stop read-only listener and take over
+          if (listRef.current) { listRef.current.off(); listRef.current = null; }
+          setMatch(v);
+          setIsViewer(false);
+          setScreen("match");
+          watchScorerLock(code);
+        } else {
+          setMatch(v);
+        }
       }
     }, err => console.warn("FB listener error:", err.message));
   }
@@ -1701,11 +1715,13 @@ function App({ currentUser }) {
   }
 
   // Watch scorerUid — if it changes to someone else's uid, drop to viewer
+  // Also watch scorerRequest so the scorer sees handover requests instantly
+  // and the banner clears immediately when a request is declined.
   function watchScorerLock(code) {
     if (scorerLockRef.current) { scorerLockRef.current.off(); }
     if (!_fbDB || !currentUser) return;
     var myUid = currentUser.uid;
-    var firstFire = true; // ignore the initial value event
+    var firstFire = true; // ignore the initial value event on scorerUid
     scorerLockRef.current = _fbDB.ref("matches/"+code+"/scorerUid");
     scorerLockRef.current.on("value", snap => {
       if (firstFire) { firstFire = false; return; } // skip initial read
@@ -1713,11 +1729,19 @@ function App({ currentUser }) {
       if (newScorer && newScorer !== myUid) {
         // Someone else claimed — drop to viewer
         if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
+        if (scorerRequestRef.current) { scorerRequestRef.current.off(); scorerRequestRef.current = null; }
         setIsViewer(true);
         setScreen("viewer");
-        setScorerToast((snap.val()||"Someone") + " is now scoring");
+        setScorerToast((newScorer||"Someone") + " is now scoring");
         setTimeout(()=>setScorerToast(""), 4000);
       }
+    });
+    // Listen for incoming handover requests (and their removal on decline)
+    if (scorerRequestRef.current) { scorerRequestRef.current.off(); }
+    scorerRequestRef.current = _fbDB.ref("matches/"+code+"/scorerRequest");
+    scorerRequestRef.current.on("value", snap => {
+      var req = snap.val();
+      setMatch(prev => prev ? {...prev, scorerRequest: req || null} : prev);
     });
   }
 
@@ -1767,6 +1791,7 @@ function App({ currentUser }) {
     var code = m.matchCode;
     // 1. Stop scorer lock watcher first (prevents self-trigger on null write)
     if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
+    if (scorerRequestRef.current) { scorerRequestRef.current.off(); scorerRequestRef.current = null; }
     // 2. Clear scorer slot in Firebase
     _fbDB.ref("matches/"+code).update({ scorerUid: null, scorerName: null, scorerHeartbeat: null });
     // 3. Switch to viewer mode
@@ -1801,6 +1826,7 @@ function App({ currentUser }) {
     }).then(() => {
       // Current scorer drops to viewer
       if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
+      if (scorerRequestRef.current) { scorerRequestRef.current.off(); scorerRequestRef.current = null; }
       setIsViewer(true);
       setScreen("viewer");
       if (listRef.current) listRef.current.off();
@@ -1820,6 +1846,7 @@ function App({ currentUser }) {
   // Release scoring fully (match end / leave)
   function releaseScoring(code) {
     if (scorerLockRef.current) { scorerLockRef.current.off(); scorerLockRef.current = null; }
+    if (scorerRequestRef.current) { scorerRequestRef.current.off(); scorerRequestRef.current = null; }
     if (_fbDB && code && code !== "LOCAL") {
       _fbDB.ref("matches/"+code).update({ scorerUid: null, scorerName: null, scorerHeartbeat: null, scorerRequest: null });
     }
