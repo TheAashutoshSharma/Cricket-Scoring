@@ -3038,6 +3038,17 @@ function App({ currentUser }) {
             <button onClick={resetAll} style={{...S.btnSm,color:SP.tertiary,borderColor:"rgba(255,112,114,.2)"}}>✕</button>
           </div>
         </div>
+        {/* Scorer info strip */}
+        <div style={{background:SP.bg2,borderBottom:"1px solid "+SP.bg3,padding:"6px 14px",display:"flex",alignItems:"center",gap:8}}>
+          {match&&match.scorerName
+            ? <span style={{color:SP.textSec,fontSize:12,fontFamily:"Lexend,Georgia,sans-serif"}}>🏏 <b style={{color:"#fff"}}>{match.scorerName}</b> is scoring</span>
+            : <span style={{color:SP.textDim,fontSize:12,fontFamily:"Lexend,Georgia,sans-serif"}}>No active scorer</span>}
+          {match&&match.scorerRequest&&(
+            <span style={{marginLeft:"auto",color:SP.textDim,fontSize:11}}>
+              ✋ {match.scorerRequest.name} requesting…
+            </span>
+          )}
+        </div>
         <ScoreHeader/>
         <div style={{padding:"0 12px"}}>
           <BatterCard editable={false}/>
@@ -3741,9 +3752,14 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
               <div style={{...S.lbl,marginBottom:10,color:SP.secondary}}>🔗 LINK USER ACCOUNT</div>
               {sel.uid ? (
                 <div>
+                  {(()=>{
+                    var lu = users.find(u=>u.uid===sel.uid);
+                    var displayName = lu ? (lu.name||lu.email) : (editForm.linkedName||"");
+                    return (
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
                     <div>
-                      <div style={{color:"#fff",fontSize:13,fontWeight:"700"}}>{editForm.linkedName||sel.uid}</div>
+                      <div style={{color:"#fff",fontSize:13,fontWeight:"700"}}>{displayName||"Linked user"}</div>
+                      {lu&&lu.email&&<div style={{color:SP.textDim,fontSize:11}}>{lu.email}</div>}
                       <div style={{color:SP.primary,fontSize:11,marginTop:2}}>✓ Linked</div>
                     </div>
                     <button onClick={()=>unlinkUser(sel.id)}
@@ -3751,6 +3767,8 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
                       Unlink
                     </button>
                   </div>
+                    );
+                  })()}
                 </div>
               ) : (
                 <div>
