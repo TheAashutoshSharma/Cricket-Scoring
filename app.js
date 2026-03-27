@@ -1639,9 +1639,17 @@ function App({ currentUser }) {
     // flow (written by viewers). We must not clobber it. Strategy: snapshot the current
     // scorerRequest from Firebase first, then write match + re-attach scorerRequest.
     var ref = _fbDB.ref("matches/"+code);
-    ref.child("scorerRequest").once("value", srSnap => {
-      var currentSR = srSnap.val() || null;
-      var matchToWrite = {...match, scorerRequest: currentSR || match.scorerRequest || null};
+    // Read the scorer-lock fields before writing — these are owned by the lock/handover
+    // system and must never be clobbered by the scorer's ball-by-ball sync.
+    ref.once("value", snap => {
+      var live = snap.val() || {};
+      var matchToWrite = {
+        ...match,
+        scorerUid:        live.scorerUid        || match.scorerUid        || null,
+        scorerName:       live.scorerName       || match.scorerName       || null,
+        scorerHeartbeat:  live.scorerHeartbeat  || match.scorerHeartbeat  || null,
+        scorerRequest:    live.scorerRequest    || match.scorerRequest    || null,
+      };
       ref.set(matchToWrite)
         .then(()=>setSyncing(false))
         .catch(()=>setSyncing(false));
