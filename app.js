@@ -1201,7 +1201,8 @@ function AuthGate({children}) {
         };
         await _fbDB.ref("players/"+playerId).set(playerRecord);
         // Store playerId on user record for easy lookup
-        await _fbDB.ref("users/"+uid+"/playerId").set(playerId);
+        // Write both legacy playerId and new playerIds array
+        await _fbDB.ref("users/"+uid).update({ playerId: playerId, playerIds: [playerId] });
       }
     } catch(e) {
       setErr(friendlyError(e.code));
@@ -1459,11 +1460,14 @@ function App({ currentUser }) {
   const [homeTab, setHomeTab] = useState("home"); // "home"|"live"|"profile"
   const [userPlayerId, setUserPlayerId] = useState(null); // current user's playerId from DB
 
-  // Load current user's playerId from users/{uid}
+  // Load current user's linked playerIds from users/{uid}
   useEffect(() => {
     if (!currentUser || !_fbDB) return;
-    _fbDB.ref("users/"+currentUser.uid+"/playerId").once("value", snap => {
-      if (snap.val()) setUserPlayerId(snap.val());
+    _fbDB.ref("users/"+currentUser.uid).once("value", snap => {
+      var rec = snap.val() || {};
+      // Support both legacy single playerId and new playerIds array
+      if (rec.playerIds && rec.playerIds.length) setUserPlayerId(rec.playerIds[0]);
+      else if (rec.playerId) setUserPlayerId(rec.playerId);
     });
   }, [currentUser]);
   //const [userPlayerId, setUserPlayerId] = useState(null); // linked player id for current user
@@ -3609,8 +3613,16 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
     if (!_fbDB) return;
     // Write uid onto player record
     _fbDB.ref("players/"+playerId+"/uid").set(uid);
-    // Write playerId onto user record
-    _fbDB.ref("users/"+uid+"/playerId").set(playerId);
+    // Add to user's playerIds array; also set playerId if not already set (primary)
+    _fbDB.ref("users/"+uid).once("value", snap => {
+      var rec = snap.val() || {};
+      var existing = Array.isArray(rec.playerIds) ? rec.playerIds : (rec.playerId ? [rec.playerId] : []);
+      if (!existing.includes(playerId)) {
+        var updated2 = { playerIds: [...existing, playerId] };
+        if (!rec.playerId) updated2.playerId = playerId; // set primary if none
+        _fbDB.ref("users/"+uid).update(updated2);
+      }
+    });
     // Update local state
     var updated = {...sel, uid};
     setPlayers(ps => ps.map(p => p.id===playerId ? updated : p));
@@ -3622,10 +3634,16 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
     if (!_fbDB || !sel.uid) return;
     var prevUid = sel.uid;
     _fbDB.ref("players/"+playerId+"/uid").remove();
-    // Only clear playerId from user if it points to this player
-    _fbDB.ref("users/"+prevUid+"/playerId").once("value", snap => {
-      if (snap.val() === playerId) _fbDB.ref("users/"+prevUid+"/playerId").remove();
-      // Reload users so the list reflects the change immediately
+    // Remove from user's playerIds array; also clear playerId if it matches
+    _fbDB.ref("users/"+prevUid).once("value", snap => {
+      var rec = snap.val() || {};
+      var existing = Array.isArray(rec.playerIds) ? rec.playerIds : (rec.playerId ? [rec.playerId] : []);
+      var newIds = existing.filter(id => id !== playerId);
+      var updates = { playerIds: newIds.length ? newIds : null };
+      // If primary playerId matched, update to next in list or remove
+      if (rec.playerId === playerId) updates.playerId = newIds[0] || null;
+      _fbDB.ref("users/"+prevUid).update(updates);
+      // Reload users
       _fbDB.ref("users").once("value", s2 => {
         var val = s2.val() || {};
         setUsers(Object.entries(val).filter(([,u])=>u&&u.name).map(([uid,u])=>({...u,uid})));
@@ -3653,10 +3671,16 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
       bowling:  { overs:0, balls:0, runs:0, wickets:0, maidens:0, bestWickets:0, bestRuns:999 },
     };
     var writes = [_fbDB.ref("players/"+id).set(p)];
-    // Only write users/{uid}/playerId if not already set (first player = primary profile)
+    // Write to playerIds array; set playerId as primary if first
     writes.push(
-      _fbDB.ref("users/"+currentUser.uid+"/playerId").once("value").then(snap => {
-        if (!snap.val()) return _fbDB.ref("users/"+currentUser.uid+"/playerId").set(id);
+      _fbDB.ref("users/"+currentUser.uid).once("value").then(snap => {
+        var rec = snap.val() || {};
+        var existing = Array.isArray(rec.playerIds) ? rec.playerIds : (rec.playerId ? [rec.playerId] : []);
+        if (!existing.includes(id)) {
+          var updates = { playerIds: [...existing, id] };
+          if (!rec.playerId) updates.playerId = id;
+          return _fbDB.ref("users/"+currentUser.uid).update(updates);
+        }
       })
     );
     Promise.all(writes).then(() => {
@@ -3759,51 +3783,57 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
           {!isAdd && isAdmin && (
             <div style={{background:"rgba(102,157,255,.06)",border:"1px solid rgba(102,157,255,.2)",borderRadius:10,padding:"14px",marginBottom:14}}>
               <div style={{...S.lbl,marginBottom:10,color:SP.secondary}}>🔗 LINK USER ACCOUNT</div>
-              {sel.uid ? (
-                <div>
-                  {(()=>{
-                    var lu = users.find(u=>u.uid===sel.uid);
-                    var displayName = lu ? (lu.name||lu.email) : (editForm.linkedName||"");
-                    return (
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+              {/* Show currently linked user (if any) with unlink button */}
+              {sel.uid && (()=>{
+                var lu = users.find(u=>u.uid===sel.uid);
+                var displayName = lu ? (lu.name||lu.email) : (editForm.linkedName||sel.uid);
+                return (
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:"rgba(156,255,147,.06)",borderRadius:8,marginBottom:10,border:"1px solid rgba(156,255,147,.15)"}}>
                     <div>
-                      <div style={{color:"#fff",fontSize:13,fontWeight:"700"}}>{displayName||"Linked user"}</div>
+                      <div style={{color:"#fff",fontSize:13,fontWeight:"700"}}>{displayName}</div>
                       {lu&&lu.email&&<div style={{color:SP.textDim,fontSize:11}}>{lu.email}</div>}
-                      <div style={{color:SP.primary,fontSize:11,marginTop:2}}>✓ Linked</div>
+                      <div style={{color:SP.primary,fontSize:11,marginTop:2}}>✓ Currently linked</div>
                     </div>
                     <button onClick={()=>unlinkUser(sel.id)}
                       style={{padding:"6px 12px",background:"transparent",border:"1px solid rgba(255,112,114,.3)",borderRadius:8,color:SP.tertiary,fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
                       Unlink
                     </button>
                   </div>
-                    );
-                  })()}
-                </div>
+                );
+              })()}
+              {/* User list — all users can be linked; already-linked-to-this-player shown as linked */}
+              {users.filter(u=>u.uid).length===0 ? (
+                <div style={{color:SP.textDim,fontSize:12}}>No registered users found.</div>
               ) : (
                 <div>
-                  <div style={{color:SP.textDim,fontSize:12,marginBottom:10}}>Associate this player profile with a registered user account:</div>
-                  {users.filter(u=>u.uid).length===0 ? (
-                    <div style={{color:SP.textDim,fontSize:12}}>No registered users found.</div>
-                  ) : (
-                    <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:200,overflowY:"auto"}}>
-                      {users.filter(u=>u.uid&&u.name).sort((a,b)=>(a.name||"").localeCompare(b.name||"")).map(u=>{
-                        var alreadyLinked = players.some(p=>p.uid===u.uid&&p.id!==sel.id);
-                        return (
-                          <div key={u.uid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:SP.bg4,borderRadius:8,opacity:alreadyLinked?0.4:1}}>
-                            <div>
-                              <div style={{color:"#fff",fontSize:13}}>{u.name}</div>
-                              <div style={{color:SP.textDim,fontSize:11}}>{u.email}{alreadyLinked?" · already linked":""}</div>
-                            </div>
-                            <button onClick={()=>!alreadyLinked&&linkUser(sel.id,u.uid,u.name)}
-                              disabled={alreadyLinked}
-                              style={{padding:"5px 12px",background:SP.secondary,border:"none",borderRadius:8,color:"#001f49",fontSize:12,fontWeight:"700",cursor:alreadyLinked?"not-allowed":"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+                  <div style={{color:SP.textDim,fontSize:12,marginBottom:8}}>
+                    {sel.uid ? "Link additional user accounts:" : "Associate this player with a user account:"}
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:220,overflowY:"auto"}}>
+                    {users.filter(u=>u.uid&&u.name).sort((a,b)=>(a.name||"").localeCompare(b.name||"")).map(u=>{
+                      var isLinkedToThis = sel.uid === u.uid;
+                      return (
+                        <div key={u.uid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:isLinkedToThis?"rgba(156,255,147,.06)":SP.bg4,borderRadius:8,border:isLinkedToThis?"1px solid rgba(156,255,147,.15)":"none"}}>
+                          <div>
+                            <div style={{color:"#fff",fontSize:13}}>{u.name}</div>
+                            <div style={{color:SP.textDim,fontSize:11}}>{u.email}</div>
+                            {isLinkedToThis&&<div style={{color:SP.primary,fontSize:10,marginTop:2}}>✓ Linked to this player</div>}
+                          </div>
+                          {isLinkedToThis ? (
+                            <button onClick={()=>unlinkUser(sel.id)}
+                              style={{padding:"5px 12px",background:"transparent",border:"1px solid rgba(255,112,114,.3)",borderRadius:8,color:SP.tertiary,fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+                              Unlink
+                            </button>
+                          ) : (
+                            <button onClick={()=>linkUser(sel.id,u.uid,u.name)}
+                              style={{padding:"5px 12px",background:SP.secondary,border:"none",borderRadius:8,color:"#001f49",fontSize:12,fontWeight:"700",cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
                               Link
                             </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
