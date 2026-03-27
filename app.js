@@ -2229,12 +2229,12 @@ function App({ currentUser }) {
   }
 
 
-  if (showPlayers) return <PlayersScreen currentUser={currentUser} isAdmin={isAdmin} onBack={()=>setShowPlayers(false)} initialPlayerId={showPlayers!==true?showPlayers:null} setScreen={setScreen} setHomeTab={setHomeTab}/>;
-  if (showTeams)   return <TeamsScreen   currentUser={currentUser} isAdmin={isAdmin} onBack={()=>setShowTeams(false)} setScreen={setScreen} setHomeTab={setHomeTab}/>;
-
   // Admin persona: isRealAdmin = actual admin email; isAdmin = real admin AND not in user-view mode
   var isRealAdmin = !!(currentUser && ADMIN_EMAILS.includes(currentUser.email));
   var isAdmin = isRealAdmin && !viewAsUser;
+
+  if (showPlayers) return <PlayersScreen currentUser={currentUser} isAdmin={isAdmin} onBack={()=>setShowPlayers(false)} initialPlayerId={showPlayers!==true?showPlayers:null} setScreen={setScreen} setHomeTab={setHomeTab}/>;
+  if (showTeams)   return <TeamsScreen   currentUser={currentUser} isAdmin={isAdmin} onBack={()=>setShowTeams(false)} setScreen={setScreen} setHomeTab={setHomeTab}/>;
 
   if (screen==="home") {
     var activeTab = homeTab || "home";
@@ -3509,9 +3509,16 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
   const [saving,  setSaving]  = React.useState(false);
   const [err,     setErr]     = React.useState("");
   const [search,  setSearch]  = React.useState("");
+  const [users,   setUsers]   = React.useState([]); // all registered users, admin only
 
   React.useEffect(() => {
     loadPlayers(initialPlayerId);
+    if (isAdmin && _fbDB) {
+      _fbDB.ref("users").once("value", snap => {
+        var val = snap.val() || {};
+        setUsers(Object.values(val).filter(u=>u&&u.name));
+      });
+    }
   }, []);
 
   function loadPlayers(autoOpenId) {
@@ -3549,10 +3556,18 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
   }
 
   function openEdit(p) {
+    // Find linked user name if any
+    var linkedUser = p.uid ? users.find(u=>u.uid===p.uid||Object.keys(u).some(k=>u.uid===p.uid)) : null;
+    var linkedName = "";
+    if (p.uid && users.length) {
+      var lu = users.find(u=>u.uid===p.uid);
+      if (lu) linkedName = lu.name||lu.email||p.uid;
+    }
     setEditForm({
       name: p.name||"", role: p.role||"Batsman",
       batStyle: p.batStyle||"Right-hand", bowlStyle: p.bowlStyle||"Right-arm Medium",
       dob: p.dob||"",
+      linkedUid: p.uid||"", linkedName,
     });
     setSel(p); setErr(""); setView("edit");
   }
@@ -3573,6 +3588,33 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
       setPlayers(ps => ps.map(p => p.id===sel.id ? updated : p).sort((a,b)=>a.name.localeCompare(b.name)));
       setSel(updated); setSaving(false); setView("detail");
     }).catch(e => { setErr(e.message); setSaving(false); });
+  }
+
+  function linkUser(playerId, uid, userName) {
+    if (!_fbDB) return;
+    // Write uid onto player record
+    _fbDB.ref("players/"+playerId+"/uid").set(uid);
+    // Write playerId onto user record
+    _fbDB.ref("users/"+uid+"/playerId").set(playerId);
+    // Update local state
+    var updated = {...sel, uid};
+    setPlayers(ps => ps.map(p => p.id===playerId ? updated : p));
+    setSel(updated);
+    setEditForm(f => ({...f, linkedUid: uid, linkedName: userName}));
+  }
+
+  function unlinkUser(playerId) {
+    if (!_fbDB || !sel.uid) return;
+    var prevUid = sel.uid;
+    _fbDB.ref("players/"+playerId+"/uid").remove();
+    // Only clear playerId from user if it points to this player
+    _fbDB.ref("users/"+prevUid+"/playerId").once("value", snap => {
+      if (snap.val() === playerId) _fbDB.ref("users/"+prevUid+"/playerId").remove();
+    });
+    var updated = {...sel, uid: null};
+    setPlayers(ps => ps.map(p => p.id===playerId ? updated : p));
+    setSel(updated);
+    setEditForm(f => ({...f, linkedUid: "", linkedName: ""}));
   }
 
   function saveNewPlayer() {
@@ -3694,9 +3736,56 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
               <input value={editForm.dob||""} onChange={e=>setEditForm(f=>({...f,dob:e.target.value}))} type="date" style={{...inSt,colorScheme:"dark"}}/>
             </div>
           </div>
-          <div style={{background:"rgba(156,255,147,.06)",border:"1px solid rgba(156,255,147,.15)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
-            <div style={{color:SP.primary,fontSize:11}}>✓ This player will be linked to your account — you'll be able to edit their profile and they'll show as your registered player.</div>
-          </div>
+          {!isAdd && isAdmin && (
+            <div style={{background:"rgba(102,157,255,.06)",border:"1px solid rgba(102,157,255,.2)",borderRadius:10,padding:"14px",marginBottom:14}}>
+              <div style={{...S.lbl,marginBottom:10,color:SP.secondary}}>🔗 LINK USER ACCOUNT</div>
+              {sel.uid ? (
+                <div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                    <div>
+                      <div style={{color:"#fff",fontSize:13,fontWeight:"700"}}>{editForm.linkedName||sel.uid}</div>
+                      <div style={{color:SP.primary,fontSize:11,marginTop:2}}>✓ Linked</div>
+                    </div>
+                    <button onClick={()=>unlinkUser(sel.id)}
+                      style={{padding:"6px 12px",background:"transparent",border:"1px solid rgba(255,112,114,.3)",borderRadius:8,color:SP.tertiary,fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+                      Unlink
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div style={{color:SP.textDim,fontSize:12,marginBottom:10}}>Associate this player profile with a registered user account:</div>
+                  {users.filter(u=>u.uid).length===0 ? (
+                    <div style={{color:SP.textDim,fontSize:12}}>No registered users found.</div>
+                  ) : (
+                    <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:200,overflowY:"auto"}}>
+                      {users.filter(u=>u.uid&&u.name).sort((a,b)=>(a.name||"").localeCompare(b.name||"")).map(u=>{
+                        var alreadyLinked = players.some(p=>p.uid===u.uid&&p.id!==sel.id);
+                        return (
+                          <div key={u.uid} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:SP.bg4,borderRadius:8,opacity:alreadyLinked?0.4:1}}>
+                            <div>
+                              <div style={{color:"#fff",fontSize:13}}>{u.name}</div>
+                              <div style={{color:SP.textDim,fontSize:11}}>{u.email}{alreadyLinked?" · already linked":""}</div>
+                            </div>
+                            <button onClick={()=>!alreadyLinked&&linkUser(sel.id,u.uid,u.name)}
+                              disabled={alreadyLinked}
+                              style={{padding:"5px 12px",background:SP.secondary,border:"none",borderRadius:8,color:"#001f49",fontSize:12,fontWeight:"700",cursor:alreadyLinked?"not-allowed":"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+                              Link
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+          {!isAdmin && !isAdd && (
+            <div style={{background:"rgba(156,255,147,.06)",border:"1px solid rgba(156,255,147,.15)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
+              <div style={{color:SP.primary,fontSize:11}}>✓ This player will be linked to your account — you'll be able to edit their profile and they'll show as your registered player.</div>
+            </div>
+          )}
           <div style={{background:"rgba(251,191,36,.06)",border:"1px solid rgba(251,191,36,.15)",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
             <div style={{color:SP.textDim,fontSize:11}}>🔒 Stats (matches, runs, wickets etc.) are updated automatically from match scorecards and cannot be edited manually.</div>
           </div>
