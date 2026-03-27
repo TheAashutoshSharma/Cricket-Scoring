@@ -1635,12 +1635,17 @@ function App({ currentUser }) {
     if (!match || isViewer || !fbReady || !match.matchCode || match.matchCode==="LOCAL") return;
     setSyncing(true);
     var code = match.matchCode;
-    // Write full match data — exclude scorerRequest (owned by Firebase handover flow)
-    var matchToWrite = {...match};
-    delete matchToWrite.scorerRequest;
-    _fbDB.ref("matches/"+code).set(matchToWrite)
-      .then(()=>setSyncing(false))
-      .catch(()=>setSyncing(false));
+    // We write the full match with .set(), but scorerRequest is owned by the handover
+    // flow (written by viewers). We must not clobber it. Strategy: snapshot the current
+    // scorerRequest from Firebase first, then write match + re-attach scorerRequest.
+    var ref = _fbDB.ref("matches/"+code);
+    ref.child("scorerRequest").once("value", srSnap => {
+      var currentSR = srSnap.val() || null;
+      var matchToWrite = {...match, scorerRequest: currentSR || match.scorerRequest || null};
+      ref.set(matchToWrite)
+        .then(()=>setSyncing(false))
+        .catch(()=>setSyncing(false));
+    });
     // Write/update live index entry (small summary for listing)
     var bothOver = match.inningsOver && match.inningsOver[0] && match.inningsOver[1];
     var bt = match.batting||0;
