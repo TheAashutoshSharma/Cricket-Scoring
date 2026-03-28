@@ -53,8 +53,8 @@ const mkB = n => ({ name:n||"Bowler", overs:0, balls:0, maidens:0, runs:0, wicke
 const blankSetup = () => ({
   step:0, overs:20,
   teamAName:"Team A", teamBName:"Team B",
-  teamAPlayers: Array.from({length:2},(_,i)=>"Player "+(i+1)),
-  teamBPlayers: Array.from({length:2},(_,i)=>"Player "+(i+1)),
+  teamAPlayers: Array.from({length:6},(_,i)=>"Player "+(i+1)),
+  teamBPlayers: Array.from({length:6},(_,i)=>"Player "+(i+1)),
   teamACount:6, teamBCount:6,
   teamAPlayerIds:[], teamBPlayerIds:[],
   tossWinner: null,   // 0=teamA, 1=teamB
@@ -65,14 +65,14 @@ const blankMatch = (setup, code) => {
   var bf = (setup.battingFirst === 1) ? 1 : 0;
   var aPIds  = setup.teamAPlayerIds  || [];
   var bPIds  = setup.teamBPlayerIds  || [];
-  var aPlayers = setup.teamAPlayers.slice(0,setup.teamACount||2).map((n,i)=>({...mkP(n), playerId: aPIds[i]||null}));
-  var bPlayers = setup.teamBPlayers.slice(0,setup.teamBCount||2).map((n,i)=>({...mkP(n), playerId: bPIds[i]||null}));
+  var aPlayers = setup.teamAPlayers.slice(0,setup.teamACount||6).map((n,i)=>({...mkP(n), playerId: aPIds[i]||null}));
+  var bPlayers = setup.teamBPlayers.slice(0,setup.teamBCount||6).map((n,i)=>({...mkP(n), playerId: bPIds[i]||null}));
   // Always start batting=0. If Team B bats first, swap them into slot 0 (first-innings slot).
   // The rest of the codebase assumes batting=0 is first innings, batting=1 is second/chase.
   var firstTeam  = bf===1 ? {name:setup.teamBName||"Team B", players:bPlayers, bowlers:[]} : {name:setup.teamAName||"Team A", players:aPlayers, bowlers:[]};
   var secondTeam = bf===1 ? {name:setup.teamAName||"Team A", players:aPlayers, bowlers:[]} : {name:setup.teamBName||"Team B", players:bPlayers, bowlers:[]};
-  var firstCount  = bf===1 ? (setup.teamBCount||2) : (setup.teamACount||2);
-  var secondCount = bf===1 ? (setup.teamACount||2) : (setup.teamBCount||2);
+  var firstCount  = bf===1 ? (setup.teamBCount||6) : (setup.teamACount||6);
+  var secondCount = bf===1 ? (setup.teamACount||6) : (setup.teamBCount||6);
   return {
     matchCode: code, createdAt: Date.now(),
     totalOvers: setup.overs,
@@ -85,6 +85,7 @@ const blankMatch = (setup, code) => {
     inningsOver:[false,false],
     numPlayers:[firstCount, secondCount],
     needsBowler: true,
+    needsOpeners: true, // show opening batsmen picker at match start
     tossWinner: setup.tossWinner,
     battingFirst: bf,
     teamA: firstTeam,
@@ -95,8 +96,8 @@ const blankMatch = (setup, code) => {
 // ── Helpers ──────────────────────────────────────────────────────
 const srFn  = p => (!p||p.balls===0)?"-":((p.runs/p.balls)*100).toFixed(1);
 const ecoFn = b => { var o=b.overs+b.balls/6; return o===0?"-":(b.runs/o).toFixed(2); };
-const bBg   = b => b.retired?"#0891b2":b.wicket?"#ef4444":b.r===6?"#f59e0b":b.r===4?"#3b82f6":b.extra?"#7c3aed":"#334155";
-const bTxt  = b => b.retired?"RH":b.wicket?"W":b.extra?(b.r+b.extra[0]):String(b.r);
+const bBg   = b => b.retired?"#0891b2":b.wicket?"#ef4444":b.r===6?"#f59e0b":b.r===4?"#3b82f6":b.declared?"#0e7490":b.extra?"#7c3aed":"#334155";
+const bTxt  = b => b.retired?"RH":b.wicket?"W":b.declared?"1D":b.extra?(b.r+b.extra[0]):String(b.r);
 // Max wickets before innings ends = numPlayers (last man bats alone, innings ends when last man out)
 const maxWkts = (m, bt) => (m.numPlayers ? m.numPlayers[bt] : 11);
 // Chase is won only in the 2nd innings (first innings must be complete)
@@ -196,6 +197,76 @@ function PendingExtraModal({extra, onConfirm, onCancel}) {
           style={{width:"100%",padding:"10px 0",background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:10,color:SP.textSec,fontWeight:"bold",cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",fontSize:14}}>
           Cancel
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ── OpeningBatsmenModal — pick both openers before first ball ──
+function OpeningBatsmenModal({match, onSelect}) {
+  if (!match) return null;
+  var bt = match.batting;
+  var bTeam = bt===0 ? match.teamA : match.teamB;
+  const [picking, setPicking] = React.useState("striker"); // "striker" | "nonStriker"
+  const [strikerIdx, setStrikerIdx] = React.useState(null);
+  const [search, setSearch] = React.useState("");
+
+  var openerChosen = picking==="nonStriker" ? new Set([strikerIdx]) : new Set();
+  var avail = bTeam.players.map((p,i)=>({...p,i})).filter(p=>!openerChosen.has(p.i));
+  var filtered = avail.filter(p=>p.name.toLowerCase().includes(search.toLowerCase()));
+
+  function pick(idx) {
+    if (picking==="striker") {
+      setStrikerIdx(idx); setPicking("nonStriker"); setSearch("");
+    } else {
+      onSelect(strikerIdx, idx);
+    }
+  }
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:1100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+      <div style={{background:SP.bg3,borderRadius:"20px 20px 0 0",padding:"24px 20px 36px",width:"100%",maxWidth:480,border:"1px solid rgba(73,72,71,.25)",borderBottom:"none",maxHeight:"80vh",display:"flex",flexDirection:"column"}}>
+        <div style={{textAlign:"center",marginBottom:14,flexShrink:0}}>
+          <div style={{fontSize:26,marginBottom:6}}>🏏</div>
+          <div style={{color:SP.primary,fontSize:14,fontWeight:"bold",letterSpacing:1,marginBottom:4}}>
+            {picking==="striker"?"SELECT OPENING STRIKER":"SELECT NON-STRIKER"}
+          </div>
+          {picking==="nonStriker"&&strikerIdx!==null&&(
+            <div style={{color:SP.textDim,fontSize:12}}>Striker: <b style={{color:"#fff"}}>{bTeam.players[strikerIdx].name}</b></div>
+          )}
+        </div>
+        <div style={{display:"flex",gap:8,justifyContent:"center",marginBottom:12,flexShrink:0}}>
+          {["Striker","Non-Striker"].map((lbl,i)=>{
+            var active = i===(picking==="striker"?0:1);
+            return (
+              <div key={lbl} style={{padding:"4px 14px",borderRadius:999,background:active?"rgba(156,255,147,.1)":"transparent",border:active?"1px solid rgba(156,255,147,.3)":"1px solid rgba(73,72,71,.2)"}}>
+                <span style={{color:active?SP.primary:SP.textDim,fontSize:11,fontWeight:"600"}}>{i+1}. {lbl}</span>
+              </div>
+            );
+          })}
+        </div>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search players…"
+          style={{width:"100%",background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:9,padding:"9px 12px",color:"#fff",fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:"Lexend,Georgia,sans-serif",marginBottom:10,flexShrink:0}}/>
+        <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:6}}>
+          {filtered.map(p=>(
+            <button key={p.i} onClick={()=>pick(p.i)}
+              style={{padding:"12px 16px",borderRadius:12,border:"1px solid rgba(73,72,71,.25)",background:SP.bg,
+                color:"#fff",fontSize:14,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",
+                display:"flex",justifyContent:"space-between",alignItems:"center",textAlign:"left"}}>
+              <div>
+                <div style={{fontWeight:"bold",marginBottom:2}}>{p.name}</div>
+                <div style={{color:SP.textDim,fontSize:11}}>{p.role||"Batsman"}</div>
+              </div>
+              <span style={{color:SP.primary,fontSize:18}}>→</span>
+            </button>
+          ))}
+        </div>
+        {picking==="nonStriker"&&(
+          <button onClick={()=>{setPicking("striker");setStrikerIdx(null);setSearch("");}}
+            style={{marginTop:12,width:"100%",padding:"10px 0",background:"transparent",border:"1px solid rgba(73,72,71,.25)",borderRadius:10,color:SP.textDim,fontSize:13,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",flexShrink:0}}>
+            ← Back
+          </button>
+        )}
       </div>
     </div>
   );
@@ -951,165 +1022,145 @@ function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onCho
 }
 
 // ── NList — player/bowler name entry in setup wizard ─────────────
-function NList({names, ids, ph, onUp, min, max, currentUser}) {
-  // ids: array of playerIds parallel to names (null if not from saved players)
-  const [showPicker, setShowPicker] = React.useState(null); // index to pick for
-  const [allPlayers, setAllPlayers] = React.useState(null); // null=not loaded
-  const [pSearch,    setPSearch]    = React.useState("");
-  const [creating,   setCreating]   = React.useState({}); // {index: true} while saving
+function PlayerPickerStep({teamName, selectedNames, selectedIds, onUpdate, currentUser, teamSlot, setup, setSetup}) {
+  // Shows all saved players as selectable list, with inline new player creation
+  const [allPlayers,  setAllPlayers]  = React.useState(null);
+  const [search,      setSearch]      = React.useState("");
+  const [newName,     setNewName]     = React.useState("");
+  const [saving,      setSaving]      = React.useState(false);
+  const [saveMsg,     setSaveMsg]     = React.useState("");
+  const [savingTeam,  setSavingTeam]  = React.useState(false);
 
-  function loadPlayersIfNeeded() {
-    if (!allPlayers && _fbDB) {
-      _fbDB.ref("players").once("value", snap => {
-        var val = snap.val()||{};
-        setAllPlayers(Object.values(val).sort((a,b)=>a.name.localeCompare(b.name)));
-      });
-    }
-  }
+  React.useEffect(() => {
+    if (!_fbDB) return;
+    _fbDB.ref("players").once("value", snap => {
+      var val = snap.val()||{};
+      setAllPlayers(Object.values(val).sort((a,b)=>a.name.localeCompare(b.name)));
+    });
+  }, []);
 
-  function addOne() {
-    if(names.length<max) {
-      onUp([...names, ph+" "+(names.length+1)], [...(ids||[]), null]);
+  var selIds = new Set(selectedIds||[]);
+
+  function togglePlayer(p) {
+    var curIds   = [...(selectedIds||[])];
+    var curNames = [...(selectedNames||[])];
+    if (selIds.has(p.id)) {
+      // Deselect
+      var idx = curIds.indexOf(p.id);
+      curIds.splice(idx,1); curNames.splice(idx,1);
+    } else {
+      curIds.push(p.id); curNames.push(p.name);
     }
-  }
-  function removeOne() {
-    if(names.length>min) {
-      onUp(names.slice(0,-1), (ids||[]).slice(0,-1));
-    }
-  }
-  function updateName(i, val) {
-    var u=[...names]; u[i]=val;
-    var uid=[...(ids||Array(names.length).fill(null))]; uid[i]=null; // clear id if manually typed
-    onUp(u, uid);
-  }
-  function openPicker(i) {
-    setShowPicker(i);
-    setPSearch("");
-    loadPlayersIfNeeded();
-  }
-  function pickPlayer(i, p) {
-    var curIds = ids || Array(names.length).fill(null);
-    var alreadyAt = curIds.findIndex((id, idx) => id === p.id && idx !== i);
-    if (alreadyAt !== -1) return;
-    var u=[...names]; u[i]=p.name;
-    var uid=[...curIds]; uid[i]=p.id;
-    onUp(u, uid);
-    setShowPicker(null);
+    onUpdate(curNames, curIds);
   }
 
-  // Create a new player profile from a typed name
-  async function createProfile(i) {
-    var nm = (names[i]||"").trim();
-    if (!nm || (ids&&ids[i])) return; // already has id or empty
-    setCreating(c=>({...c,[i]:true}));
+  async function addNewPlayer() {
+    var nm = newName.trim();
+    if (!nm) return;
+    setSaving(true);
     try {
       var now = Date.now();
-      var pid = "P_" + now + "_" + Math.random().toString(36).slice(2,6);
+      var pid = "P_"+now+"_"+Math.random().toString(36).slice(2,6);
       var p = {
-        id: pid, name: nm, role: "Batsman",
+        id:pid, name:nm, role:"Batsman",
         batStyle:"Right-hand", bowlStyle:"Right-arm Medium", dob:null,
-        createdBy: currentUser ? currentUser.uid : null,
-        createdAt: now,
-        batting:  {matches:0,innings:0,runs:0,balls:0,outs:0,fours:0,sixes:0,highScore:0,fifties:0,hundreds:0},
-        bowling:  {overs:0,balls:0,runs:0,wickets:0,maidens:0,bestWickets:0,bestRuns:999},
+        createdBy: currentUser ? currentUser.uid : null, createdAt:now,
+        batting:{matches:0,innings:0,runs:0,balls:0,outs:0,fours:0,sixes:0,highScore:0,fifties:0,hundreds:0},
+        bowling:{overs:0,balls:0,runs:0,wickets:0,maidens:0,bestWickets:0,bestRuns:999},
       };
       if (_fbDB) await _fbDB.ref("players/"+pid).set(p);
-      // Update the id slot and refresh local player list
-      var uid=[...(ids||Array(names.length).fill(null))]; uid[i]=pid;
-      onUp([...names], uid);
-      setAllPlayers(prev => {
-        var next = prev ? [...prev, p] : [p];
-        return next.sort((a,b)=>a.name.localeCompare(b.name));
-      });
-    } catch(e) { console.error("createProfile error",e); }
-    setCreating(c=>({...c,[i]:false}));
+      setAllPlayers(prev=>[...(prev||[]),p].sort((a,b)=>a.name.localeCompare(b.name)));
+      // Auto-select the new player
+      var curIds=[...(selectedIds||[])]; curIds.push(pid);
+      var curNames=[...(selectedNames||[])]; curNames.push(nm);
+      onUpdate(curNames, curIds);
+      setNewName("");
+    } catch(e) { console.error(e); }
+    setSaving(false);
   }
 
-  var usedIds = new Set((ids||[]).filter((id,idx) => id && idx !== showPicker));
-  var filtered = allPlayers
-    ? allPlayers.filter(p=>p.name.toLowerCase().includes(pSearch.toLowerCase()))
-    : [];
+  async function saveAsTeam() {
+    var nm = teamName.trim();
+    if (!nm || !(selectedIds||[]).length || !_fbDB) return;
+    setSavingTeam(true);
+    setSaveMsg("");
+    try {
+      var id = "T_"+Date.now()+"_"+Math.random().toString(36).slice(2,6);
+      var t = {
+        id, name:nm,
+        playerIds: selectedIds||[],
+        ownerIds: currentUser ? [currentUser.uid] : [],
+        createdBy: currentUser ? currentUser.uid : null,
+        createdAt: Date.now(),
+      };
+      await _fbDB.ref("teams/"+id).set(t);
+      setSaveMsg("✓ Saved as ""+nm+""");
+      setTimeout(()=>setSaveMsg(""), 3000);
+    } catch(e) { setSaveMsg("Error: "+e.message); }
+    setSavingTeam(false);
+  }
+
+  var filtered = (allPlayers||[]).filter(p=>p.name.toLowerCase().includes(search.toLowerCase()));
+  var count = (selectedIds||[]).length;
 
   return (
     <div>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-        <span style={{color:SP.textDim,fontSize:11,letterSpacing:1}}>{names.length} {ph.toLowerCase()}s</span>
-        <div style={{display:"flex",gap:6}}>
-          <button onClick={removeOne} disabled={names.length<=min}
-            style={{width:32,height:32,borderRadius:8,border:"1px solid rgba(73,72,71,.25)",background:SP.bg,color:names.length<=min?"#1e293b":"#94a3b8",fontSize:20,cursor:names.length<=min?"not-allowed":"pointer",fontFamily:"Lexend,Georgia,sans-serif",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-          <button onClick={addOne} disabled={names.length>=max}
-            style={{width:32,height:32,borderRadius:8,border:"1px solid rgba(73,72,71,.25)",background:SP.bg,color:names.length>=max?"#1e293b":"#fbbf24",fontSize:20,cursor:names.length>=max?"not-allowed":"pointer",fontFamily:"Lexend,Georgia,sans-serif",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-        </div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+        <span style={{color:SP.primary,fontSize:13,fontWeight:"700"}}>{count} player{count!==1?"s":""} selected</span>
+        <button onClick={saveAsTeam} disabled={savingTeam||!count}
+          style={{padding:"5px 12px",background:"transparent",border:"1px solid rgba(102,157,255,.35)",borderRadius:8,color:SP.secondary,fontSize:11,cursor:count?"pointer":"not-allowed",fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"700",opacity:count?1:.4}}>
+          {savingTeam?"Saving…":"💾 Save Team"}
+        </button>
       </div>
-      <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"46vh",overflowY:"auto"}}>
-        {names.map((nm,i)=>{
-          var hasId = ids && ids[i];
-          var typedNew = nm.trim() && !hasId && !nm.startsWith(ph+" ");
-          var isSaving = creating[i];
+      {saveMsg&&<div style={{color:SP.primary,fontSize:12,marginBottom:8,textAlign:"center"}}>{saveMsg}</div>}
+
+      {/* Search */}
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search players…"
+        style={{width:"100%",background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:9,padding:"10px 12px",color:"#fff",fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:"Lexend,Georgia,sans-serif",marginBottom:8}}/>
+
+      {/* Add new player inline */}
+      <div style={{display:"flex",gap:6,marginBottom:10}}>
+        <input value={newName} onChange={e=>setNewName(e.target.value)} placeholder="New player name…"
+          onKeyDown={e=>{if(e.key==="Enter")addNewPlayer();}}
+          style={{flex:1,background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:9,padding:"9px 12px",color:"#fff",fontSize:13,outline:"none",fontFamily:"Lexend,Georgia,sans-serif"}}/>
+        <button onClick={addNewPlayer} disabled={saving||!newName.trim()}
+          style={{padding:"9px 16px",background:newName.trim()?SP.primary:"rgba(73,72,71,.2)",border:"none",borderRadius:9,color:newName.trim()?"#0f172a":SP.textDim,fontWeight:"700",fontSize:16,cursor:newName.trim()?"pointer":"not-allowed",fontFamily:"Lexend,Georgia,sans-serif"}}>
+          {saving?"…":"+"}
+        </button>
+      </div>
+
+      {/* Player list */}
+      {allPlayers===null && <div style={{color:SP.textDim,fontSize:13,textAlign:"center",padding:20}}>Loading players…</div>}
+      <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:"42vh",overflowY:"auto"}}>
+        {filtered.map(p=>{
+          var isSel = selIds.has(p.id);
           return (
-            <div key={i} style={{display:"flex",alignItems:"center",gap:6}}>
-              <span style={{color:SP.textDim,fontSize:13,minWidth:22,textAlign:"right"}}>{i+1}.</span>
-              <input value={nm} placeholder={ph+" "+(i+1)}
-                onChange={e=>updateName(i, e.target.value)}
-                style={{flex:1,background:SP.bg,border:hasId?"1px solid rgba(251,191,36,.4)":"1px solid rgba(73,72,71,.25)",borderRadius:9,padding:"10px 10px",color:hasId?"#fbbf24":"#f1f5f9",fontSize:14,outline:"none",fontFamily:"Lexend,Georgia,sans-serif"}}
-              />
-              {/* If typed a new name (no profile yet), show a ⊕ button to save as player */}
-              {typedNew && !isSaving && (
-                <button onClick={()=>createProfile(i)}
-                  title="Save as new player profile"
-                  style={{width:32,height:38,borderRadius:8,border:"1px solid #22c55e",background:"rgba(34,197,94,.1)",color:"#22c55e",fontSize:16,cursor:"pointer",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
-                  ⊕
-                </button>
-              )}
-              {isSaving && (
-                <div style={{width:32,height:38,display:"flex",alignItems:"center",justifyContent:"center",color:SP.textDim,fontSize:11}}>…</div>
-              )}
-              <button onClick={()=>openPicker(i)}
-                title="Pick from saved players"
-                style={{width:32,height:38,borderRadius:8,border:"1px solid rgba(73,72,71,.25)",background:SP.bg,color:SP.textDim,fontSize:14,cursor:"pointer",flexShrink:0,fontFamily:"Lexend,Georgia,sans-serif",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                👤
-              </button>
+            <div key={p.id} onClick={()=>togglePlayer(p)}
+              style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",borderRadius:10,
+                border:isSel?"1px solid rgba(156,255,147,.35)":"1px solid rgba(73,72,71,.2)",
+                background:isSel?"rgba(156,255,147,.08)":SP.bg,cursor:"pointer"}}>
+              <div style={{width:32,height:32,borderRadius:"50%",background:isSel?SP.primary:SP.bg3,
+                display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:"700",
+                color:isSel?"#0f172a":SP.textDim,flexShrink:0}}>
+                {isSel?"✓":p.name[0].toUpperCase()}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{color:isSel?"#fff":SP.textSec,fontSize:14,fontWeight:isSel?"700":"400"}}>{p.name}</div>
+                {p.role&&<div style={{color:SP.textDim,fontSize:11}}>{p.role}</div>}
+              </div>
             </div>
           );
         })}
-      </div>
-
-      {/* Player picker modal */}
-      {showPicker !== null && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:3000,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-          <div style={{background:SP.bg3,borderRadius:"20px 20px 0 0",padding:"20px 18px 36px",width:"100%",maxWidth:480,maxHeight:"70vh",display:"flex",flexDirection:"column"}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-              <div style={{color:SP.primary,fontSize:14,fontWeight:"bold"}}>Pick {ph} {showPicker+1}</div>
-              <button onClick={()=>setShowPicker(null)} style={{background:"none",border:"1px solid rgba(73,72,71,.25)",borderRadius:8,padding:"4px 10px",color:SP.textDim,fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>✕</button>
-            </div>
-            <input value={pSearch} onChange={e=>setPSearch(e.target.value)} placeholder="Search players…" autoFocus
-              style={{width:"100%",background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:9,padding:"10px 12px",color:"#fff",fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:"Lexend,Georgia,sans-serif",marginBottom:10}}/>
-            <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:6}}>
-              {!allPlayers && <div style={{color:SP.textDim,fontSize:13,textAlign:"center",padding:20}}>Loading…</div>}
-              {allPlayers && filtered.length===0 && <div style={{color:SP.textDim,fontSize:13,textAlign:"center",padding:20}}>No players found</div>}
-              {filtered.map(p=>{
-                var taken = usedIds.has(p.id);
-                return (
-                  <div key={p.id} onClick={()=>!taken&&pickPlayer(showPicker, p)}
-                    style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:10,border:taken?"1px solid rgba(73,72,71,.15)":"1px solid rgba(73,72,71,.25)",background:taken?"#0a1120":"#0f172a",cursor:taken?"not-allowed":"pointer",opacity:taken?0.4:1}}>
-                    <div style={{width:34,height:34,borderRadius:"50%",background:taken?"#1e293b":SP.primary,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:"bold",color:taken?"#475569":"#0f172a",flexShrink:0}}>
-                      {p.name[0].toUpperCase()}
-                    </div>
-                    <div style={{flex:1}}>
-                      <div style={{color:taken?"#334155":"#e2e8f0",fontSize:14}}>{p.name}</div>
-                      <div style={{color:SP.textDim,fontSize:11}}>{p.role}{taken?" · already selected":""}</div>
-                    </div>
-                    {taken && <span style={{color:"#334155",fontSize:11}}>✓</span>}
-                  </div>
-                );
-              })}
-            </div>
+        {allPlayers!==null&&filtered.length===0&&(
+          <div style={{color:SP.textDim,fontSize:13,textAlign:"center",padding:"16px 0"}}>
+            {search?"No players match your search.":"No saved players yet — add one above."}
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
+
 
 // ── AuthGate — register / login wall ─────────────────────────────
 function AuthGate({children}) {
@@ -1593,11 +1644,19 @@ function App({ currentUser }) {
   }, []);
 
   // Show bowler picker whenever an over completes
+  const [needsOpeners, setNeedsOpeners] = useState(false);
+
   useEffect(() => {
     if (match && match.needsBowler && !isViewer) {
       setOverComplete(true);
     }
   }, [match ? match.needsBowler : null]);
+
+  useEffect(() => {
+    if (match && match.needsOpeners && !isViewer) {
+      setNeedsOpeners(true);
+    }
+  }, [match ? match.needsOpeners : null]);
 
   // Show recall prompt when retired players available after last wicket
   useEffect(() => {
@@ -2108,7 +2167,7 @@ function App({ currentUser }) {
   function cancelEdit() { setEditing(null); }
 
   // ── Scoring ──────────────────────────────────────────────────
-  function addRuns(r, extra) {
+  function addRuns(r, extra, declared) {
     extra = extra || null;
     setMatch(prev => {
       pushHist(prev);
@@ -2150,7 +2209,7 @@ function App({ currentUser }) {
         wT.bowlers[bi].runs+=r;
       }
 
-      m.ballLog[bt].push({r, extra});
+      m.ballLog[bt].push({r, extra, declared: declared||false});
 
       if (!dead) {
         m.balls[bt]++; wT.bowlers[bi].balls++;
@@ -2160,7 +2219,8 @@ function App({ currentUser }) {
           m.striker=1-m.striker;
           if (!(m.overs[bt]>=m.totalOvers||m.wickets[bt]>=maxWkts(m,bt)||chaseWon(m))) m.needsBowler = true;
         }
-        if (r%2!==0) m.striker=1-m.striker;
+        // Declared run: no strike rotation regardless of run count
+        if (!declared && r%2!==0) m.striker=1-m.striker;
       } else if (extra==="No Ball") {
         var br2 = r - 1;
         if (br2%2!==0) m.striker=1-m.striker;
@@ -2233,6 +2293,17 @@ function App({ currentUser }) {
         m.needsNextBatter = true;
       }
       return m;
+    });
+  }
+
+  function selectOpeners(strikerIdx, nonStrikerIdx) {
+    setNeedsOpeners(false);
+    setMatch(m => {
+      var m2 = JSON.parse(JSON.stringify(m));
+      m2.currentBatsmen = [strikerIdx, nonStrikerIdx];
+      m2.striker = 0;
+      m2.needsOpeners = false;
+      return m2;
     });
   }
 
@@ -2852,20 +2923,28 @@ function App({ currentUser }) {
             )}
             {s.step===1&&(
               <div>
-                <div style={{textAlign:"center",marginBottom:16,paddingBottom:14,borderBottom:"1px solid rgba(73,72,71,.25)"}}>
-                  <div style={{color:SP.textDim,fontSize:11,letterSpacing:2,marginBottom:4}}>TEAM 1 — PLAYERS</div>
-                  <div style={{color:SP.primary,fontSize:24,fontWeight:"bold"}}>{s.teamAName}</div>
+                <div style={{textAlign:"center",marginBottom:12,paddingBottom:12,borderBottom:"1px solid rgba(73,72,71,.25)"}}>
+                  <div style={{color:SP.textDim,fontSize:11,letterSpacing:2,marginBottom:4}}>TEAM 1 — SELECT PLAYERS</div>
+                  <div style={{color:SP.primary,fontSize:22,fontWeight:"bold"}}>{s.teamAName}</div>
                 </div>
-                <NList names={s.teamAPlayers} ids={s.teamAPlayerIds} ph="Player" min={2} max={25} onUp={(v,vids)=>setSetup(p=>({...p,teamAPlayers:v,teamACount:v.length,teamAPlayerIds:vids||p.teamAPlayerIds}))} currentUser={currentUser}/>
+                <PlayerPickerStep
+                  teamName={s.teamAName}
+                  selectedNames={s.teamAPlayers} selectedIds={s.teamAPlayerIds}
+                  onUpdate={(names,ids)=>setSetup(p=>({...p,teamAPlayers:names,teamACount:names.length,teamAPlayerIds:ids}))}
+                  currentUser={currentUser}/>
               </div>
             )}
             {s.step===2&&(
               <div>
-                <div style={{textAlign:"center",marginBottom:16,paddingBottom:14,borderBottom:"1px solid rgba(73,72,71,.25)"}}>
-                  <div style={{color:SP.textDim,fontSize:11,letterSpacing:2,marginBottom:4}}>TEAM 2 — PLAYERS</div>
-                  <div style={{color:SP.primary,fontSize:24,fontWeight:"bold"}}>{s.teamBName}</div>
+                <div style={{textAlign:"center",marginBottom:12,paddingBottom:12,borderBottom:"1px solid rgba(73,72,71,.25)"}}>
+                  <div style={{color:SP.textDim,fontSize:11,letterSpacing:2,marginBottom:4}}>TEAM 2 — SELECT PLAYERS</div>
+                  <div style={{color:SP.primary,fontSize:22,fontWeight:"bold"}}>{s.teamBName}</div>
                 </div>
-                <NList names={s.teamBPlayers} ids={s.teamBPlayerIds} ph="Player" min={2} max={25} onUp={(v,vids)=>setSetup(p=>({...p,teamBPlayers:v,teamBCount:v.length,teamBPlayerIds:vids||p.teamBPlayerIds}))} currentUser={currentUser}/>
+                <PlayerPickerStep
+                  teamName={s.teamBName}
+                  selectedNames={s.teamBPlayers} selectedIds={s.teamBPlayerIds}
+                  onUpdate={(names,ids)=>setSetup(p=>({...p,teamBPlayers:names,teamBCount:names.length,teamBPlayerIds:ids}))}
+                  currentUser={currentUser}/>
               </div>
             )}
             {s.step===3&&(
@@ -3235,6 +3314,7 @@ function App({ currentUser }) {
       <EditModal editing={editing} editVal={editVal} setEditVal={setEditVal} onCommit={commitEdit} onCancel={cancelEdit}/>
       <PendingExtraModal extra={pendingExtra} onConfirm={confirmExtra} onCancel={()=>setPendingExtra(null)}/>
       {overComplete && <OverCompleteModal match={match} onSelect={selectNewBowler} isFirstBall={match&&match.teamA&&match.teamB&&(match.batting===0?match.teamB:match.teamA).bowlers.length===0}/>}
+      {needsOpeners && !nextBatterPick && <OpeningBatsmenModal match={match} onSelect={selectOpeners}/>}
       {nextBatterPick && <NextBatterModal match={match} onSelect={selectNextBatter}/>}
       {recallPrompt && <RecallPromptModal match={match} onRecall={recallRetired} onDecline={declineRecall}/>}
       <div style={S.wrap}>
@@ -3340,7 +3420,7 @@ function App({ currentUser }) {
             {/* RUNS */}
             <div style={S.card}>
               <div style={S.lbl}>RUNS</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:6}}>
                 {[0,1,2,3,4,5,6].map(r=>(
                   <button key={r} onClick={()=>addRuns(r)}
                     style={{padding:"14px 0",borderRadius:10,border:"none",
@@ -3353,6 +3433,14 @@ function App({ currentUser }) {
                   </button>
                 ))}
               </div>
+              {/* 1 Declared — adds 1 run, no strike rotation */}
+              <button onClick={()=>addRuns(1, null, true)}
+                style={{width:"100%",padding:"10px 0",borderRadius:10,border:"1px solid rgba(14,116,144,.4)",
+                  background:"rgba(8,145,178,.12)",color:"#67e8f9",fontWeight:"bold",fontSize:13,
+                  cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
+                  letterSpacing:1}}>
+                1D &nbsp;<span style={{color:"rgba(103,232,249,.6)",fontSize:11,fontWeight:"normal"}}>Declared — no strike change</span>
+              </button>
             </div>
 
             {/* EXTRAS */}
