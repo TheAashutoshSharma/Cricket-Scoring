@@ -55,7 +55,7 @@ const blankSetup = () => ({
   teamAName:"Team A", teamBName:"Team B",
   teamAPlayers: Array.from({length:2},(_,i)=>"Player "+(i+1)),
   teamBPlayers: Array.from({length:2},(_,i)=>"Player "+(i+1)),
-  teamACount:2, teamBCount:2,
+  teamACount:6, teamBCount:6,
   teamAPlayerIds:[], teamBPlayerIds:[],
   tossWinner: null,   // 0=teamA, 1=teamB
   battingFirst: 0,    // 0=teamA bats first, 1=teamB bats first
