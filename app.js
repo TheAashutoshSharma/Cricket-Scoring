@@ -53,9 +53,8 @@ const mkB = n => ({ name:n||"Bowler", overs:0, balls:0, maidens:0, runs:0, wicke
 const blankSetup = () => ({
   step:0, overs:20,
   teamAName:"Team A", teamBName:"Team B",
-  teamAPlayers: Array.from({length:6},(_,i)=>"Player "+(i+1)),
-  teamBPlayers: Array.from({length:6},(_,i)=>"Player "+(i+1)),
-  teamACount:6, teamBCount:6,
+  teamAPlayers: [], teamBPlayers: [],
+  teamACount:0, teamBCount:0,
   teamAPlayerIds:[], teamBPlayerIds:[],
   tossWinner: null,   // 0=teamA, 1=teamB
   battingFirst: 0,    // 0=teamA bats first, 1=teamB bats first
@@ -65,14 +64,14 @@ const blankMatch = (setup, code) => {
   var bf = (setup.battingFirst === 1) ? 1 : 0;
   var aPIds  = setup.teamAPlayerIds  || [];
   var bPIds  = setup.teamBPlayerIds  || [];
-  var aPlayers = setup.teamAPlayers.slice(0,setup.teamACount||6).map((n,i)=>({...mkP(n), playerId: aPIds[i]||null}));
-  var bPlayers = setup.teamBPlayers.slice(0,setup.teamBCount||6).map((n,i)=>({...mkP(n), playerId: bPIds[i]||null}));
+  var aPlayers = setup.teamAPlayers.slice(0,setup.teamACount||2).map((n,i)=>({...mkP(n), playerId: aPIds[i]||null}));
+  var bPlayers = setup.teamBPlayers.slice(0,setup.teamBCount||2).map((n,i)=>({...mkP(n), playerId: bPIds[i]||null}));
   // Always start batting=0. If Team B bats first, swap them into slot 0 (first-innings slot).
   // The rest of the codebase assumes batting=0 is first innings, batting=1 is second/chase.
   var firstTeam  = bf===1 ? {name:setup.teamBName||"Team B", players:bPlayers, bowlers:[]} : {name:setup.teamAName||"Team A", players:aPlayers, bowlers:[]};
   var secondTeam = bf===1 ? {name:setup.teamAName||"Team A", players:aPlayers, bowlers:[]} : {name:setup.teamBName||"Team B", players:bPlayers, bowlers:[]};
-  var firstCount  = bf===1 ? (setup.teamBCount||6) : (setup.teamACount||6);
-  var secondCount = bf===1 ? (setup.teamACount||6) : (setup.teamBCount||6);
+  var firstCount  = bf===1 ? (setup.teamBCount||2) : (setup.teamACount||2);
+  var secondCount = bf===1 ? (setup.teamACount||2) : (setup.teamBCount||2);
   return {
     matchCode: code, createdAt: Date.now(),
     totalOvers: setup.overs,
@@ -2955,17 +2954,28 @@ function App({ currentUser }) {
                 onChoice={(bf)=>setSetup(p=>({...p,battingFirst:bf}))}
               />
             )}
-            <div style={{display:"flex",gap:10,marginTop:22}}>
+            <div style={{display:"flex",gap:10,marginTop:22,flexDirection:"column"}}>
+              {/* Validation hint for player steps */}
+              {(s.step===1&&(s.teamAPlayerIds||[]).length<2)||(s.step===2&&(s.teamBPlayerIds||[]).length<2) ? (
+                <div style={{color:"#fb923c",fontSize:12,textAlign:"center",padding:"6px 0"}}>
+                  Select at least 2 players to continue
+                </div>
+              ) : null}
+              <div style={{display:"flex",gap:10}}>
               {s.step>0&&<button onClick={()=>setSetup(p=>({...p,step:p.step-1}))}
                 style={{flex:1,padding:"13px 0",background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:12,color:SP.textSec,fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>← Back</button>}
               {s.step<STEPS.length-1
-                ?<button onClick={()=>setSetup(p=>({...p,step:p.step+1}))}
-                  style={{flex:2,padding:"13px 0",background:"linear-gradient(135deg,#1d4ed8,#1e40af)",borderRadius:12,border:"none",color:"#fff",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>Next →</button>
+                ?(() => {
+                  var canNext = !(s.step===1&&(s.teamAPlayerIds||[]).length<2) && !(s.step===2&&(s.teamBPlayerIds||[]).length<2);
+                  return <button onClick={canNext?()=>setSetup(p=>({...p,step:p.step+1})):undefined} disabled={!canNext}
+                    style={{flex:2,padding:"13px 0",background:canNext?"linear-gradient(135deg,#1d4ed8,#1e40af)":"#1e293b",borderRadius:12,border:canNext?"none":"1px solid rgba(73,72,71,.25)",color:canNext?"#fff":"#334155",fontWeight:"bold",fontSize:15,cursor:canNext?"pointer":"not-allowed",fontFamily:"Lexend,Georgia,sans-serif"}}>Next →</button>;
+                })()
                 :<button onClick={s.battingFirst!==null&&s.battingFirst!==undefined?startMatch:undefined}
                   disabled={s.battingFirst===null||s.battingFirst===undefined}
                   style={{flex:2,padding:"13px 0",background:s.battingFirst!==null&&s.battingFirst!==undefined?SP.primary:"#1e293b",borderRadius:12,border:s.battingFirst!==null&&s.battingFirst!==undefined?"none":"1px solid rgba(73,72,71,.25)",color:s.battingFirst!==null&&s.battingFirst!==undefined?"#0f172a":"#334155",fontWeight:"bold",fontSize:15,cursor:s.battingFirst!==null&&s.battingFirst!==undefined?"pointer":"not-allowed",fontFamily:"Lexend,Georgia,sans-serif",letterSpacing:1}}>
                   {s.battingFirst!==null&&s.battingFirst!==undefined?"▶ Start Match":"← Pick bat or bowl"}
                 </button>}
+              </div>
             </div>
           </div>
         </div>
