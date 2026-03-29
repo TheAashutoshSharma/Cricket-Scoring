@@ -1502,6 +1502,8 @@ function App({ currentUser }) {
   const [recallPrompt, setRecallPrompt] = useState(false);
   // Next batter picker: shown after wicket or retirement
   const [nextBatterPick, setNextBatterPick] = useState(false);
+  // Replace batter: slot (0|1) of a batsman who hasn't faced a ball yet
+  const [replacingBatter, setReplacingBatter] = useState(null);
   // Replace bowler who hasn't bowled a ball yet
   const [replacingBowler, setReplacingBowler] = useState(false);
   // Match history
@@ -2154,7 +2156,7 @@ function App({ currentUser }) {
     });
     setOverComplete(false);
   }
-
+  
   // Replace the current bowler who hasn't bowled a ball yet
   function replaceBowler(idx, newName, newPlayerId) {
     setMatch(prev => {
@@ -2329,6 +2331,16 @@ function App({ currentUser }) {
       m2.needsOpeners = false;
       return m2;
     });
+  }
+
+  // Replace a batsman who hasn't faced a ball yet (slot = position in currentBatsmen)
+  function replaceBatter(slot, playerIdx) {
+    setMatch(prev => {
+      var m = JSON.parse(JSON.stringify(prev));
+      m.currentBatsmen[slot] = playerIdx;
+      return m;
+    });
+    setReplacingBatter(null);
   }
 
   function selectNextBatter(playerIdx) {
@@ -3090,53 +3102,106 @@ function App({ currentUser }) {
           {["NAME","R","B","4s","6s","SR"].map(h=><span key={h} style={{color:SP.textDim,fontSize:10,textAlign:h==="NAME"?"left":"center",fontWeight:"600"}}>{h}</span>)}
         </div>
         {[
-          {p:striker,    si:match.currentBatsmen[match.striker],   isStriker:true},
-          {p:nonStriker && match.currentBatsmen[0]!==match.currentBatsmen[1] ? nonStriker : null, si:match.currentBatsmen[1-match.striker], isStriker:false},
-        ].map(({p,si,isStriker})=> p&&(
-          <div key={si} style={{display:"grid",gridTemplateColumns:"1fr 32px 32px 32px 32px 44px",gap:4,padding:"8px 0",borderTop:"1px solid "+SP.bg4,alignItems:"center"}}>
-            <div style={{display:"flex",alignItems:"center",gap:5,overflow:"hidden"}}>
-              <span style={{color:SP.secondary,fontSize:13,flexShrink:0}}>{isStriker?"🏏":"   "}</span>
-              {editable
-                ? <span onClick={()=>startEdit(bTeamKey,"player",si,p.name)}
-                    style={{color:isStriker?"#fff":SP.textSec,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"pointer",borderBottom:"1px dashed "+SP.textDim,fontFamily:"Lexend,Georgia,sans-serif",fontWeight:isStriker?"700":"400"}}>
-                    {p.name}
-                  </span>
-                : <span style={{color:isStriker?"#fff":SP.textSec,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"Lexend,Georgia,sans-serif",fontWeight:isStriker?"700":"400"}}>{p.name}</span>}
+          {p:striker,    si:match.currentBatsmen[match.striker],   slot:match.striker,   isStriker:true},
+          {p:nonStriker && match.currentBatsmen[0]!==match.currentBatsmen[1] ? nonStriker : null, si:match.currentBatsmen[1-match.striker], slot:1-match.striker, isStriker:false},
+        ].map(({p,si,slot,isStriker})=> p&&(
+          <div key={si} style={{borderTop:"1px solid "+SP.bg4}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 32px 32px 32px 32px 44px",gap:4,padding:"8px 0",alignItems:"center"}}>
+              <div style={{display:"flex",alignItems:"center",gap:5,overflow:"hidden"}}>
+                <span style={{color:SP.secondary,fontSize:13,flexShrink:0}}>{isStriker?"🏏":"   "}</span>
+                {editable
+                  ? <span onClick={()=>startEdit(bTeamKey,"player",si,p.name)}
+                      style={{color:isStriker?"#fff":SP.textSec,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"pointer",borderBottom:"1px dashed "+SP.textDim,fontFamily:"Lexend,Georgia,sans-serif",fontWeight:isStriker?"700":"400"}}>
+                      {p.name}
+                    </span>
+                  : <span style={{color:isStriker?"#fff":SP.textSec,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontFamily:"Lexend,Georgia,sans-serif",fontWeight:isStriker?"700":"400"}}>{p.name}</span>}
+              </div>
+              <span style={{color:SP.secondary,fontWeight:"bold",fontSize:15,textAlign:"center"}}>{p.runs}</span>
+              <span style={{color:SP.textSec,fontSize:13,textAlign:"center"}}>{p.balls}</span>
+              <span style={{color:"#60a5fa",fontSize:13,textAlign:"center"}}>{p.fours}</span>
+              <span style={{color:SP.primary,fontSize:13,textAlign:"center"}}>{p.sixes}</span>
+              <span style={{color:SP.textDim,fontSize:12,textAlign:"center"}}>{srFn(p)}</span>
             </div>
-            <span style={{color:SP.secondary,fontWeight:"bold",fontSize:15,textAlign:"center"}}>{p.runs}</span>
-            <span style={{color:SP.textSec,fontSize:13,textAlign:"center"}}>{p.balls}</span>
-            <span style={{color:"#60a5fa",fontSize:13,textAlign:"center"}}>{p.fours}</span>
-            <span style={{color:SP.primary,fontSize:13,textAlign:"center"}}>{p.sixes}</span>
-            <span style={{color:SP.textDim,fontSize:12,textAlign:"center"}}>{srFn(p)}</span>
+            {editable && p.balls === 0 && (
+              <div style={{paddingBottom:6}}>
+                <button onClick={()=>setReplacingBatter(slot)}
+                  style={{fontSize:10,padding:"3px 10px",borderRadius:6,background:"transparent",border:"1px solid rgba(251,191,36,.35)",color:"#fbbf24",cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"600",letterSpacing:.5}}>
+                  ⇄ Replace
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>
     );
   }
 
+  // ── Replace batter picker modal ───────────────────────────────
+  function ReplaceBatterModal() {
+    if (replacingBatter === null) return null;
+    var slot = replacingBatter;
+    // The player currently in that slot
+    var currentIdx = match.currentBatsmen[slot];
+    // Both slots in use — exclude them both so neither can be re-picked
+    var inUse = new Set(match.currentBatsmen);
+    var available = bTeam.players.map((p,i)=>({...p,i})).filter(p=>!p.out && !p.retired && !inUse.has(p.i));
+    var [search, setSearch] = React.useState("");
+    var filtered = available.filter(p=>p.name.toLowerCase().includes(search.toLowerCase()));
+    return (
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:1100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+        <div style={{background:SP.bg3,borderRadius:"20px 20px 0 0",padding:"24px 20px 36px",width:"100%",maxWidth:480,border:"1px solid rgba(73,72,71,.25)",borderBottom:"none",maxHeight:"80vh",display:"flex",flexDirection:"column"}}>
+          <div style={{textAlign:"center",marginBottom:14,flexShrink:0}}>
+            <div style={{fontSize:22,marginBottom:6}}>⇄</div>
+            <div style={{color:"#fbbf24",fontSize:13,fontWeight:"bold",letterSpacing:1.5,marginBottom:4}}>REPLACE BATSMAN</div>
+            <div style={{color:SP.textDim,fontSize:12}}>Replacing: <b style={{color:"#fff"}}>{bTeam.players[currentIdx].name}</b></div>
+          </div>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search players…"
+            style={{width:"100%",background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:9,padding:"9px 12px",color:"#fff",fontSize:14,outline:"none",boxSizing:"border-box",fontFamily:"Lexend,Georgia,sans-serif",marginBottom:10,flexShrink:0}}/>
+          <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:6}}>
+            {filtered.map(p=>(
+              <button key={p.i} onClick={()=>replaceBatter(slot, p.i)}
+                style={{padding:"12px 16px",borderRadius:12,border:"1px solid rgba(73,72,71,.25)",background:SP.bg,color:"#fff",fontSize:14,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",display:"flex",justifyContent:"space-between",alignItems:"center",textAlign:"left"}}>
+                <div>
+                  <div style={{fontWeight:"bold",marginBottom:2}}>{p.name}</div>
+                  <div style={{color:SP.textDim,fontSize:11}}>{p.role||"Batsman"} · Yet to bat</div>
+                </div>
+                <span style={{color:"#fbbf24",fontSize:18}}>→</span>
+              </button>
+            ))}
+            {filtered.length===0&&(
+              <div style={{color:SP.textDim,fontSize:13,textAlign:"center",padding:"20px 0"}}>No other batsmen available</div>
+            )}
+          </div>
+          <button onClick={()=>setReplacingBatter(null)}
+            style={{marginTop:14,width:"100%",padding:"11px 0",background:"transparent",border:"1px solid rgba(73,72,71,.25)",borderRadius:10,color:SP.textDim,fontSize:13,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",flexShrink:0}}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   function BowlerCard({editable}) {
     return (
-      <div style={{...S.card}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{color:SP.textDim,fontSize:10,marginBottom:3,letterSpacing:1,fontWeight:"600"}}>BOWLING — {wTeam.name}</div>
-            {editable
-              ? <span onClick={()=>startEdit(wTeamKey,"bowler",match.currentBowler,bowler?bowler.name:"")}
-                  style={{color:"#fff",fontSize:15,cursor:"pointer",borderBottom:"1px dashed "+SP.textDim,fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"600"}}>
-                  {bowler?bowler.name:""}
-                </span>
-              : <span style={{color:"#fff",fontSize:15,fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"600"}}>{bowler?bowler.name:""}</span>}
-          </div>
-          <div style={{display:"flex",gap:14,flexShrink:0}}>
-            {bowler&&[["O",bowler.overs+"."+bowler.balls],["R",bowler.runs],["W",bowler.wickets]].map(([l,v])=>(
-              <div key={l} style={{textAlign:"center"}}>
-                <div style={{color:SP.textDim,fontSize:10,fontWeight:"600"}}>{l}</div>
-                <div style={{color:l==="W"?SP.tertiary:"#fff",fontWeight:"bold",fontSize:16,fontFamily:"Lexend,Georgia,sans-serif"}}>{v}</div>
-              </div>
-            ))}
-          </div>
+      <div style={{...S.card,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{color:SP.textDim,fontSize:10,marginBottom:3,letterSpacing:1,fontWeight:"600"}}>BOWLING — {wTeam.name}</div>
+          {editable
+            ? <span onClick={()=>startEdit(wTeamKey,"bowler",match.currentBowler,bowler?bowler.name:"")}
+                style={{color:"#fff",fontSize:15,cursor:"pointer",borderBottom:"1px dashed "+SP.textDim,fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"600"}}>
+                {bowler?bowler.name:""}
+              </span>
+            : <span style={{color:"#fff",fontSize:15,fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"600"}}>{bowler?bowler.name:""}</span>}
         </div>
-        {editable && bowler && bowler.balls===0 && bowler.overs===0 && (
+        <div style={{display:"flex",gap:14,flexShrink:0}}>
+          {bowler&&[["O",bowler.overs+"."+bowler.balls],["R",bowler.runs],["W",bowler.wickets]].map(([l,v])=>(
+            <div key={l} style={{textAlign:"center"}}>
+              <div style={{color:SP.textDim,fontSize:10,fontWeight:"600"}}>{l}</div>
+              <div style={{color:l==="W"?SP.tertiary:"#fff",fontWeight:"bold",fontSize:16,fontFamily:"Lexend,Georgia,sans-serif"}}>{v}</div>
+            </div>
+          ))}
+        </div>
+		{editable && bowler && bowler.balls===0 && bowler.overs===0 && (
           <div style={{marginTop:8}}>
             <button onClick={()=>setReplacingBowler(true)}
               style={{fontSize:10,padding:"3px 10px",borderRadius:6,background:"transparent",border:"1px solid rgba(251,191,36,.35)",color:"#fbbf24",cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"600",letterSpacing:.5}}>
@@ -3147,7 +3212,7 @@ function App({ currentUser }) {
       </div>
     );
   }
-
+	
   function ReplaceBowlerModal() {
     if (!replacingBowler || !bowler) return null;
     var allFielders = wTeam.players;
@@ -3402,7 +3467,8 @@ function App({ currentUser }) {
       {needsOpeners && !nextBatterPick && <OpeningBatsmenModal match={match} onSelect={selectOpeners}/>}
       {nextBatterPick && <NextBatterModal match={match} onSelect={selectNextBatter}/>}
       {recallPrompt && <RecallPromptModal match={match} onRecall={recallRetired} onDecline={declineRecall}/>}
-      <ReplaceBowlerModal/>
+      <ReplaceBatterModal/>
+	  <ReplaceBowlerModal/>
       <div style={S.wrap}>
 
         {/* Toast */}
