@@ -30,12 +30,14 @@ const ADMIN_EMAILS = [
 
 // ── Firebase ─────────────────────────────────────────────────────
 var _fbApp = null, _fbDB = null, _fbAuth = null;
+var _fbStorage = null;
 function initFB() {
   if (_fbApp) return true;
   try {
-    _fbApp  = firebase.initializeApp(FIREBASE_CONFIG);
-    _fbDB   = firebase.database();
-    _fbAuth = firebase.auth();
+    _fbApp    = firebase.initializeApp(FIREBASE_CONFIG);
+    _fbDB     = firebase.database();
+    _fbAuth   = firebase.auth();
+    if (firebase.storage) _fbStorage = firebase.storage();
     return true;
   } catch(e) { console.warn("Firebase:", e); return false; }
 }
@@ -521,6 +523,190 @@ if (typeof document !== "undefined" && !document.getElementById("sp-global")) {
   document.head.appendChild(_style);
 }
 
+
+// ════════════════════════════════════════════════════════════════
+// ── MatchMediaGallery — photo/video uploads per match ────────────
+function MatchMediaGallery({ matchCode, currentUser }) {
+  const [media,       setMedia]       = React.useState(null);  // null=loading, []=empty
+  const [uploading,   setUploading]   = React.useState(false);
+  const [uploadPct,   setUploadPct]   = React.useState(0);
+  const [err,         setErr]         = React.useState("");
+  const [caption,     setCaption]     = React.useState("");
+  const [lightbox,    setLightbox]    = React.useState(null);  // {url,type,caption,uploader}
+  const fileInputRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (!matchCode || matchCode==="LOCAL" || !_fbDB) return;
+    var ref = _fbDB.ref("matchMedia/"+matchCode);
+    ref.on("value", snap => {
+      var val = snap.val() || {};
+      var list = Object.values(val).sort((a,b)=>(b.uploadedAt||0)-(a.uploadedAt||0));
+      setMedia(list);
+    });
+    return () => ref.off();
+  }, [matchCode]);
+
+  function handleFileChange(e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    if (file.size > 50*1024*1024) { setErr("File too large — max 50 MB"); return; }
+    var isVideo = file.type.startsWith("video/");
+    var isImage = file.type.startsWith("image/");
+    if (!isVideo && !isImage) { setErr("Only photos and videos are supported"); return; }
+    setErr(""); setUploading(true); setUploadPct(0);
+
+    if (!_fbStorage) { setErr("Firebase Storage not available"); setUploading(false); return; }
+    var ext = file.name.split(".").pop();
+    var path = "matchMedia/"+matchCode+"/"+Date.now()+"_"+Math.random().toString(36).slice(2,6)+"."+ext;
+    var ref = _fbStorage.ref(path);
+    var task = ref.put(file);
+    task.on("state_changed",
+      snap => setUploadPct(Math.round(snap.bytesTransferred/snap.totalBytes*100)),
+      err2 => { setErr(err2.message); setUploading(false); },
+      () => {
+        task.snapshot.ref.getDownloadURL().then(url => {
+          var entry = {
+            url, path,
+            type: isVideo ? "video" : "image",
+            caption: caption.trim() || "",
+            uploader: currentUser ? (currentUser.displayName||currentUser.email||"Unknown") : "Guest",
+            uploadedAt: Date.now(),
+          };
+          var key = Date.now()+"_"+Math.random().toString(36).slice(2,6);
+          _fbDB.ref("matchMedia/"+matchCode+"/"+key).set(entry);
+          setCaption(""); setUploading(false); setUploadPct(0);
+          if (fileInputRef.current) fileInputRef.current.value = "";
+        });
+      }
+    );
+  }
+
+  function deleteMedia(item) {
+    if (!currentUser) return;
+    var isOwn = item.uploader === (currentUser.displayName||currentUser.email||"Unknown");
+    var isAdminUser = !!(currentUser && typeof ADMIN_EMAILS !== "undefined" && ADMIN_EMAILS.includes(currentUser.email));
+    if (!isOwn && !isAdminUser) return;
+    if (!confirm("Delete this media?")) return;
+    // Remove from DB (find the key)
+    _fbDB.ref("matchMedia/"+matchCode).once("value", snap => {
+      var val = snap.val()||{};
+      Object.entries(val).forEach(([k,v]) => {
+        if (v.url === item.url) _fbDB.ref("matchMedia/"+matchCode+"/"+k).remove();
+      });
+    });
+    // Remove from Storage
+    if (_fbStorage && item.path) {
+      _fbStorage.ref(item.path).delete().catch(()=>{});
+    }
+  }
+
+  if (!matchCode || matchCode==="LOCAL") return null;
+
+  return (
+    <div style={{marginTop:20,marginBottom:8}}>
+      <div style={{...S.lbl,marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span>📸 MATCH MEDIA</span>
+        {media&&media.length>0&&<span style={{color:SP.textDim,fontWeight:"400"}}>{media.length} item{media.length!==1?"s":""}</span>}
+      </div>
+
+      {/* Upload section — logged in users only */}
+      {currentUser && (
+        <div style={{background:SP.bg2,borderRadius:12,padding:"14px 16px",marginBottom:12}}>
+          <input value={caption} onChange={e=>setCaption(e.target.value)}
+            placeholder="Add a caption (optional)…"
+            style={{width:"100%",background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:9,
+              padding:"9px 12px",color:"#fff",fontSize:13,outline:"none",boxSizing:"border-box",
+              fontFamily:"Lexend,Georgia,sans-serif",marginBottom:10}}/>
+          <input ref={fileInputRef} type="file" accept="image/*,video/*"
+            onChange={handleFileChange} style={{display:"none"}} id="media-file-input"/>
+          {!uploading ? (
+            <button onClick={()=>fileInputRef.current&&fileInputRef.current.click()}
+              style={{width:"100%",padding:"11px 0",background:"rgba(102,157,255,.1)",border:"1px solid rgba(102,157,255,.3)",
+                borderRadius:10,color:SP.secondary,fontWeight:"700",fontSize:13,cursor:"pointer",
+                fontFamily:"Lexend,Georgia,sans-serif",letterSpacing:.5}}>
+              📎 Add Photo / Video
+            </button>
+          ) : (
+            <div>
+              <div style={{height:6,background:SP.bg3,borderRadius:3,overflow:"hidden",marginBottom:6}}>
+                <div style={{height:"100%",width:uploadPct+"%",background:SP.secondary,borderRadius:3,transition:"width .2s"}}/>
+              </div>
+              <div style={{color:SP.textDim,fontSize:12,textAlign:"center"}}>Uploading {uploadPct}%…</div>
+            </div>
+          )}
+          {err&&<div style={{color:SP.tertiary,fontSize:12,marginTop:8}}>{err}</div>}
+        </div>
+      )}
+
+      {/* Media grid */}
+      {media===null && <div style={{color:SP.textDim,fontSize:12,textAlign:"center",padding:"12px 0"}}>Loading…</div>}
+      {media!==null && media.length===0 && (
+        <div style={{color:SP.textDim,fontSize:12,textAlign:"center",padding:"16px 0"}}>
+          {currentUser ? "No photos or videos yet — be the first to add one!" : "No media yet."}
+        </div>
+      )}
+      {media!==null && media.length>0 && (
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+          {media.map((item,i)=>(
+            <div key={i} onClick={()=>setLightbox(item)}
+              style={{position:"relative",aspectRatio:"1",borderRadius:10,overflow:"hidden",
+                background:SP.bg3,cursor:"pointer"}}>
+              {item.type==="video" ? (
+                <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",background:SP.bg2}}>
+                  <span style={{fontSize:28}}>▶</span>
+                  <div style={{position:"absolute",bottom:4,left:4,right:4,color:"#fff",fontSize:10,
+                    textOverflow:"ellipsis",overflow:"hidden",whiteSpace:"nowrap"}}>{item.caption||"Video"}</div>
+                </div>
+              ) : (
+                <img src={item.url} alt={item.caption||""}
+                  style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+              )}
+              {item.caption&&item.type==="image"&&(
+                <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"16px 4px 4px",
+                  background:"linear-gradient(transparent,rgba(0,0,0,.7))",
+                  color:"#fff",fontSize:9,textOverflow:"ellipsis",overflow:"hidden",whiteSpace:"nowrap"}}>
+                  {item.caption}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div onClick={()=>setLightbox(null)}
+          style={{position:"fixed",inset:0,background:"rgba(0,0,0,.95)",zIndex:2000,
+            display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:16}}>
+          <button onClick={()=>setLightbox(null)}
+            style={{position:"absolute",top:16,right:16,background:"none",border:"none",
+              color:"#fff",fontSize:28,cursor:"pointer",zIndex:1}}>✕</button>
+          {lightbox.type==="video" ? (
+            <video src={lightbox.url} controls autoPlay onClick={e=>e.stopPropagation()}
+              style={{maxWidth:"100%",maxHeight:"70vh",borderRadius:8}}/>
+          ) : (
+            <img src={lightbox.url} alt={lightbox.caption||""}
+              style={{maxWidth:"100%",maxHeight:"70vh",borderRadius:8,objectFit:"contain"}}
+              onClick={e=>e.stopPropagation()}/>
+          )}
+          <div style={{marginTop:12,textAlign:"center"}}>
+            {lightbox.caption&&<div style={{color:"#fff",fontSize:14,marginBottom:4}}>{lightbox.caption}</div>}
+            <div style={{color:SP.textDim,fontSize:11}}>
+              {lightbox.uploader} · {lightbox.uploadedAt?new Date(lightbox.uploadedAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}):""}
+            </div>
+          </div>
+          {currentUser&&(lightbox.uploader===(currentUser.displayName||currentUser.email)||ADMIN_EMAILS.includes(currentUser.email))&&(
+            <button onClick={e=>{e.stopPropagation();deleteMedia(lightbox);setLightbox(null);}}
+              style={{marginTop:16,padding:"8px 20px",background:"transparent",border:"1px solid rgba(255,112,114,.4)",
+                borderRadius:8,color:SP.tertiary,fontSize:13,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+              🗑️ Delete
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ════════════════════════════════════════════════════════════════
 // ── AdminPanel — live index management + history clear ────────────
@@ -2827,6 +3013,9 @@ function App({ currentUser }) {
           </div>
           {match.teamA&&match.teamB&&<TCardH team={match.teamA} inn={0} opp={match.teamB}/>}
           {match.inningsOver&&match.inningsOver[0]&&match.teamB&&<TCardH team={match.teamB} inn={1} opp={match.teamA}/>}
+          {match.matchCode&&match.matchCode!=="LOCAL"&&(
+            <MatchMediaGallery matchCode={match.matchCode} currentUser={currentUser}/>
+          )}
           <nav style={S.bottomNav}>
             {[
               {icon:"🏠",label:"Home",tab:"home"},
