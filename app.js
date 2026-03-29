@@ -53,8 +53,9 @@ const mkB = n => ({ name:n||"Bowler", overs:0, balls:0, maidens:0, runs:0, wicke
 const blankSetup = () => ({
   step:0, overs:20,
   teamAName:"Team A", teamBName:"Team B",
-  teamAPlayers: [], teamBPlayers: [],
-  teamACount:0, teamBCount:0,
+  teamAPlayers: Array.from({length:6},(_,i)=>"Player "+(i+1)),
+  teamBPlayers: Array.from({length:6},(_,i)=>"Player "+(i+1)),
+  teamACount:6, teamBCount:6,
   teamAPlayerIds:[], teamBPlayerIds:[],
   tossWinner: null,   // 0=teamA, 1=teamB
   battingFirst: 0,    // 0=teamA bats first, 1=teamB bats first
@@ -64,14 +65,14 @@ const blankMatch = (setup, code) => {
   var bf = (setup.battingFirst === 1) ? 1 : 0;
   var aPIds  = setup.teamAPlayerIds  || [];
   var bPIds  = setup.teamBPlayerIds  || [];
-  var aPlayers = setup.teamAPlayers.slice(0,setup.teamACount||2).map((n,i)=>({...mkP(n), playerId: aPIds[i]||null}));
-  var bPlayers = setup.teamBPlayers.slice(0,setup.teamBCount||2).map((n,i)=>({...mkP(n), playerId: bPIds[i]||null}));
+  var aPlayers = setup.teamAPlayers.slice(0,setup.teamACount||6).map((n,i)=>({...mkP(n), playerId: aPIds[i]||null}));
+  var bPlayers = setup.teamBPlayers.slice(0,setup.teamBCount||6).map((n,i)=>({...mkP(n), playerId: bPIds[i]||null}));
   // Always start batting=0. If Team B bats first, swap them into slot 0 (first-innings slot).
   // The rest of the codebase assumes batting=0 is first innings, batting=1 is second/chase.
   var firstTeam  = bf===1 ? {name:setup.teamBName||"Team B", players:bPlayers, bowlers:[]} : {name:setup.teamAName||"Team A", players:aPlayers, bowlers:[]};
   var secondTeam = bf===1 ? {name:setup.teamAName||"Team A", players:aPlayers, bowlers:[]} : {name:setup.teamBName||"Team B", players:bPlayers, bowlers:[]};
-  var firstCount  = bf===1 ? (setup.teamBCount||2) : (setup.teamACount||2);
-  var secondCount = bf===1 ? (setup.teamACount||2) : (setup.teamBCount||2);
+  var firstCount  = bf===1 ? (setup.teamBCount||6) : (setup.teamACount||6);
+  var secondCount = bf===1 ? (setup.teamACount||6) : (setup.teamBCount||6);
   return {
     matchCode: code, createdAt: Date.now(),
     totalOvers: setup.overs,
@@ -206,8 +207,9 @@ function OpeningBatsmenModal({match, onSelect}) {
   if (!match) return null;
   var bt = match.batting;
   var bTeam = bt===0 ? match.teamA : match.teamB;
-  const [picking, setPicking] = React.useState("striker"); // "striker" | "nonStriker"
+  const [picking, setPicking] = React.useState("striker"); // "striker" | "nonStriker" | "confirm"
   const [strikerIdx, setStrikerIdx] = React.useState(null);
+  const [nonStrikerIdx, setNonStrikerIdx] = React.useState(null);
   const [search, setSearch] = React.useState("");
 
   var openerChosen = picking==="nonStriker" ? new Set([strikerIdx]) : new Set();
@@ -218,8 +220,52 @@ function OpeningBatsmenModal({match, onSelect}) {
     if (picking==="striker") {
       setStrikerIdx(idx); setPicking("nonStriker"); setSearch("");
     } else {
-      onSelect(strikerIdx, idx);
+      setNonStrikerIdx(idx); setPicking("confirm");
     }
+  }
+
+  // Confirmation screen
+  if (picking==="confirm") {
+    var s = bTeam.players[strikerIdx];
+    var ns = bTeam.players[nonStrikerIdx];
+    return (
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:1100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+        <div style={{background:SP.bg3,borderRadius:"20px 20px 0 0",padding:"24px 20px 36px",width:"100%",maxWidth:480,border:"1px solid rgba(73,72,71,.25)",borderBottom:"none"}}>
+          <div style={{textAlign:"center",marginBottom:20}}>
+            <div style={{fontSize:26,marginBottom:6}}>🏏</div>
+            <div style={{color:SP.primary,fontSize:14,fontWeight:"bold",letterSpacing:1}}>CONFIRM OPENING PAIR</div>
+          </div>
+          {/* Striker row */}
+          <div style={{background:SP.bg,borderRadius:12,padding:"14px 16px",marginBottom:10,border:"1px solid rgba(156,255,147,.25)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{color:SP.textDim,fontSize:10,letterSpacing:1.5,marginBottom:3}}>STRIKER</div>
+              <div style={{color:"#fff",fontSize:16,fontWeight:"bold"}}>{s.name}</div>
+              {s.role&&<div style={{color:SP.textDim,fontSize:11,marginTop:2}}>{s.role}</div>}
+            </div>
+            <button onClick={()=>{setPicking("striker");setStrikerIdx(null);setNonStrikerIdx(null);setSearch("");}}
+              style={{padding:"6px 14px",background:"transparent",border:"1px solid rgba(73,72,71,.4)",borderRadius:8,color:SP.textSec,fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+              Change
+            </button>
+          </div>
+          {/* Non-striker row */}
+          <div style={{background:SP.bg,borderRadius:12,padding:"14px 16px",marginBottom:24,border:"1px solid rgba(73,72,71,.25)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{color:SP.textDim,fontSize:10,letterSpacing:1.5,marginBottom:3}}>NON-STRIKER</div>
+              <div style={{color:"#fff",fontSize:16,fontWeight:"bold"}}>{ns.name}</div>
+              {ns.role&&<div style={{color:SP.textDim,fontSize:11,marginTop:2}}>{ns.role}</div>}
+            </div>
+            <button onClick={()=>{setPicking("nonStriker");setNonStrikerIdx(null);setSearch("");}}
+              style={{padding:"6px 14px",background:"transparent",border:"1px solid rgba(73,72,71,.4)",borderRadius:8,color:SP.textSec,fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+              Change
+            </button>
+          </div>
+          <button onClick={()=>onSelect(strikerIdx, nonStrikerIdx)}
+            style={{width:"100%",padding:"14px 0",background:SP.primary,border:"none",borderRadius:12,color:"#0f172a",fontWeight:"bold",fontSize:16,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",letterSpacing:.5}}>
+            ✓ Confirm & Start
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -2954,28 +3000,17 @@ function App({ currentUser }) {
                 onChoice={(bf)=>setSetup(p=>({...p,battingFirst:bf}))}
               />
             )}
-            <div style={{display:"flex",gap:10,marginTop:22,flexDirection:"column"}}>
-              {/* Validation hint for player steps */}
-              {(s.step===1&&(s.teamAPlayerIds||[]).length<2)||(s.step===2&&(s.teamBPlayerIds||[]).length<2) ? (
-                <div style={{color:"#fb923c",fontSize:12,textAlign:"center",padding:"6px 0"}}>
-                  Select at least 2 players to continue
-                </div>
-              ) : null}
-              <div style={{display:"flex",gap:10}}>
+            <div style={{display:"flex",gap:10,marginTop:22}}>
               {s.step>0&&<button onClick={()=>setSetup(p=>({...p,step:p.step-1}))}
                 style={{flex:1,padding:"13px 0",background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:12,color:SP.textSec,fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>← Back</button>}
               {s.step<STEPS.length-1
-                ?(() => {
-                  var canNext = !(s.step===1&&(s.teamAPlayerIds||[]).length<2) && !(s.step===2&&(s.teamBPlayerIds||[]).length<2);
-                  return <button onClick={canNext?()=>setSetup(p=>({...p,step:p.step+1})):undefined} disabled={!canNext}
-                    style={{flex:2,padding:"13px 0",background:canNext?"linear-gradient(135deg,#1d4ed8,#1e40af)":"#1e293b",borderRadius:12,border:canNext?"none":"1px solid rgba(73,72,71,.25)",color:canNext?"#fff":"#334155",fontWeight:"bold",fontSize:15,cursor:canNext?"pointer":"not-allowed",fontFamily:"Lexend,Georgia,sans-serif"}}>Next →</button>;
-                })()
+                ?<button onClick={()=>setSetup(p=>({...p,step:p.step+1}))}
+                  style={{flex:2,padding:"13px 0",background:"linear-gradient(135deg,#1d4ed8,#1e40af)",borderRadius:12,border:"none",color:"#fff",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>Next →</button>
                 :<button onClick={s.battingFirst!==null&&s.battingFirst!==undefined?startMatch:undefined}
                   disabled={s.battingFirst===null||s.battingFirst===undefined}
                   style={{flex:2,padding:"13px 0",background:s.battingFirst!==null&&s.battingFirst!==undefined?SP.primary:"#1e293b",borderRadius:12,border:s.battingFirst!==null&&s.battingFirst!==undefined?"none":"1px solid rgba(73,72,71,.25)",color:s.battingFirst!==null&&s.battingFirst!==undefined?"#0f172a":"#334155",fontWeight:"bold",fontSize:15,cursor:s.battingFirst!==null&&s.battingFirst!==undefined?"pointer":"not-allowed",fontFamily:"Lexend,Georgia,sans-serif",letterSpacing:1}}>
                   {s.battingFirst!==null&&s.battingFirst!==undefined?"▶ Start Match":"← Pick bat or bowl"}
                 </button>}
-              </div>
             </div>
           </div>
         </div>
