@@ -590,6 +590,7 @@ function MatchMediaGallery({ matchCode, currentUser }) {
         type: isVideo ? "video" : "image",
         caption: caption.trim() || "",
         uploader: currentUser ? (currentUser.displayName||currentUser.email||"Unknown") : "Guest",
+        uploaderUid: currentUser ? currentUser.uid : null,
         uploadedAt: Date.now(),
       };
       var key = Date.now()+"_"+Math.random().toString(36).slice(2,6);
@@ -600,20 +601,23 @@ function MatchMediaGallery({ matchCode, currentUser }) {
     setUploading(false);
   }
 
+  function canDelete(item) {
+    if (!currentUser) return false;
+    if (ADMIN_EMAILS.includes(currentUser.email)) return true; // admin
+    if (item.uploaderUid && item.uploaderUid === currentUser.uid) return true; // by uid
+    if (item.uploader === (currentUser.displayName||currentUser.email||"Unknown")) return true; // by name fallback
+    return false;
+  }
+
   function deleteMedia(item) {
-    if (!currentUser) return;
-    var isOwn = item.uploader === (currentUser.displayName||currentUser.email||"Unknown");
-    var isAdminUser = !!(currentUser && typeof ADMIN_EMAILS !== "undefined" && ADMIN_EMAILS.includes(currentUser.email));
-    if (!isOwn && !isAdminUser) return;
+    if (!canDelete(item)) return;
     if (!confirm("Delete this media?")) return;
-    // Remove metadata from DB
     _fbDB.ref("matchMedia/"+matchCode).once("value", snap => {
       var val = snap.val()||{};
       Object.entries(val).forEach(([k,v]) => {
         if (v.url === item.url) _fbDB.ref("matchMedia/"+matchCode+"/"+k).remove();
       });
     });
-    // Note: Cloudinary files can be managed via the Cloudinary dashboard
   }
 
   if (!matchCode || matchCode==="LOCAL") return null;
@@ -662,8 +666,8 @@ function MatchMediaGallery({ matchCode, currentUser }) {
       {media!==null && media.length>0 && (
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
           {media.map((item,i)=>(
-            <div key={i} onClick={()=>setLightbox(item)}
-              style={{position:"relative",aspectRatio:"1",borderRadius:10,overflow:"hidden",background:SP.bg3,cursor:"pointer"}}>
+            <div key={i} style={{position:"relative",aspectRatio:"1",borderRadius:10,overflow:"hidden",background:SP.bg3,cursor:"pointer"}}>
+              <div onClick={()=>setLightbox(item)} style={{width:"100%",height:"100%"}}>
               {item.type==="video" ? (
                 <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",background:SP.bg2}}>
                   <span style={{fontSize:28}}>▶</span>
@@ -679,6 +683,15 @@ function MatchMediaGallery({ matchCode, currentUser }) {
                   color:"#fff",fontSize:9,textOverflow:"ellipsis",overflow:"hidden",whiteSpace:"nowrap"}}>
                   {item.caption}
                 </div>
+              )}
+              </div>
+              {canDelete(item)&&(
+                <button onClick={e=>{e.stopPropagation();deleteMedia(item);}}
+                  style={{position:"absolute",top:4,right:4,background:"rgba(0,0,0,.7)",border:"none",
+                    borderRadius:"50%",width:24,height:24,color:SP.tertiary,fontSize:12,cursor:"pointer",
+                    display:"flex",alignItems:"center",justifyContent:"center",zIndex:1}}>
+                  ×
+                </button>
               )}
             </div>
           ))}
@@ -706,7 +719,7 @@ function MatchMediaGallery({ matchCode, currentUser }) {
               {lightbox.uploader} · {lightbox.uploadedAt?new Date(lightbox.uploadedAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"}):""}
             </div>
           </div>
-          {currentUser&&(lightbox.uploader===(currentUser.displayName||currentUser.email)||ADMIN_EMAILS.includes(currentUser.email))&&(
+          {canDelete(lightbox)&&(
             <button onClick={e=>{e.stopPropagation();deleteMedia(lightbox);setLightbox(null);}}
               style={{marginTop:16,padding:"8px 20px",background:"transparent",border:"1px solid rgba(255,112,114,.4)",
                 borderRadius:8,color:SP.tertiary,fontSize:13,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
@@ -3605,6 +3618,12 @@ function App({ currentUser }) {
           </div>
         )}
         <div style={{textAlign:"center",padding:"14px 0",color:"#334155",fontSize:11}}>Updates every ball automatically</div>
+        {/* Media gallery — viewers can upload and see all media */}
+        {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
+          <div style={{padding:"0 12px"}}>
+            <MatchMediaGallery matchCode={match.matchCode} currentUser={currentUser}/>
+          </div>
+        )}
         <nav style={S.bottomNav}>
           {[
             {icon:"🏠",label:"Home",tab:"home"},
@@ -3943,6 +3962,12 @@ function App({ currentUser }) {
               </button>
             </div>
 
+          </div>
+        )}
+        {/* Media gallery — visible to scorer in match screen */}
+        {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
+          <div style={{padding:"0 12px"}}>
+            <MatchMediaGallery matchCode={match.matchCode} currentUser={currentUser}/>
           </div>
         )}
       </div>
