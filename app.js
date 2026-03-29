@@ -30,14 +30,12 @@ const ADMIN_EMAILS = [
 
 // ── Firebase ─────────────────────────────────────────────────────
 var _fbApp = null, _fbDB = null, _fbAuth = null;
-var _fbStorage = null;
 function initFB() {
   if (_fbApp) return true;
   try {
-    _fbApp    = firebase.initializeApp(FIREBASE_CONFIG);
-    _fbDB     = firebase.database();
-    _fbAuth   = firebase.auth();
-    if (firebase.storage) _fbStorage = firebase.storage();
+    _fbApp  = firebase.initializeApp(FIREBASE_CONFIG);
+    _fbDB   = firebase.database();
+    _fbAuth = firebase.auth();
     return true;
   } catch(e) { console.warn("Firebase:", e); return false; }
 }
@@ -525,14 +523,44 @@ if (typeof document !== "undefined" && !document.getElementById("sp-global")) {
 
 
 // ════════════════════════════════════════════════════════════════
+// ── Cloudinary config ─────────────────────────────────────────────
+const CLOUDINARY_CLOUD  = "deye6w1zv";
+const CLOUDINARY_PRESET = "cricket-pulse";
+const CLOUDINARY_URL    = "https://api.cloudinary.com/v1_1/" + CLOUDINARY_CLOUD + "/auto/upload";
+
+// Upload a file to Cloudinary, calling onProgress(pct) and returning {url, publicId, type}
+async function cloudinaryUpload(file, folder, onProgress) {
+  var fd = new FormData();
+  fd.append("file", file);
+  fd.append("upload_preset", CLOUDINARY_PRESET);
+  fd.append("folder", folder);
+  return new Promise((resolve, reject) => {
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", CLOUDINARY_URL);
+    xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(Math.round(e.loaded/e.total*100)); };
+    xhr.onload = () => {
+      try {
+        var res = JSON.parse(xhr.responseText);
+        if (res.secure_url) {
+          resolve({ url: res.secure_url, publicId: res.public_id, type: res.resource_type });
+        } else {
+          reject(new Error(res.error ? res.error.message : "Upload failed"));
+        }
+      } catch(e) { reject(e); }
+    };
+    xhr.onerror = () => reject(new Error("Network error during upload"));
+    xhr.send(fd);
+  });
+}
+
 // ── MatchMediaGallery — photo/video uploads per match ────────────
 function MatchMediaGallery({ matchCode, currentUser }) {
-  const [media,       setMedia]       = React.useState(null);  // null=loading, []=empty
-  const [uploading,   setUploading]   = React.useState(false);
-  const [uploadPct,   setUploadPct]   = React.useState(0);
-  const [err,         setErr]         = React.useState("");
-  const [caption,     setCaption]     = React.useState("");
-  const [lightbox,    setLightbox]    = React.useState(null);  // {url,type,caption,uploader}
+  const [media,     setMedia]     = React.useState(null);
+  const [uploading, setUploading] = React.useState(false);
+  const [uploadPct, setUploadPct] = React.useState(0);
+  const [err,       setErr]       = React.useState("");
+  const [caption,   setCaption]   = React.useState("");
+  const [lightbox,  setLightbox]  = React.useState(null);
   const fileInputRef = React.useRef(null);
 
   React.useEffect(() => {
@@ -546,39 +574,30 @@ function MatchMediaGallery({ matchCode, currentUser }) {
     return () => ref.off();
   }, [matchCode]);
 
-  function handleFileChange(e) {
+  async function handleFileChange(e) {
     var file = e.target.files && e.target.files[0];
     if (!file) return;
-    if (file.size > 50*1024*1024) { setErr("File too large — max 50 MB"); return; }
+    if (file.size > 100*1024*1024) { setErr("File too large — max 100 MB"); return; }
     var isVideo = file.type.startsWith("video/");
     var isImage = file.type.startsWith("image/");
     if (!isVideo && !isImage) { setErr("Only photos and videos are supported"); return; }
     setErr(""); setUploading(true); setUploadPct(0);
-
-    if (!_fbStorage) { setErr("Firebase Storage not available"); setUploading(false); return; }
-    var ext = file.name.split(".").pop();
-    var path = "matchMedia/"+matchCode+"/"+Date.now()+"_"+Math.random().toString(36).slice(2,6)+"."+ext;
-    var ref = _fbStorage.ref(path);
-    var task = ref.put(file);
-    task.on("state_changed",
-      snap => setUploadPct(Math.round(snap.bytesTransferred/snap.totalBytes*100)),
-      err2 => { setErr(err2.message); setUploading(false); },
-      () => {
-        task.snapshot.ref.getDownloadURL().then(url => {
-          var entry = {
-            url, path,
-            type: isVideo ? "video" : "image",
-            caption: caption.trim() || "",
-            uploader: currentUser ? (currentUser.displayName||currentUser.email||"Unknown") : "Guest",
-            uploadedAt: Date.now(),
-          };
-          var key = Date.now()+"_"+Math.random().toString(36).slice(2,6);
-          _fbDB.ref("matchMedia/"+matchCode+"/"+key).set(entry);
-          setCaption(""); setUploading(false); setUploadPct(0);
-          if (fileInputRef.current) fileInputRef.current.value = "";
-        });
-      }
-    );
+    try {
+      var result = await cloudinaryUpload(file, "matchMedia/"+matchCode, setUploadPct);
+      var entry = {
+        url: result.url,
+        publicId: result.publicId,
+        type: isVideo ? "video" : "image",
+        caption: caption.trim() || "",
+        uploader: currentUser ? (currentUser.displayName||currentUser.email||"Unknown") : "Guest",
+        uploadedAt: Date.now(),
+      };
+      var key = Date.now()+"_"+Math.random().toString(36).slice(2,6);
+      _fbDB.ref("matchMedia/"+matchCode+"/"+key).set(entry);
+      setCaption(""); setUploadPct(0);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch(e2) { setErr(e2.message); }
+    setUploading(false);
   }
 
   function deleteMedia(item) {
@@ -587,17 +606,14 @@ function MatchMediaGallery({ matchCode, currentUser }) {
     var isAdminUser = !!(currentUser && typeof ADMIN_EMAILS !== "undefined" && ADMIN_EMAILS.includes(currentUser.email));
     if (!isOwn && !isAdminUser) return;
     if (!confirm("Delete this media?")) return;
-    // Remove from DB (find the key)
+    // Remove metadata from DB
     _fbDB.ref("matchMedia/"+matchCode).once("value", snap => {
       var val = snap.val()||{};
       Object.entries(val).forEach(([k,v]) => {
         if (v.url === item.url) _fbDB.ref("matchMedia/"+matchCode+"/"+k).remove();
       });
     });
-    // Remove from Storage
-    if (_fbStorage && item.path) {
-      _fbStorage.ref(item.path).delete().catch(()=>{});
-    }
+    // Note: Cloudinary files can be managed via the Cloudinary dashboard
   }
 
   if (!matchCode || matchCode==="LOCAL") return null;
@@ -609,7 +625,6 @@ function MatchMediaGallery({ matchCode, currentUser }) {
         {media&&media.length>0&&<span style={{color:SP.textDim,fontWeight:"400"}}>{media.length} item{media.length!==1?"s":""}</span>}
       </div>
 
-      {/* Upload section — logged in users only */}
       {currentUser && (
         <div style={{background:SP.bg2,borderRadius:12,padding:"14px 16px",marginBottom:12}}>
           <input value={caption} onChange={e=>setCaption(e.target.value)}
@@ -618,7 +633,7 @@ function MatchMediaGallery({ matchCode, currentUser }) {
               padding:"9px 12px",color:"#fff",fontSize:13,outline:"none",boxSizing:"border-box",
               fontFamily:"Lexend,Georgia,sans-serif",marginBottom:10}}/>
           <input ref={fileInputRef} type="file" accept="image/*,video/*"
-            onChange={handleFileChange} style={{display:"none"}} id="media-file-input"/>
+            onChange={handleFileChange} style={{display:"none"}}/>
           {!uploading ? (
             <button onClick={()=>fileInputRef.current&&fileInputRef.current.click()}
               style={{width:"100%",padding:"11px 0",background:"rgba(102,157,255,.1)",border:"1px solid rgba(102,157,255,.3)",
@@ -638,7 +653,6 @@ function MatchMediaGallery({ matchCode, currentUser }) {
         </div>
       )}
 
-      {/* Media grid */}
       {media===null && <div style={{color:SP.textDim,fontSize:12,textAlign:"center",padding:"12px 0"}}>Loading…</div>}
       {media!==null && media.length===0 && (
         <div style={{color:SP.textDim,fontSize:12,textAlign:"center",padding:"16px 0"}}>
@@ -649,8 +663,7 @@ function MatchMediaGallery({ matchCode, currentUser }) {
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
           {media.map((item,i)=>(
             <div key={i} onClick={()=>setLightbox(item)}
-              style={{position:"relative",aspectRatio:"1",borderRadius:10,overflow:"hidden",
-                background:SP.bg3,cursor:"pointer"}}>
+              style={{position:"relative",aspectRatio:"1",borderRadius:10,overflow:"hidden",background:SP.bg3,cursor:"pointer"}}>
               {item.type==="video" ? (
                 <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",background:SP.bg2}}>
                   <span style={{fontSize:28}}>▶</span>
@@ -658,8 +671,7 @@ function MatchMediaGallery({ matchCode, currentUser }) {
                     textOverflow:"ellipsis",overflow:"hidden",whiteSpace:"nowrap"}}>{item.caption||"Video"}</div>
                 </div>
               ) : (
-                <img src={item.url} alt={item.caption||""}
-                  style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                <img src={item.url} alt={item.caption||""} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
               )}
               {item.caption&&item.type==="image"&&(
                 <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"16px 4px 4px",
@@ -673,7 +685,6 @@ function MatchMediaGallery({ matchCode, currentUser }) {
         </div>
       )}
 
-      {/* Lightbox */}
       {lightbox && (
         <div onClick={()=>setLightbox(null)}
           style={{position:"fixed",inset:0,background:"rgba(0,0,0,.95)",zIndex:2000,
@@ -712,33 +723,23 @@ function MatchMediaGallery({ matchCode, currentUser }) {
 function PlayerPhotoUpload({ player, currentUser, onPhotoSaved, editable }) {
   const [uploading, setUploading] = React.useState(false);
   const [uploadPct, setUploadPct] = React.useState(0);
-  const [err, setErr]             = React.useState("");
+  const [err,       setErr]       = React.useState("");
   const fileRef = React.useRef(null);
 
   var photoUrl = player && player.photoUrl;
 
-  function handleFile(e) {
+  async function handleFile(e) {
     var file = e.target.files && e.target.files[0];
     if (!file) return;
     if (!file.type.startsWith("image/")) { setErr("Only image files are supported"); return; }
     if (file.size > 5*1024*1024) { setErr("Max 5 MB for profile photos"); return; }
-    if (!_fbStorage) { setErr("Firebase Storage not available"); return; }
     setErr(""); setUploading(true); setUploadPct(0);
-    var ext = file.name.split(".").pop();
-    var path = "playerPhotos/" + player.id + "." + ext;
-    var ref = _fbStorage.ref(path);
-    var task = ref.put(file);
-    task.on("state_changed",
-      snap => setUploadPct(Math.round(snap.bytesTransferred / snap.totalBytes * 100)),
-      err2 => { setErr(err2.message); setUploading(false); },
-      () => {
-        task.snapshot.ref.getDownloadURL().then(url => {
-          if (_fbDB) _fbDB.ref("players/" + player.id + "/photoUrl").set(url);
-          setUploading(false); setUploadPct(0);
-          if (onPhotoSaved) onPhotoSaved(url);
-        });
-      }
-    );
+    try {
+      var result = await cloudinaryUpload(file, "playerPhotos", setUploadPct);
+      if (_fbDB) _fbDB.ref("players/"+player.id+"/photoUrl").set(result.url);
+      if (onPhotoSaved) onPhotoSaved(result.url);
+    } catch(e2) { setErr(e2.message); }
+    setUploading(false); setUploadPct(0);
   }
 
   return (
@@ -900,18 +901,14 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
         <div style={{color:SP.textDim,fontSize:10,marginTop:8}}>Firebase Console → Realtime Database → Rules</div>
       </div>
 
-      {/* ── Firebase Storage Rules reminder ── */}
+      {/* ── Cloudinary info ── */}
       <div style={{background:"rgba(102,157,255,.07)",borderRadius:10,padding:16,border:"1px solid rgba(102,157,255,.25)",marginBottom:12}}>
-        <div style={{color:SP.secondary,fontSize:12,fontWeight:"bold",marginBottom:8}}>📸 Firebase Storage Rules</div>
-        <pre style={{color:SP.textSec,fontSize:10,lineHeight:1.7,margin:0,overflowX:"auto",whiteSpace:"pre-wrap"}}>{`rules_version = '2';
-service firebase.storage {
-  match /b/{bucket}/o {
-    match /{allPaths=**} {
-      allow read, write: true;
-    }
-  }
-}`}</pre>
-        <div style={{color:SP.textDim,fontSize:10,marginTop:8}}>Firebase Console → Storage → Rules</div>
+        <div style={{color:SP.secondary,fontSize:12,fontWeight:"bold",marginBottom:6}}>📸 Media Storage — Cloudinary</div>
+        <div style={{color:SP.textSec,fontSize:11,lineHeight:1.7}}>
+          Photos and videos are stored on Cloudinary (free tier — 25 GB).<br/>
+          Cloud: <b style={{color:"#fff"}}>deye6w1zv</b> · Preset: <b style={{color:"#fff"}}>cricket-pulse</b><br/>
+          Manage files at <span style={{color:SP.secondary}}>cloudinary.com</span> → Media Library.
+        </div>
       </div>
 
       {/* ── Matches by User ── */}
