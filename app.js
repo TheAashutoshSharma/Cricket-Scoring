@@ -708,8 +708,68 @@ function MatchMediaGallery({ matchCode, currentUser }) {
   );
 }
 
-// ════════════════════════════════════════════════════════════════
-// ── AdminPanel — live index management + history clear ────────────
+// ── PlayerPhotoUpload — profile photo upload + display ───────────
+function PlayerPhotoUpload({ player, currentUser, onPhotoSaved, editable }) {
+  const [uploading, setUploading] = React.useState(false);
+  const [uploadPct, setUploadPct] = React.useState(0);
+  const [err, setErr]             = React.useState("");
+  const fileRef = React.useRef(null);
+
+  var photoUrl = player && player.photoUrl;
+
+  function handleFile(e) {
+    var file = e.target.files && e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { setErr("Only image files are supported"); return; }
+    if (file.size > 5*1024*1024) { setErr("Max 5 MB for profile photos"); return; }
+    if (!_fbStorage) { setErr("Firebase Storage not available"); return; }
+    setErr(""); setUploading(true); setUploadPct(0);
+    var ext = file.name.split(".").pop();
+    var path = "playerPhotos/" + player.id + "." + ext;
+    var ref = _fbStorage.ref(path);
+    var task = ref.put(file);
+    task.on("state_changed",
+      snap => setUploadPct(Math.round(snap.bytesTransferred / snap.totalBytes * 100)),
+      err2 => { setErr(err2.message); setUploading(false); },
+      () => {
+        task.snapshot.ref.getDownloadURL().then(url => {
+          if (_fbDB) _fbDB.ref("players/" + player.id + "/photoUrl").set(url);
+          setUploading(false); setUploadPct(0);
+          if (onPhotoSaved) onPhotoSaved(url);
+        });
+      }
+    );
+  }
+
+  return (
+    <div style={{position:"relative",width:80,height:80,margin:"0 auto 12px"}}>
+      {photoUrl
+        ? <img src={photoUrl} alt={player.name}
+            style={{width:80,height:80,borderRadius:"50%",objectFit:"cover",border:"2px solid "+SP.bg3}}/>
+        : <div style={{width:80,height:80,borderRadius:"50%",background:SP.primary,display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,fontWeight:"bold",color:"#0f172a"}}>
+            {player && player.name ? player.name[0].toUpperCase() : "?"}
+          </div>
+      }
+      {editable && !uploading && (
+        <>
+          <button onClick={()=>fileRef.current&&fileRef.current.click()}
+            style={{position:"absolute",bottom:0,right:0,width:26,height:26,borderRadius:"50%",background:SP.bg3,border:"2px solid "+SP.bg,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,color:"#fff",padding:0}}>
+            📷
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" onChange={handleFile} style={{display:"none"}}/>
+        </>
+      )}
+      {uploading && (
+        <div style={{position:"absolute",inset:0,borderRadius:"50%",background:"rgba(0,0,0,.65)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <span style={{color:"#fff",fontSize:11,fontWeight:"700"}}>{uploadPct}%</span>
+        </div>
+      )}
+      {err && <div style={{position:"absolute",top:"100%",left:"50%",transform:"translateX(-50%)",color:SP.tertiary,fontSize:10,whiteSpace:"nowrap",marginTop:4}}>{err}</div>}
+    </div>
+  );
+}
+
+
 function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
   const [liveEntries,  setLiveEntries]  = React.useState(null);
   const [userMatches,  setUserMatches]  = React.useState(null); // {uid: {name, email, matches:[]}}
@@ -833,10 +893,25 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
     "userMatches":      { ".read": true, ".write": true },
     "users":            { ".read": true, ".write": true },
     "players":          { ".read": true, ".write": true },
-    "teams":            { ".read": true, ".write": true }
+    "teams":            { ".read": true, ".write": true },
+    "matchMedia":       { ".read": true, ".write": true }
   }
 }`}</pre>
         <div style={{color:SP.textDim,fontSize:10,marginTop:8}}>Firebase Console → Realtime Database → Rules</div>
+      </div>
+
+      {/* ── Firebase Storage Rules reminder ── */}
+      <div style={{background:"rgba(102,157,255,.07)",borderRadius:10,padding:16,border:"1px solid rgba(102,157,255,.25)",marginBottom:12}}>
+        <div style={{color:SP.secondary,fontSize:12,fontWeight:"bold",marginBottom:8}}>📸 Firebase Storage Rules</div>
+        <pre style={{color:SP.textSec,fontSize:10,lineHeight:1.7,margin:0,overflowX:"auto",whiteSpace:"pre-wrap"}}>{`rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      allow read, write: true;
+    }
+  }
+}`}</pre>
+        <div style={{color:SP.textDim,fontSize:10,marginTop:8}}>Firebase Console → Storage → Rules</div>
       </div>
 
       {/* ── Matches by User ── */}
@@ -3627,6 +3702,9 @@ function App({ currentUser }) {
           </div>
           <TCard team={match.teamA} inn={0} opp={match.teamB}/>
           {(match.batting===1||match.inningsOver[0])&&<TCard team={match.teamB} inn={1} opp={match.teamA}/>}
+          {match.matchCode&&match.matchCode!=="LOCAL"&&(
+            <MatchMediaGallery matchCode={match.matchCode} currentUser={currentUser}/>
+          )}
         </div>
             <nav style={S.bottomNav}>
         {[
@@ -3906,12 +3984,20 @@ function PlayerStatsCard({ p, onClick }) {
   // Compact row — just name, role, key numbers
   return (
     <div onClick={onClick} style={{background:SP.bg3,borderRadius:12,padding:"12px 16px",marginBottom:8,border:"1px solid rgba(73,72,71,.25)",cursor:onClick?"pointer":"default",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}}>
-      <div style={{flex:1,minWidth:0}}>
-        <div style={{color:"#fff",fontSize:14,fontWeight:"bold",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</div>
-        <div style={{display:"flex",gap:6,marginTop:2,flexWrap:"wrap"}}>
-          {p.role && <span style={{color:SP.textDim,fontSize:11}}>{p.role}</span>}
-          {age && <span style={{color:SP.textDim,fontSize:11}}>· Age {age}</span>}
-          {p.uid && <span style={{color:SP.primary,fontSize:11}}>· ✓</span>}
+      <div style={{display:"flex",alignItems:"center",gap:10,flex:1,minWidth:0}}>
+        {p.photoUrl
+          ? <img src={p.photoUrl} alt={p.name} style={{width:36,height:36,borderRadius:"50%",objectFit:"cover",flexShrink:0,border:"1px solid rgba(73,72,71,.3)"}}/>
+          : <div style={{width:36,height:36,borderRadius:"50%",background:SP.primary,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:"bold",color:"#0f172a",flexShrink:0}}>
+              {p.name[0].toUpperCase()}
+            </div>
+        }
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{color:"#fff",fontSize:14,fontWeight:"bold",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</div>
+          <div style={{display:"flex",gap:6,marginTop:2,flexWrap:"wrap"}}>
+            {p.role && <span style={{color:SP.textDim,fontSize:11}}>{p.role}</span>}
+            {age && <span style={{color:SP.textDim,fontSize:11}}>· Age {age}</span>}
+            {p.uid && <span style={{color:SP.primary,fontSize:11}}>· ✓</span>}
+          </div>
         </div>
       </div>
       <div style={{display:"flex",gap:14,alignItems:"center",flexShrink:0}}>
@@ -4366,9 +4452,16 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
             </div>
           </div>
           <div style={{background:SP.bg3,borderRadius:12,padding:22,border:"1px solid rgba(73,72,71,.25)",textAlign:"center",marginBottom:14}}>
-            <div style={{width:64,height:64,borderRadius:"50%",background:SP.primary,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,fontWeight:"bold",color:"#0f172a",margin:"0 auto 12px"}}>
-              {sel.name[0].toUpperCase()}
-            </div>
+            <PlayerPhotoUpload
+              player={sel}
+              currentUser={currentUser}
+              editable={editable}
+              onPhotoSaved={url=>{
+                var updated = {...sel, photoUrl:url};
+                setSel(updated);
+                setPlayers(ps=>ps.map(p=>p.id===sel.id?updated:p));
+              }}
+            />
             <div style={{color:"#fff",fontSize:20,fontWeight:"bold"}}>{sel.name}</div>
             <div style={{color:SP.textDim,fontSize:12,marginTop:4}}>{sel.role}{sel.batStyle?` · ${sel.batStyle} bat`:""}{sel.bowlStyle&&sel.bowlStyle!=="N/A"?` · ${sel.bowlStyle}`:""}</div>
             {sel.uid && <div style={{color:SP.primary,fontSize:11,marginTop:6}}>✓ Registered account</div>}
