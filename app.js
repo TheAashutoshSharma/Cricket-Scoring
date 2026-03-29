@@ -1094,7 +1094,7 @@ function PlayerPickerStep({teamName, selectedNames, selectedIds, onUpdate, curre
         createdAt: Date.now(),
       };
       await _fbDB.ref("teams/"+id).set(t);
-      setSaveMsg("✓ Saved as ""+nm+""");
+      setSaveMsg("✓ Saved as " + nm);
       setTimeout(()=>setSaveMsg(""), 3000);
     } catch(e) { setSaveMsg("Error: "+e.message); }
     setSavingTeam(false);
