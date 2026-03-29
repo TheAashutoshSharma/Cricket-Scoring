@@ -207,9 +207,8 @@ function OpeningBatsmenModal({match, onSelect}) {
   if (!match) return null;
   var bt = match.batting;
   var bTeam = bt===0 ? match.teamA : match.teamB;
-  const [picking, setPicking] = React.useState("striker"); // "striker" | "nonStriker" | "confirm"
+  const [picking, setPicking] = React.useState("striker"); // "striker" | "nonStriker"
   const [strikerIdx, setStrikerIdx] = React.useState(null);
-  const [nonStrikerIdx, setNonStrikerIdx] = React.useState(null);
   const [search, setSearch] = React.useState("");
 
   var openerChosen = picking==="nonStriker" ? new Set([strikerIdx]) : new Set();
@@ -220,52 +219,8 @@ function OpeningBatsmenModal({match, onSelect}) {
     if (picking==="striker") {
       setStrikerIdx(idx); setPicking("nonStriker"); setSearch("");
     } else {
-      setNonStrikerIdx(idx); setPicking("confirm");
+      onSelect(strikerIdx, idx);
     }
-  }
-
-  // Confirmation screen
-  if (picking==="confirm") {
-    var s = bTeam.players[strikerIdx];
-    var ns = bTeam.players[nonStrikerIdx];
-    return (
-      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:1100,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-        <div style={{background:SP.bg3,borderRadius:"20px 20px 0 0",padding:"24px 20px 36px",width:"100%",maxWidth:480,border:"1px solid rgba(73,72,71,.25)",borderBottom:"none"}}>
-          <div style={{textAlign:"center",marginBottom:20}}>
-            <div style={{fontSize:26,marginBottom:6}}>🏏</div>
-            <div style={{color:SP.primary,fontSize:14,fontWeight:"bold",letterSpacing:1}}>CONFIRM OPENING PAIR</div>
-          </div>
-          {/* Striker row */}
-          <div style={{background:SP.bg,borderRadius:12,padding:"14px 16px",marginBottom:10,border:"1px solid rgba(156,255,147,.25)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <div style={{color:SP.textDim,fontSize:10,letterSpacing:1.5,marginBottom:3}}>STRIKER</div>
-              <div style={{color:"#fff",fontSize:16,fontWeight:"bold"}}>{s.name}</div>
-              {s.role&&<div style={{color:SP.textDim,fontSize:11,marginTop:2}}>{s.role}</div>}
-            </div>
-            <button onClick={()=>{setPicking("striker");setStrikerIdx(null);setNonStrikerIdx(null);setSearch("");}}
-              style={{padding:"6px 14px",background:"transparent",border:"1px solid rgba(73,72,71,.4)",borderRadius:8,color:SP.textSec,fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
-              Change
-            </button>
-          </div>
-          {/* Non-striker row */}
-          <div style={{background:SP.bg,borderRadius:12,padding:"14px 16px",marginBottom:24,border:"1px solid rgba(73,72,71,.25)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <div style={{color:SP.textDim,fontSize:10,letterSpacing:1.5,marginBottom:3}}>NON-STRIKER</div>
-              <div style={{color:"#fff",fontSize:16,fontWeight:"bold"}}>{ns.name}</div>
-              {ns.role&&<div style={{color:SP.textDim,fontSize:11,marginTop:2}}>{ns.role}</div>}
-            </div>
-            <button onClick={()=>{setPicking("nonStriker");setNonStrikerIdx(null);setSearch("");}}
-              style={{padding:"6px 14px",background:"transparent",border:"1px solid rgba(73,72,71,.4)",borderRadius:8,color:SP.textSec,fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
-              Change
-            </button>
-          </div>
-          <button onClick={()=>onSelect(strikerIdx, nonStrikerIdx)}
-            style={{width:"100%",padding:"14px 0",background:SP.primary,border:"none",borderRadius:12,color:"#0f172a",fontWeight:"bold",fontSize:16,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",letterSpacing:.5}}>
-            ✓ Confirm & Start
-          </button>
-        </div>
-      </div>
-    );
   }
 
   return (
@@ -406,6 +361,7 @@ function OverCompleteModal({match, onSelect, isFirstBall}) {
   var prevBowlerName = wTeam.bowlers[prevBowlerIdx]?.name;
 
   const [search, setSearch] = React.useState("");
+  const [pending, setPending] = React.useState(null); // {player, bowlerIdx} when confirming
 
   // All players of the fielding team
   var allFielders = wTeam.players;
@@ -419,13 +375,51 @@ function OverCompleteModal({match, onSelect, isFirstBall}) {
   );
 
   function pick(player, bowlerIdx) {
+    setPending({player, bowlerIdx});
+  }
+
+  function confirm() {
+    var {player, bowlerIdx} = pending;
     if (bowlerIdx !== undefined) {
-      // Already bowled before — select by existing index
       onSelect(bowlerIdx, null, null);
     } else {
-      // First time bowling — add to bowlers list
       onSelect(null, player.name, player.playerId || null);
     }
+  }
+
+  // Confirmation screen
+  if (pending) {
+    var stats = bowlerStatMap[pending.player.name];
+    return (
+      <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:1000,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+        <div style={{background:SP.bg3,borderRadius:"20px 20px 0 0",padding:"24px 20px 36px",width:"100%",maxWidth:480,border:"1px solid rgba(73,72,71,.25)",borderBottom:"none"}}>
+          <div style={{textAlign:"center",marginBottom:20}}>
+            <div style={{fontSize:26,marginBottom:6}}>🎳</div>
+            <div style={{color:SP.primary,fontSize:13,fontWeight:"bold",letterSpacing:2}}>
+              {isFirstBall ? "CONFIRM OPENING BOWLER" : "CONFIRM BOWLER"}
+            </div>
+          </div>
+          <div style={{background:SP.bg,borderRadius:12,padding:"16px 18px",marginBottom:24,border:"1px solid rgba(102,157,255,.25)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{color:SP.textDim,fontSize:10,letterSpacing:1.5,marginBottom:4}}>BOWLER</div>
+              <div style={{color:"#93c5fd",fontSize:17,fontWeight:"bold"}}>{pending.player.name}</div>
+              {stats
+                ? <div style={{color:SP.textDim,fontSize:11,marginTop:3}}>{stats.overs}.{stats.balls} ov · {stats.runs}r · {stats.wickets}w</div>
+                : <div style={{color:SP.textDim,fontSize:11,marginTop:3}}>Yet to bowl</div>
+              }
+            </div>
+            <button onClick={()=>setPending(null)}
+              style={{padding:"6px 14px",background:"transparent",border:"1px solid rgba(73,72,71,.4)",borderRadius:8,color:SP.textSec,fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+              Change
+            </button>
+          </div>
+          <button onClick={confirm}
+            style={{width:"100%",padding:"14px 0",background:SP.primary,border:"none",borderRadius:12,color:"#0f172a",fontWeight:"bold",fontSize:16,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",letterSpacing:.5}}>
+            ✓ Confirm & Bowl
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
