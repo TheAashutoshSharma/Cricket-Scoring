@@ -80,11 +80,29 @@
   </style>
 </head>
 <body>
+  <!-- Cache-buster: unregister old SWs and clear all caches on every load -->
+  <script>
+    (function() {
+      // Unregister all service workers
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(regs) {
+          regs.forEach(function(reg) { reg.unregister(); });
+        });
+      }
+      // Clear all caches
+      if ('caches' in window) {
+        caches.keys().then(function(names) {
+          names.forEach(function(name) { caches.delete(name); });
+        });
+      }
+    })();
+  </script>
+
   <div id="app"></div>
 
   <!-- Install Banner (Android/Chrome) -->
   <div id="install-banner">
-    <p id="install-banner-text">🏏 Install CricScore for offline use!</p>
+    <p>🏏 Install Cricket Pulse for offline use!</p>
     <button class="dismiss" onclick="dismissBanner()">✕</button>
     <button onclick="installApp()">Install</button>
   </div>
@@ -99,6 +117,7 @@
   <!-- Firebase SDK (v9 compat) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.2/firebase-app-compat.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.2/firebase-database-compat.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/9.22.2/firebase-auth-compat.min.js"></script>
 
   <!-- React + Babel (no build step needed!) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -144,7 +163,11 @@
     // ── Service Worker ──
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js?v=1774134206')
-        .then(r => console.log('SW registered:', r.scope))
+        .then(r => {
+          console.log('SW registered:', r.scope);
+          // Force immediate update check
+          r.update();
+        })
         .catch(e => console.error('SW error:', e));
     }
   </script>
