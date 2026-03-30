@@ -53,9 +53,9 @@ const mkB = n => ({ name:n||"Bowler", overs:0, balls:0, maidens:0, runs:0, wicke
 const blankSetup = () => ({
   step:0, overs:20,
   teamAName:"Team A", teamBName:"Team B",
-  teamAPlayers: Array.from({length:6},(_,i)=>"Player "+(i+1)),
-  teamBPlayers: Array.from({length:6},(_,i)=>"Player "+(i+1)),
-  teamACount:6, teamBCount:6,
+  teamAPlayers: Array.from({length:0},(_,i)=>"Player "+(i+1)),
+  teamBPlayers: Array.from({length:0},(_,i)=>"Player "+(i+1)),
+  teamACount:0, teamBCount:0,
   teamAPlayerIds:[], teamBPlayerIds:[],
   tossWinner: null,   // 0=teamA, 1=teamB
   battingFirst: 0,    // 0=teamA bats first, 1=teamB bats first
