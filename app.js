@@ -42,7 +42,7 @@ function initFB() {
 function getAuth() { return _fbAuth; }
 function genCode() {
   var c = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789", s = "";
-  for (var i = 0; i < 1; i++) s += c[Math.floor(Math.random()*c.length)];
+  for (var i = 0; i < 6; i++) s += c[Math.floor(Math.random()*c.length)];
   return s;
 }
 
@@ -53,9 +53,9 @@ const mkB = n => ({ name:n||"Bowler", overs:0, balls:0, maidens:0, runs:0, wicke
 const blankSetup = () => ({
   step:0, overs:20,
   teamAName:"Team A", teamBName:"Team B",
-  teamAPlayers: Array.from({length:0},(_,i)=>"Player "+(i+1)),
-  teamBPlayers: Array.from({length:0},(_,i)=>"Player "+(i+1)),
-  teamACount:0, teamBCount:0,
+  teamAPlayers: Array.from({length:2},(_,i)=>"Player "+(i+1)),
+  teamBPlayers: Array.from({length:2},(_,i)=>"Player "+(i+1)),
+  teamACount:2, teamBCount:2,
   teamAPlayerIds:[], teamBPlayerIds:[],
   tossWinner: null,   // 0=teamA, 1=teamB
   battingFirst: 0,    // 0=teamA bats first, 1=teamB bats first
@@ -65,14 +65,14 @@ const blankMatch = (setup, code) => {
   var bf = (setup.battingFirst === 1) ? 1 : 0;
   var aPIds  = setup.teamAPlayerIds  || [];
   var bPIds  = setup.teamBPlayerIds  || [];
-  var aPlayers = setup.teamAPlayers.slice(0,setup.teamACount||0).map((n,i)=>({...mkP(n), playerId: aPIds[i]||null}));
-  var bPlayers = setup.teamBPlayers.slice(0,setup.teamBCount||0).map((n,i)=>({...mkP(n), playerId: bPIds[i]||null}));
+  var aPlayers = setup.teamAPlayers.slice(0,setup.teamACount||2).map((n,i)=>({...mkP(n), playerId: aPIds[i]||null}));
+  var bPlayers = setup.teamBPlayers.slice(0,setup.teamBCount||2).map((n,i)=>({...mkP(n), playerId: bPIds[i]||null}));
   // Always start batting=0. If Team B bats first, swap them into slot 0 (first-innings slot).
   // The rest of the codebase assumes batting=0 is first innings, batting=1 is second/chase.
   var firstTeam  = bf===1 ? {name:setup.teamBName||"Team B", players:bPlayers, bowlers:[]} : {name:setup.teamAName||"Team A", players:aPlayers, bowlers:[]};
   var secondTeam = bf===1 ? {name:setup.teamAName||"Team A", players:aPlayers, bowlers:[]} : {name:setup.teamBName||"Team B", players:bPlayers, bowlers:[]};
-  var firstCount  = bf===1 ? (setup.teamBCount||0) : (setup.teamACount||0);
-  var secondCount = bf===1 ? (setup.teamACount||0) : (setup.teamBCount||0);
+  var firstCount  = bf===1 ? (setup.teamBCount||2) : (setup.teamACount||2);
+  var secondCount = bf===1 ? (setup.teamACount||2) : (setup.teamBCount||2);
   return {
     matchCode: code, createdAt: Date.now(),
     totalOvers: setup.overs,
