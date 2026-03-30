@@ -796,6 +796,60 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
   const [loadingUM,    setLoadingUM]    = React.useState(false);
   const [msg,          setMsg]          = React.useState("");
   const [expandedUser, setExpandedUser] = React.useState(null);
+  // Player stats reset
+  const [players,        setPlayers]        = React.useState(null);
+  const [loadingPlayers, setLoadingPlayers] = React.useState(false);
+  const [playerSearch,   setPlayerSearch]   = React.useState("");
+  const [resetting,      setResetting]      = React.useState({}); // {id: true}
+  const [statsMsg,       setStatsMsg]       = React.useState("");
+
+  const BLANK_BATTING = {matches:0,innings:0,runs:0,balls:0,outs:0,fours:0,sixes:0,highScore:0,fifties:0,hundreds:0};
+  const BLANK_BOWLING = {overs:0,balls:0,runs:0,wickets:0,maidens:0,bestWickets:0,bestRuns:999};
+
+  function loadPlayers() {
+    if (!_fbDB) return;
+    setLoadingPlayers(true); setStatsMsg("");
+    _fbDB.ref("players").once("value", snap => {
+      var val = snap.val() || {};
+      setPlayers(Object.values(val).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+      setLoadingPlayers(false);
+    }, err => { setStatsMsg("Error: "+err.message); setLoadingPlayers(false); });
+  }
+
+  function resetPlayerStats(p) {
+    if (!_fbDB) return;
+    if (!confirm("Reset ALL stats for "+p.name+"? This cannot be undone.")) return;
+    setResetting(r=>({...r,[p.id]:true}));
+    _fbDB.ref("players/"+p.id).update({
+      batting: BLANK_BATTING,
+      bowling: BLANK_BOWLING,
+    }).then(() => {
+      setPlayers(prev => prev.map(pl => pl.id===p.id
+        ? {...pl, batting:{...BLANK_BATTING}, bowling:{...BLANK_BOWLING}}
+        : pl
+      ));
+      setStatsMsg("Stats reset for "+p.name);
+      setTimeout(()=>setStatsMsg(""), 3000);
+    }).catch(err => setStatsMsg("Error: "+err.message))
+      .finally(() => setResetting(r=>({...r,[p.id]:false})));
+  }
+
+  function resetAllStats() {
+    if (!_fbDB || !players || !players.length) return;
+    if (!confirm("Reset stats for ALL "+players.length+" players? This cannot be undone.")) return;
+    if (!confirm("Are you absolutely sure? All batting and bowling career stats will be zeroed.")) return;
+    setStatsMsg("Resetting all…");
+    var updates = {};
+    players.forEach(p => {
+      updates["players/"+p.id+"/batting"] = BLANK_BATTING;
+      updates["players/"+p.id+"/bowling"] = BLANK_BOWLING;
+    });
+    _fbDB.ref().update(updates).then(() => {
+      setPlayers(prev => prev.map(p => ({...p, batting:{...BLANK_BATTING}, bowling:{...BLANK_BOWLING}})));
+      setStatsMsg("All player stats reset");
+      setTimeout(()=>setStatsMsg(""), 4000);
+    }).catch(err => setStatsMsg("Error: "+err.message));
+  }
 
   function loadLiveIndex() {
     if (!_fbDB) { setMsg("Firebase not connected"); return; }
@@ -1044,6 +1098,73 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
       </div>
 
       {msg&&msg!=="RULES_ERROR"&&<div style={{color:SP.primary,fontSize:12,textAlign:"center",marginBottom:12}}>{msg}</div>}
+
+      {/* ── Player Stats Reset ── */}
+      <div style={{background:SP.bg3,borderRadius:10,padding:18,border:"1px solid rgba(73,72,71,.25)",marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div style={{color:SP.textSec,fontSize:13}}>🏏 Player Stats</div>
+          <button onClick={loadPlayers} disabled={loadingPlayers}
+            style={{padding:"5px 12px",background:"transparent",border:"1px solid rgba(73,72,71,.25)",borderRadius:8,color:SP.textSec,fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+            {loadingPlayers?"…":players===null?"Load":"Refresh"}
+          </button>
+        </div>
+        {statsMsg&&<div style={{color:SP.primary,fontSize:12,marginBottom:10,textAlign:"center"}}>{statsMsg}</div>}
+        {players===null&&!loadingPlayers&&(
+          <div style={{color:SP.textDim,fontSize:12,textAlign:"center",padding:"8px 0"}}>Tap Load to fetch players</div>
+        )}
+        {players!==null&&(
+          <div>
+            <input value={playerSearch} onChange={e=>setPlayerSearch(e.target.value)}
+              placeholder="Search players…"
+              style={{width:"100%",background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:9,
+                padding:"9px 12px",color:"#fff",fontSize:13,outline:"none",boxSizing:"border-box",
+                fontFamily:"Lexend,Georgia,sans-serif",marginBottom:10}}/>
+            {/* Per-player list */}
+            <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:320,overflowY:"auto",marginBottom:10}}>
+              {players
+                .filter(p=>(p.name||"").toLowerCase().includes(playerSearch.toLowerCase()))
+                .map(p=>{
+                  var bat = p.batting||{};
+                  var bowl = p.bowling||{};
+                  var hasStats = (bat.runs||0)>0||(bat.wickets||0)>0||(bowl.wickets||0)>0||(bat.innings||0)>0;
+                  return (
+                    <div key={p.id} style={{background:SP.bg,borderRadius:10,padding:"10px 12px",border:"1px solid rgba(73,72,71,.2)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{color:"#fff",fontSize:13,fontWeight:"bold",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.name}</div>
+                        <div style={{color:SP.textDim,fontSize:10,marginTop:2}}>
+                          {hasStats
+                            ? <span>{bat.innings||0} inn · {bat.runs||0} runs · {bowl.wickets||0} wkts</span>
+                            : <span style={{color:"#334155"}}>No stats yet</span>}
+                        </div>
+                      </div>
+                      <button
+                        onClick={()=>resetPlayerStats(p)}
+                        disabled={resetting[p.id]||!hasStats}
+                        style={{padding:"5px 12px",background:hasStats?"rgba(255,112,114,.1)":"transparent",
+                          border:hasStats?"1px solid rgba(255,112,114,.3)":"1px solid rgba(73,72,71,.15)",
+                          borderRadius:8,color:hasStats?SP.tertiary:SP.textDim,fontSize:11,
+                          cursor:hasStats&&!resetting[p.id]?"pointer":"not-allowed",
+                          fontFamily:"Lexend,Georgia,sans-serif",flexShrink:0,
+                          opacity:resetting[p.id]?0.5:1}}>
+                        {resetting[p.id]?"…":"Reset"}
+                      </button>
+                    </div>
+                  );
+                })}
+              {players.filter(p=>(p.name||"").toLowerCase().includes(playerSearch.toLowerCase())).length===0&&(
+                <div style={{color:SP.textDim,fontSize:12,textAlign:"center",padding:"10px 0"}}>No players match</div>
+              )}
+            </div>
+            {/* Reset All */}
+            <button onClick={resetAllStats} disabled={!players.length}
+              style={{width:"100%",padding:"11px 0",background:"rgba(127,29,29,.2)",border:"1px solid #7f1d1d",
+                borderRadius:10,color:SP.tertiary,fontWeight:"bold",fontSize:13,cursor:"pointer",
+                fontFamily:"Lexend,Georgia,sans-serif"}}>
+              ⚠️ Reset All Player Stats
+            </button>
+          </div>
+        )}
+      </div>
 
       <button onClick={onDone}
         style={{width:"100%",padding:"11px 0",background:"transparent",border:"1px solid rgba(73,72,71,.25)",borderRadius:10,color:SP.textDim,fontSize:13,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
