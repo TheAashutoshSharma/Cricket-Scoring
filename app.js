@@ -1803,13 +1803,13 @@ function App({ currentUser }) {
       if (pid) {
         setUserPlayerId(pid);
       } else {
-        // Fallback: scan players/ for a record where uid === currentUser.uid
+        // Fallback: scan players/ for uid match
         _fbDB.ref("players").orderByChild("uid").equalTo(currentUser.uid).once("value", pSnap => {
           var pVal = pSnap.val();
           if (pVal) {
             var firstId = Object.keys(pVal)[0];
             setUserPlayerId(firstId);
-            // Back-fill the users/ node so next load is instant
+            // Back-fill users/ node for fast future lookups
             _fbDB.ref("users/"+currentUser.uid).update({ playerId: firstId, playerIds: [firstId] }).catch(()=>{});
           }
         }).catch(()=>{});
@@ -1832,9 +1832,9 @@ function App({ currentUser }) {
   // Init Firebase
   useEffect(() => { setFbReady(initFB()); }, []);
 
-  // (duplicate useEffect removed — userPlayerId is loaded above in Load current user block)
+  // (duplicate userPlayerId loader removed)
 
-  // Load profile photo whenever the linked player changes
+  // Load player name + photo whenever the linked player changes
   useEffect(() => {
     if (!userPlayerId || !_fbDB) return;
     _fbDB.ref("players/"+userPlayerId).once("value", snap => {
@@ -2924,12 +2924,11 @@ function App({ currentUser }) {
               </div>
               {/* Season Stats — only matches the current user played in */}
               {(()=>{
-                // Helper: does a snapshot player/bowler belong to the current user?
                 function isMe(p) {
                   if (!p) return false;
                   if (userPlayerId && p.playerId === userPlayerId) return true;
                   if (p.uid && p.uid === currentUser.uid) return true;
-                  var myName = (currentUser.displayName||"").trim().toLowerCase();
+                  var myName = (userPlayerName||currentUser.displayName||"").trim().toLowerCase();
                   if (myName && p.name && p.name.trim().toLowerCase() === myName) return true;
                   return false;
                 }
@@ -2971,7 +2970,7 @@ function App({ currentUser }) {
                   if (!p) return false;
                   if (userPlayerId && p.playerId === userPlayerId) return true;
                   if (p.uid && p.uid === currentUser.uid) return true;
-                  var myName = (currentUser.displayName||"").trim().toLowerCase();
+                  var myName = (userPlayerName||currentUser.displayName||"").trim().toLowerCase();
                   if (myName && p.name && p.name.trim().toLowerCase() === myName) return true;
                   return false;
                 }
