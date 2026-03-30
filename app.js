@@ -42,7 +42,7 @@ function initFB() {
 function getAuth() { return _fbAuth; }
 function genCode() {
   var c = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789", s = "";
-  for (var i = 0; i < 6; i++) s += c[Math.floor(Math.random()*c.length)];
+  for (var i = 0; i < 1; i++) s += c[Math.floor(Math.random()*c.length)];
   return s;
 }
 
