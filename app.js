@@ -527,7 +527,6 @@ if (typeof document !== "undefined" && !document.getElementById("sp-global")) {
 const CLOUDINARY_CLOUD  = "deye6w1zv";
 const CLOUDINARY_PRESET = "cricket-pulse";
 const CLOUDINARY_URL    = "https://api.cloudinary.com/v1_1/" + CLOUDINARY_CLOUD + "/auto/upload";
-const CLOUDINARY_DELETE_WORKER = "https://cricket-pulse.aashutosh-sharma.workers.dev";
 
 // Upload a file to Cloudinary, calling onProgress(pct) and returning {url, publicId, type}
 async function cloudinaryUpload(file, folder, onProgress) {
@@ -615,29 +614,15 @@ function MatchMediaGallery({ matchCode, matchDate, currentUser }) {
     return false;
   }
 
-  async function deleteMedia(item) {
+  function deleteMedia(item) {
     if (!canDelete(item)) return;
     if (!confirm("Delete this media?")) return;
-    // Remove from Firebase DB
     _fbDB.ref("matchMedia/"+matchCode).once("value", snap => {
       var val = snap.val()||{};
       Object.entries(val).forEach(([k,v]) => {
         if (v.url === item.url) _fbDB.ref("matchMedia/"+matchCode+"/"+k).remove();
       });
     });
-    // Delete from Cloudinary via Worker
-    if (item.publicId && CLOUDINARY_DELETE_WORKER && !CLOUDINARY_DELETE_WORKER.includes("PASTE_YOUR")) {
-      try {
-        await fetch(CLOUDINARY_DELETE_WORKER, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            publicId: item.publicId,
-            resourceType: item.type === "video" ? "video" : "image",
-          }),
-        });
-      } catch(e) { console.warn("Cloudinary delete failed:", e.message); }
-    }
   }
 
   if (!matchCode || matchCode==="LOCAL") return null;
@@ -1805,6 +1790,7 @@ function App({ currentUser }) {
   // Live matches list for viewer
   const [homeTab, setHomeTab] = useState("home"); // "home"|"live"|"profile"
   const [userPlayerId, setUserPlayerId] = useState(null); // current user's playerId from DB
+  const [userPhotoUrl, setUserPhotoUrl] = useState(null); // profile photo from linked player record
 
   // Load current user's linked playerIds from users/{uid}
   useEffect(() => {
@@ -1839,6 +1825,14 @@ function App({ currentUser }) {
       if (snap.val()) setUserPlayerId(snap.val());
     }).catch(() => {});
   }, [currentUser]);
+
+  // Load profile photo whenever the linked player changes
+  useEffect(() => {
+    if (!userPlayerId || !_fbDB) return;
+    _fbDB.ref("players/"+userPlayerId+"/photoUrl").once("value", snap => {
+      setUserPhotoUrl(snap.val() || null);
+    }).catch(() => {});
+  }, [userPlayerId]);
 
   // Load match history — from matches/ in Firebase (source of truth)
   useEffect(() => {
@@ -2728,7 +2722,7 @@ function App({ currentUser }) {
   var isRealAdmin = !!(currentUser && ADMIN_EMAILS.includes(currentUser.email));
   var isAdmin = isRealAdmin && !viewAsUser;
 
-  if (showPlayers) return <PlayersScreen currentUser={currentUser} isAdmin={isAdmin} onBack={()=>setShowPlayers(false)} initialPlayerId={showPlayers!==true?showPlayers:null} setScreen={setScreen} setHomeTab={setHomeTab}/>;
+  if (showPlayers) return <PlayersScreen currentUser={currentUser} isAdmin={isAdmin} onBack={()=>setShowPlayers(false)} initialPlayerId={showPlayers!==true?showPlayers:null} setScreen={setScreen} setHomeTab={setHomeTab} onPhotoSaved={(id,url)=>{ if(id===userPlayerId) setUserPhotoUrl(url); }}/>;
   if (showTeams)   return <TeamsScreen   currentUser={currentUser} isAdmin={isAdmin} onBack={()=>setShowTeams(false)} setScreen={setScreen} setHomeTab={setHomeTab}/>;
 
   if (screen==="home") {
@@ -2906,9 +2900,13 @@ function App({ currentUser }) {
             <div>
               {/* Avatar */}
               <div style={{textAlign:"center",marginBottom:24}}>
-                <div style={{width:80,height:80,borderRadius:"50%",background:"linear-gradient(135deg,"+SP.secondary+",rgba(102,157,255,.3))",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",fontSize:32}}>
-                  {(currentUser.displayName||currentUser.email||"?")[0].toUpperCase()}
-                </div>
+                {userPhotoUrl
+                  ? <img src={userPhotoUrl} alt={currentUser.displayName||"Profile"}
+                      style={{width:80,height:80,borderRadius:"50%",objectFit:"cover",margin:"0 auto 14px",display:"block",border:"2px solid rgba(102,157,255,.3)"}}/>
+                  : <div style={{width:80,height:80,borderRadius:"50%",background:"linear-gradient(135deg,"+SP.secondary+",rgba(102,157,255,.3))",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",fontSize:32}}>
+                      {(currentUser.displayName||currentUser.email||"?")[0].toUpperCase()}
+                    </div>
+                }
                 <div style={{color:"#fff",fontSize:18,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif",marginBottom:4}}>{currentUser.displayName||"Player"}</div>
                 <div style={{color:SP.textDim,fontSize:13}}>{currentUser.email}</div>
               </div>
@@ -4161,7 +4159,7 @@ function PlayerFullStats({ p }) {
 }
 
 // ── PlayersScreen — view/edit players ────────────────────────
-function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScreen, setHomeTab }) {
+function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScreen, setHomeTab, onPhotoSaved }) {
   const ROLES       = ["Batsman","Bowler","All-rounder","Wicket-keeper"];
   const BAT_STYLES  = ["Right-hand","Left-hand"];
   const BOWL_STYLES = ["Right-arm Fast","Right-arm Medium","Right-arm Off-spin","Left-arm Fast","Left-arm Medium","Left-arm Spin","N/A"];
@@ -4555,6 +4553,7 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
                 var updated = {...sel, photoUrl:url};
                 setSel(updated);
                 setPlayers(ps=>ps.map(p=>p.id===sel.id?updated:p));
+                if (onPhotoSaved) onPhotoSaved(sel.id, url);
               }}
             />
             <div style={{color:"#fff",fontSize:20,fontWeight:"bold"}}>{sel.name}</div>
