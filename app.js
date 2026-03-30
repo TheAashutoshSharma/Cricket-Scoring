@@ -1906,22 +1906,70 @@ function App({ currentUser }) {
       if (!raw) return;
       var d = JSON.parse(raw);
       if (!d) return;
+      // Restore sub-state always
+      if (d.homeTab) setHomeTab(d.homeTab);
+      if (d.showPlayers) setShowPlayers(d.showPlayers);
+      if (d.showTeams) setShowTeams(d.showTeams);
       if (d.match) {
         // Restore match screen
         setMatch(normaliseMatch(d.match));
         setIsViewer(!!d.isViewer);
         var restoredScreen = d.screen || (d.isViewer ? "viewer" : "match");
-        // Only restore safe match-dependent screens
         var safeMatchScreens = ["match", "viewer", "scorecard", "historycard"];
         setScreen(safeMatchScreens.includes(restoredScreen) ? restoredScreen : (d.isViewer ? "viewer" : "match"));
         if (d.isViewer && d.match.matchCode) attachListener(d.match.matchCode);
         else if (!d.isViewer && d.match.matchCode && d.match.matchCode !== "LOCAL" && currentUser) watchScorerLock(d.match.matchCode);
       } else if (d.screen) {
-        // Restore non-match screens (history, admin, setup)
         setScreen(d.screen);
       }
     } catch(e) {}
   }, []);
+
+  // ── Hardware / browser back button interception ──────────────────
+  useEffect(() => {
+    // Push an initial state so we always have something to pop back to
+    window.history.pushState({app:"cricket-pulse"}, "");
+
+    function handlePopState(e) {
+      // Back button was pressed — push state again immediately so the next
+      // back press is also intercepted, then ask the user
+      window.history.pushState({app:"cricket-pulse"}, "");
+
+      // Determine what "going back" means from the current screen
+      var canGoBack = screen !== "home" || showPlayers || showTeams || homeTab !== "home";
+
+      if (!canGoBack) {
+        // Already at root — confirm exit
+        var leave = window.confirm("Exit "+APP_NAME+"?");
+        if (leave) {
+          // Remove our pushed state so the next back actually exits
+          window.history.go(-2);
+        }
+        return;
+      }
+
+      // Navigate back within the app (no confirm needed for in-app navigation)
+      if (showPlayers) { setShowPlayers(false); return; }
+      if (showTeams)   { setShowTeams(false);   return; }
+      if (screen === "historycard") { setMatch(null); setScreen("history"); return; }
+      if (screen === "scorecard")  { setScreen(isViewer ? "viewer" : "match"); return; }
+      if (screen === "history")    { setScreen("home"); return; }
+      if (screen === "admin")      { setScreen("home"); return; }
+      if (screen === "setup")      { setScreen("home"); return; }
+      if (screen === "match" || screen === "viewer") {
+        // In a live match — confirm before leaving
+        var leave2 = window.confirm("Leave the match? Your scoring progress will be saved.");
+        if (leave2) { setScreen("home"); setMatch(null); }
+        return;
+      }
+      if (homeTab !== "home") { setHomeTab("home"); return; }
+      // Fallback — go home
+      setScreen("home");
+    }
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [screen, homeTab, showPlayers, showTeams, isViewer]);
 
   // Show bowler picker whenever an over completes
   const [needsOpeners, setNeedsOpeners] = useState(false);
@@ -1952,22 +2000,27 @@ function App({ currentUser }) {
     }
   }, [match ? match.needsNextBatter : null]);
 
-  // Persist locally — save screen too so refresh restores the right view
+  // Persist locally — save screen + tab + panels so refresh restores exact view
   useEffect(() => {
     try {
+      var extra = {
+        homeTab: homeTab||"home",
+        showPlayers: showPlayers||false,
+        showTeams: showTeams||false,
+      };
       if (match) {
-        localStorage.setItem(LOCAL_KEY, JSON.stringify({match, isViewer, screen}));
+        localStorage.setItem(LOCAL_KEY, JSON.stringify({match, isViewer, screen, ...extra}));
       } else {
-        // No match — only persist non-match screens worth restoring
-        var screensToPersist = ["history", "admin", "setup"];
+        // Persist these screens (and home with sub-state)
+        var screensToPersist = ["history","admin","setup","home"];
         if (screensToPersist.includes(screen)) {
-          localStorage.setItem(LOCAL_KEY, JSON.stringify({screen}));
+          localStorage.setItem(LOCAL_KEY, JSON.stringify({screen, ...extra}));
         } else {
           localStorage.removeItem(LOCAL_KEY);
         }
       }
     } catch(e) {}
-  }, [match, isViewer, screen]);
+  }, [match, isViewer, screen, homeTab, showPlayers, showTeams]);
 
   // Sync to Firebase (scorer only)
   useEffect(() => {
