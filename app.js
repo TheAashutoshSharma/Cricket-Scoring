@@ -1791,16 +1791,30 @@ function App({ currentUser }) {
   const [homeTab, setHomeTab] = useState("home"); // "home"|"live"|"profile"
   const [userPlayerId, setUserPlayerId] = useState(null); // current user's playerId from DB
   const [userPhotoUrl, setUserPhotoUrl] = useState(null); // profile photo from linked player record
+  const [userPlayerName, setUserPlayerName] = useState(null); // name from linked player record
 
   // Load current user's linked playerIds from users/{uid}
+  // Falls back to scanning players/ by uid if no users/ record exists
   useEffect(() => {
     if (!currentUser || !_fbDB) return;
     _fbDB.ref("users/"+currentUser.uid).once("value", snap => {
       var rec = snap.val() || {};
-      // Support both legacy single playerId and new playerIds array
-      if (rec.playerIds && rec.playerIds.length) setUserPlayerId(rec.playerIds[0]);
-      else if (rec.playerId) setUserPlayerId(rec.playerId);
-    });
+      var pid = (rec.playerIds && rec.playerIds.length) ? rec.playerIds[0] : (rec.playerId || null);
+      if (pid) {
+        setUserPlayerId(pid);
+      } else {
+        // Fallback: scan players/ for a record where uid === currentUser.uid
+        _fbDB.ref("players").orderByChild("uid").equalTo(currentUser.uid).once("value", pSnap => {
+          var pVal = pSnap.val();
+          if (pVal) {
+            var firstId = Object.keys(pVal)[0];
+            setUserPlayerId(firstId);
+            // Back-fill the users/ node so next load is instant
+            _fbDB.ref("users/"+currentUser.uid).update({ playerId: firstId, playerIds: [firstId] }).catch(()=>{});
+          }
+        }).catch(()=>{});
+      }
+    }).catch(()=>{});
   }, [currentUser]);
   //const [userPlayerId, setUserPlayerId] = useState(null); // linked player id for current user
   const [liveMatches, setLiveMatches] = useState(null); // null=not loaded, []=empty
@@ -1818,19 +1832,17 @@ function App({ currentUser }) {
   // Init Firebase
   useEffect(() => { setFbReady(initFB()); }, []);
 
-  // Load the current user's linked playerId from the users node
-  useEffect(() => {
-    if (!currentUser || !_fbDB) return;
-    _fbDB.ref("users/" + currentUser.uid + "/playerId").once("value", snap => {
-      if (snap.val()) setUserPlayerId(snap.val());
-    }).catch(() => {});
-  }, [currentUser]);
+  // (duplicate useEffect removed — userPlayerId is loaded above in Load current user block)
 
   // Load profile photo whenever the linked player changes
   useEffect(() => {
     if (!userPlayerId || !_fbDB) return;
-    _fbDB.ref("players/"+userPlayerId+"/photoUrl").once("value", snap => {
-      setUserPhotoUrl(snap.val() || null);
+    _fbDB.ref("players/"+userPlayerId).once("value", snap => {
+      var p = snap.val();
+      if (p) {
+        setUserPhotoUrl(p.photoUrl || null);
+        setUserPlayerName(p.name || null);
+      }
     }).catch(() => {});
   }, [userPlayerId]);
 
@@ -2901,39 +2913,41 @@ function App({ currentUser }) {
               {/* Avatar */}
               <div style={{textAlign:"center",marginBottom:24}}>
                 {userPhotoUrl
-                  ? <img src={userPhotoUrl} alt={currentUser.displayName||"Profile"}
+                  ? <img src={userPhotoUrl} alt={userPlayerName||currentUser.displayName||"Profile"}
                       style={{width:80,height:80,borderRadius:"50%",objectFit:"cover",margin:"0 auto 14px",display:"block",border:"2px solid rgba(102,157,255,.3)"}}/>
                   : <div style={{width:80,height:80,borderRadius:"50%",background:"linear-gradient(135deg,"+SP.secondary+",rgba(102,157,255,.3))",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",fontSize:32}}>
-                      {(currentUser.displayName||currentUser.email||"?")[0].toUpperCase()}
+                      {(userPlayerName||currentUser.displayName||currentUser.email||"?")[0].toUpperCase()}
                     </div>
                 }
-                <div style={{color:"#fff",fontSize:18,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif",marginBottom:4}}>{currentUser.displayName||"Player"}</div>
+                <div style={{color:"#fff",fontSize:18,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif",marginBottom:4}}>{userPlayerName||currentUser.displayName||"Player"}</div>
                 <div style={{color:SP.textDim,fontSize:13}}>{currentUser.email}</div>
               </div>
               {/* Season Stats — only matches the current user played in */}
               {(()=>{
-                var myName = currentUser.displayName||"";
+                // Helper: does a snapshot player/bowler belong to the current user?
+                function isMe(p) {
+                  if (!p) return false;
+                  if (userPlayerId && p.playerId === userPlayerId) return true;
+                  if (p.uid && p.uid === currentUser.uid) return true;
+                  var myName = (currentUser.displayName||"").trim().toLowerCase();
+                  if (myName && p.name && p.name.trim().toLowerCase() === myName) return true;
+                  return false;
+                }
                 var myMatches = matchHistory.filter(e=>{
                   if (!e.snapshot) return false;
                   var nm = e.snapshot;
                   var allPlayers = [...((nm.teamA&&nm.teamA.players)||[]),...((nm.teamB&&nm.teamB.players)||[])];
-                  return allPlayers.some(p=>p&&(
-                    p.playerId===currentUser.uid ||
-                    (userPlayerId && p.playerId===userPlayerId) ||
-                    (myName&&p.name&&p.name.toLowerCase()===myName.toLowerCase())
-                  ));
+                  var allBowlers = [...((nm.teamA&&nm.teamA.bowlers)||[]),...((nm.teamB&&nm.teamB.bowlers)||[])];
+                  return allPlayers.some(isMe) || allBowlers.some(isMe);
                 });
                 var myRuns = 0, myWickets = 0, myMatches50 = 0;
                 myMatches.forEach(e=>{
                   var nm = e.snapshot;
                   var allP = [...((nm.teamA&&nm.teamA.players)||[]),...((nm.teamB&&nm.teamB.players)||[])];
-                  var me = allP.find(p=>p&&(p.playerId===currentUser.uid||(userPlayerId&&p.playerId===userPlayerId)||(myName&&p.name&&p.name.toLowerCase()===myName.toLowerCase())));
-                  if (me) { myRuns+=me.runs||0; myWickets+=(me.wickets||0); if((me.runs||0)>=50)myMatches50++; }
+                  var me = allP.find(isMe);
+                  if (me) { myRuns+=me.runs||0; if((me.runs||0)>=50) myMatches50++; }
                   var allBowlers = [...((nm.teamA&&nm.teamA.bowlers)||[]),...((nm.teamB&&nm.teamB.bowlers)||[])];
-                  var meBowl = allBowlers.find(b=>b&&(
-                    (userPlayerId&&b.playerId===userPlayerId)||
-                    (myName&&b.name&&b.name.toLowerCase()===myName.toLowerCase())
-                  ));
+                  var meBowl = allBowlers.find(isMe);
                   if (meBowl) myWickets+=meBowl.wickets||0;
                 });
                 return (
@@ -2947,22 +2961,26 @@ function App({ currentUser }) {
                         </div>
                       ))}
                     </div>
-                    {myMatches.length===0&&<div style={{color:SP.textDim,fontSize:12,textAlign:"center",marginTop:8}}>No matches found for your player name</div>}
+                    {myMatches.length===0&&<div style={{color:SP.textDim,fontSize:12,textAlign:"center",marginTop:8}}>{userPlayerId?"No matches played yet.":"Link a player profile to see your stats."}</div>}
                   </div>
                 );
               })()}
               {/* My Match History */}
               {(()=>{
-                var myName = currentUser.displayName||"";
+                function isMe(p) {
+                  if (!p) return false;
+                  if (userPlayerId && p.playerId === userPlayerId) return true;
+                  if (p.uid && p.uid === currentUser.uid) return true;
+                  var myName = (currentUser.displayName||"").trim().toLowerCase();
+                  if (myName && p.name && p.name.trim().toLowerCase() === myName) return true;
+                  return false;
+                }
                 var myMatches = matchHistory.filter(e=>{
                   if (!e.snapshot) return false;
                   var nm = e.snapshot;
                   var allPlayers = [...((nm.teamA&&nm.teamA.players)||[]),...((nm.teamB&&nm.teamB.players)||[])];
-                  return allPlayers.some(p=>p&&(
-                    p.playerId===currentUser.uid ||
-                    (userPlayerId && p.playerId===userPlayerId) ||
-                    (myName&&p.name&&p.name.toLowerCase()===myName.toLowerCase())
-                  ));
+                  var allBowlers = [...((nm.teamA&&nm.teamA.bowlers)||[]),...((nm.teamB&&nm.teamB.bowlers)||[])];
+                  return allPlayers.some(isMe) || allBowlers.some(isMe);
                 });
                 if (!myMatches.length) return null;
                 return (
