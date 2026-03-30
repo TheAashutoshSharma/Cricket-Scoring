@@ -527,6 +527,7 @@ if (typeof document !== "undefined" && !document.getElementById("sp-global")) {
 const CLOUDINARY_CLOUD  = "deye6w1zv";
 const CLOUDINARY_PRESET = "cricket-pulse";
 const CLOUDINARY_URL    = "https://api.cloudinary.com/v1_1/" + CLOUDINARY_CLOUD + "/auto/upload";
+const CLOUDINARY_DELETE_WORKER = "https://cricket-pulse.aashutosh-sharma.workers.dev";
 
 // Upload a file to Cloudinary, calling onProgress(pct) and returning {url, publicId, type}
 async function cloudinaryUpload(file, folder, onProgress) {
@@ -614,15 +615,29 @@ function MatchMediaGallery({ matchCode, matchDate, currentUser }) {
     return false;
   }
 
-  function deleteMedia(item) {
+  async function deleteMedia(item) {
     if (!canDelete(item)) return;
     if (!confirm("Delete this media?")) return;
+    // Remove from Firebase DB
     _fbDB.ref("matchMedia/"+matchCode).once("value", snap => {
       var val = snap.val()||{};
       Object.entries(val).forEach(([k,v]) => {
         if (v.url === item.url) _fbDB.ref("matchMedia/"+matchCode+"/"+k).remove();
       });
     });
+    // Delete from Cloudinary via Worker
+    if (item.publicId && CLOUDINARY_DELETE_WORKER && !CLOUDINARY_DELETE_WORKER.includes("PASTE_YOUR")) {
+      try {
+        await fetch(CLOUDINARY_DELETE_WORKER, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            publicId: item.publicId,
+            resourceType: item.type === "video" ? "video" : "image",
+          }),
+        });
+      } catch(e) { console.warn("Cloudinary delete failed:", e.message); }
+    }
   }
 
   if (!matchCode || matchCode==="LOCAL") return null;
