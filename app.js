@@ -554,7 +554,7 @@ async function cloudinaryUpload(file, folder, onProgress) {
 }
 
 // ── MatchMediaGallery — photo/video uploads per match ────────────
-function MatchMediaGallery({ matchCode, currentUser }) {
+function MatchMediaGallery({ matchCode, matchDate, currentUser }) {
   const [media,     setMedia]     = React.useState(null);
   const [uploading, setUploading] = React.useState(false);
   const [uploadPct, setUploadPct] = React.useState(0);
@@ -583,7 +583,12 @@ function MatchMediaGallery({ matchCode, currentUser }) {
     if (!isVideo && !isImage) { setErr("Only photos and videos are supported"); return; }
     setErr(""); setUploading(true); setUploadPct(0);
     try {
-      var result = await cloudinaryUpload(file, "matchMedia/"+matchCode, setUploadPct);
+      var d = matchDate ? new Date(matchDate) : new Date();
+      var yyyy = d.getFullYear();
+      var mm   = String(d.getMonth()+1).padStart(2,"0");
+      var dd   = String(d.getDate()).padStart(2,"0");
+      var folderName = "cricket-pulse/"+yyyy+mm+dd+"-"+matchCode;
+      var result = await cloudinaryUpload(file, folderName, setUploadPct);
       var entry = {
         url: result.url,
         publicId: result.publicId,
@@ -748,7 +753,7 @@ function PlayerPhotoUpload({ player, currentUser, onPhotoSaved, editable }) {
     if (file.size > 5*1024*1024) { setErr("Max 5 MB for profile photos"); return; }
     setErr(""); setUploading(true); setUploadPct(0);
     try {
-      var result = await cloudinaryUpload(file, "playerPhotos", setUploadPct);
+      var result = await cloudinaryUpload(file, "cricket-pulse/profile-photos", setUploadPct);
       if (_fbDB) _fbDB.ref("players/"+player.id+"/photoUrl").set(result.url);
       if (onPhotoSaved) onPhotoSaved(result.url);
     } catch(e2) { setErr(e2.message); }
@@ -3099,7 +3104,7 @@ function App({ currentUser }) {
           {match.teamA&&match.teamB&&<TCardH team={match.teamA} inn={0} opp={match.teamB}/>}
           {match.inningsOver&&match.inningsOver[0]&&match.teamB&&<TCardH team={match.teamB} inn={1} opp={match.teamA}/>}
           {match.matchCode&&match.matchCode!=="LOCAL"&&(
-            <MatchMediaGallery matchCode={match.matchCode} currentUser={currentUser}/>
+            <MatchMediaGallery matchCode={match.matchCode} matchDate={match.createdAt} currentUser={currentUser}/>
           )}
           <nav style={S.bottomNav}>
             {[
@@ -3621,7 +3626,7 @@ function App({ currentUser }) {
         {/* Media gallery — viewers can upload and see all media */}
         {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
           <div style={{padding:"0 12px"}}>
-            <MatchMediaGallery matchCode={match.matchCode} currentUser={currentUser}/>
+            <MatchMediaGallery matchCode={match.matchCode} matchDate={match.createdAt} currentUser={currentUser}/>
           </div>
         )}
         <nav style={S.bottomNav}>
@@ -3719,7 +3724,7 @@ function App({ currentUser }) {
           <TCard team={match.teamA} inn={0} opp={match.teamB}/>
           {(match.batting===1||match.inningsOver[0])&&<TCard team={match.teamB} inn={1} opp={match.teamA}/>}
           {match.matchCode&&match.matchCode!=="LOCAL"&&(
-            <MatchMediaGallery matchCode={match.matchCode} currentUser={currentUser}/>
+            <MatchMediaGallery matchCode={match.matchCode} matchDate={match.createdAt} currentUser={currentUser}/>
           )}
         </div>
             <nav style={S.bottomNav}>
@@ -3967,7 +3972,7 @@ function App({ currentUser }) {
         {/* Media gallery — visible to scorer in match screen */}
         {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
           <div style={{padding:"0 12px"}}>
-            <MatchMediaGallery matchCode={match.matchCode} currentUser={currentUser}/>
+            <MatchMediaGallery matchCode={match.matchCode} matchDate={match.createdAt} currentUser={currentUser}/>
           </div>
         )}
       </div>
