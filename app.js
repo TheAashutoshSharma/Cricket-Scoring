@@ -1797,24 +1797,30 @@ function App({ currentUser }) {
   // Falls back to scanning players/ by uid if no users/ record exists
   useEffect(() => {
     if (!currentUser || !_fbDB) return;
+    console.log("[DEBUG] currentUser uid:", currentUser.uid, "displayName:", currentUser.displayName, "email:", currentUser.email);
     _fbDB.ref("users/"+currentUser.uid).once("value", snap => {
       var rec = snap.val() || {};
+      console.log("[DEBUG] users/ record:", JSON.stringify(rec));
       var pid = (rec.playerIds && rec.playerIds.length) ? rec.playerIds[0] : (rec.playerId || null);
       if (pid) {
+        console.log("[DEBUG] userPlayerId set from users/ node:", pid);
         setUserPlayerId(pid);
       } else {
-        // Fallback: scan players/ for uid match
+        console.log("[DEBUG] No playerId in users/ — scanning players/ by uid...");
         _fbDB.ref("players").orderByChild("uid").equalTo(currentUser.uid).once("value", pSnap => {
           var pVal = pSnap.val();
+          console.log("[DEBUG] players/ scan by uid result:", JSON.stringify(pVal));
           if (pVal) {
             var firstId = Object.keys(pVal)[0];
+            console.log("[DEBUG] userPlayerId set from players/ scan:", firstId);
             setUserPlayerId(firstId);
-            // Back-fill users/ node for fast future lookups
             _fbDB.ref("users/"+currentUser.uid).update({ playerId: firstId, playerIds: [firstId] }).catch(()=>{});
+          } else {
+            console.log("[DEBUG] No player record found with uid:", currentUser.uid);
           }
-        }).catch(()=>{});
+        }).catch(e => console.error("[DEBUG] players/ scan error:", e));
       }
-    }).catch(()=>{});
+    }).catch(e => console.error("[DEBUG] users/ read error:", e));
   }, [currentUser]);
   //const [userPlayerId, setUserPlayerId] = useState(null); // linked player id for current user
   const [liveMatches, setLiveMatches] = useState(null); // null=not loaded, []=empty
@@ -1837,13 +1843,15 @@ function App({ currentUser }) {
   // Load player name + photo whenever the linked player changes
   useEffect(() => {
     if (!userPlayerId || !_fbDB) return;
+    console.log("[DEBUG] Loading player record for userPlayerId:", userPlayerId);
     _fbDB.ref("players/"+userPlayerId).once("value", snap => {
       var p = snap.val();
+      console.log("[DEBUG] Player record:", JSON.stringify(p));
       if (p) {
         setUserPhotoUrl(p.photoUrl || null);
         setUserPlayerName(p.name || null);
       }
-    }).catch(() => {});
+    }).catch(e => console.error("[DEBUG] player record load error:", e));
   }, [userPlayerId]);
 
   // Load match history — from matches/ in Firebase (source of truth)
@@ -2924,6 +2932,7 @@ function App({ currentUser }) {
               </div>
               {/* Season Stats — only matches the current user played in */}
               {(()=>{
+                console.log("[DEBUG] Profile render — userPlayerId:", userPlayerId, "userPlayerName:", userPlayerName, "matchHistory count:", matchHistory.length);
                 function isMe(p) {
                   if (!p) return false;
                   if (userPlayerId && p.playerId === userPlayerId) return true;
@@ -2937,8 +2946,16 @@ function App({ currentUser }) {
                   var nm = e.snapshot;
                   var allPlayers = [...((nm.teamA&&nm.teamA.players)||[]),...((nm.teamB&&nm.teamB.players)||[])];
                   var allBowlers = [...((nm.teamA&&nm.teamA.bowlers)||[]),...((nm.teamB&&nm.teamB.bowlers)||[])];
-                  return allPlayers.some(isMe) || allBowlers.some(isMe);
+                  var matched = allPlayers.some(isMe) || allBowlers.some(isMe);
+                  if (matched) console.log("[DEBUG] Matched match:", e.teamA, "vs", e.teamB, e.date);
+                  return matched;
                 });
+                console.log("[DEBUG] myMatches found:", myMatches.length);
+                if (matchHistory.length > 0) {
+                  var sample = matchHistory[0];
+                  var samplePlayers = [...(((sample.snapshot||{}).teamA||{}).players||[]),...(((sample.snapshot||{}).teamB||{}).players||[])];
+                  console.log("[DEBUG] Sample match players (first match):", JSON.stringify(samplePlayers.map(p=>({name:p&&p.name,playerId:p&&p.playerId,uid:p&&p.uid}))));
+                }
                 var myRuns = 0, myWickets = 0, myMatches50 = 0;
                 myMatches.forEach(e=>{
                   var nm = e.snapshot;
