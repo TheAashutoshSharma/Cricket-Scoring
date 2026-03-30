@@ -65,14 +65,14 @@ const blankMatch = (setup, code) => {
   var bf = (setup.battingFirst === 1) ? 1 : 0;
   var aPIds  = setup.teamAPlayerIds  || [];
   var bPIds  = setup.teamBPlayerIds  || [];
-  var aPlayers = setup.teamAPlayers.slice(0,setup.teamACount||6).map((n,i)=>({...mkP(n), playerId: aPIds[i]||null}));
-  var bPlayers = setup.teamBPlayers.slice(0,setup.teamBCount||6).map((n,i)=>({...mkP(n), playerId: bPIds[i]||null}));
+  var aPlayers = setup.teamAPlayers.slice(0,setup.teamACount||0).map((n,i)=>({...mkP(n), playerId: aPIds[i]||null}));
+  var bPlayers = setup.teamBPlayers.slice(0,setup.teamBCount||0).map((n,i)=>({...mkP(n), playerId: bPIds[i]||null}));
   // Always start batting=0. If Team B bats first, swap them into slot 0 (first-innings slot).
   // The rest of the codebase assumes batting=0 is first innings, batting=1 is second/chase.
   var firstTeam  = bf===1 ? {name:setup.teamBName||"Team B", players:bPlayers, bowlers:[]} : {name:setup.teamAName||"Team A", players:aPlayers, bowlers:[]};
   var secondTeam = bf===1 ? {name:setup.teamAName||"Team A", players:aPlayers, bowlers:[]} : {name:setup.teamBName||"Team B", players:bPlayers, bowlers:[]};
-  var firstCount  = bf===1 ? (setup.teamBCount||6) : (setup.teamACount||6);
-  var secondCount = bf===1 ? (setup.teamACount||6) : (setup.teamBCount||6);
+  var firstCount  = bf===1 ? (setup.teamBCount||0) : (setup.teamACount||0);
+  var secondCount = bf===1 ? (setup.teamACount||0) : (setup.teamBCount||0);
   return {
     matchCode: code, createdAt: Date.now(),
     totalOvers: setup.overs,
