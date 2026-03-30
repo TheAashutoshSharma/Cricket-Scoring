@@ -761,11 +761,11 @@ function PlayerPhotoUpload({ player, currentUser, onPhotoSaved, editable }) {
   }
 
   return (
-    <div style={{position:"relative",width:160,height:160,margin:"0 auto 12px"}}>
+    <div style={{position:"relative",width:80,height:80,margin:"0 auto 12px"}}>
       {photoUrl
         ? <img src={photoUrl} alt={player.name}
-            style={{width:160,height:160,borderRadius:"50%",objectFit:"cover",border:"2px solid "+SP.bg3}}/>
-        : <div style={{width:160,height:160,borderRadius:"50%",background:SP.primary,display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,fontWeight:"bold",color:"#0f172a"}}>
+            style={{width:80,height:80,borderRadius:"50%",objectFit:"cover",border:"2px solid "+SP.bg3}}/>
+        : <div style={{width:80,height:80,borderRadius:"50%",background:SP.primary,display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,fontWeight:"bold",color:"#0f172a"}}>
             {player && player.name ? player.name[0].toUpperCase() : "?"}
           </div>
       }
@@ -1780,7 +1780,7 @@ function AuthGate({children}) {
               {/* Common fields */}
               <div style={{marginBottom:12}}>
                 <label style={{...S.lbl,display:"block",marginBottom:6}}>{regType==="player"?"PLAYER NAME":"YOUR NAME"}</label>
-                <input value={name} onChange={e=>{setName(e.target.value);clearForm();}} type="text" placeholder={regType==="player"?"e.g. Rohit Sharma":"e.g. Arjun Patel"} className="sp-input"
+                <input value={name} onChange={e=>{setName(e.target.value);clearForm();}} type="text" placeholder={regType==="player"?"e.g. Virat Kohli":"e.g. Arjun Patel"} className="sp-input"
                   onKeyDown={e=>{if(e.key==="Enter")handleRegister();}}/>
               </div>
 
@@ -3043,8 +3043,8 @@ function App({ currentUser }) {
               <div style={{textAlign:"center",marginBottom:24}}>
                 {userPhotoUrl
                   ? <img src={userPhotoUrl} alt={userPlayerName||currentUser.displayName||"Profile"}
-                      style={{width:160,height:160,borderRadius:"50%",objectFit:"cover",margin:"0 auto 14px",display:"block",border:"2px solid rgba(102,157,255,.3)"}}/>
-                  : <div style={{width:160,height:160,borderRadius:"50%",background:"linear-gradient(135deg,"+SP.secondary+",rgba(102,157,255,.3))",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",fontSize:32}}>
+                      style={{width:80,height:80,borderRadius:"50%",objectFit:"cover",margin:"0 auto 14px",display:"block",border:"2px solid rgba(102,157,255,.3)"}}/>
+                  : <div style={{width:80,height:80,borderRadius:"50%",background:"linear-gradient(135deg,"+SP.secondary+",rgba(102,157,255,.3))",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",fontSize:32}}>
                       {(userPlayerName||currentUser.displayName||currentUser.email||"?")[0].toUpperCase()}
                     </div>
                 }
@@ -4525,7 +4525,7 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
             {icon:"📚",label:"History",tab:"history"},
             {icon:"👤",label:"Profile",tab:"profile"},
           ].map(({icon,label,tab})=>(
-            <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}}}
+            <div key={tab} onClick={()=>{if(typeof onBack==="function")onBack();if(tab==="history"){setScreen("history");}else{setHomeTab(tab);setScreen("home");}}}
               style={{...S.navItem,color:tab==="history"?SP.secondary:SP.textDim,background:tab==="history"?"rgba(102,157,255,.1)":"transparent"}}>
               <span style={{fontSize:20}}>{icon}</span>
               <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
@@ -4549,7 +4549,7 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
           <div style={{background:SP.bg3,borderRadius:12,padding:20,border:"1px solid rgba(73,72,71,.25)",marginBottom:14}}>
             <div style={{marginBottom:12}}>
               <label style={{...S.lbl,display:"block",marginBottom:6}}>PLAYER NAME</label>
-              <input value={editForm.name||""} onChange={e=>setEditForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Rohit Sharma" style={inSt} autoFocus/>
+              <input value={editForm.name||""} onChange={e=>setEditForm(f=>({...f,name:e.target.value}))} placeholder="e.g. Virat Kohli" style={inSt} autoFocus/>
             </div>
             <div style={{marginBottom:12}}>
               <label style={{color:SP.textDim,fontSize:11,letterSpacing:1,display:"block",marginBottom:8}}>ROLE</label>
@@ -4662,7 +4662,7 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
             {icon:"📚",label:"History",tab:"history"},
             {icon:"👤",label:"Profile",tab:"profile"},
           ].map(({icon,label,tab})=>(
-            <div key={tab} onClick={()=>{if(tab==="history")setScreen&&setScreen("history");else{setHomeTab&&setHomeTab(tab);setScreen&&setScreen("home");}}}
+            <div key={tab} onClick={()=>{onBack&&onBack();if(tab==="history"){setScreen&&setScreen("history");}else{setHomeTab&&setHomeTab(tab);setScreen&&setScreen("home");}}}
               style={{...S.navItem,color:SP.textDim}}>
               <span style={{fontSize:20}}>{icon}</span>
               <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
@@ -4724,7 +4724,7 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
             {icon:"📚",label:"History",tab:"history"},
             {icon:"👤",label:"Profile",tab:"profile"},
           ].map(({icon,label,tab})=>(
-            <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}}}
+            <div key={tab} onClick={()=>{if(typeof onBack==="function")onBack();if(tab==="history"){setScreen("history");}else{setHomeTab(tab);setScreen("home");}}}
               style={{...S.navItem,color:tab==="history"?SP.secondary:SP.textDim,background:tab==="history"?"rgba(102,157,255,.1)":"transparent"}}>
               <span style={{fontSize:20}}>{icon}</span>
               <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
@@ -4771,7 +4771,7 @@ function PlayersScreen({ currentUser, isAdmin, onBack, initialPlayerId, setScree
             {icon:"📚",label:"History",tab:"history"},
             {icon:"👤",label:"Profile",tab:"profile"},
           ].map(({icon,label,tab})=>(
-            <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}}}
+            <div key={tab} onClick={()=>{if(typeof onBack==="function")onBack();if(tab==="history"){setScreen("history");}else{setHomeTab(tab);setScreen("home");}}}
               style={{...S.navItem,color:tab==="Profile"?SP.secondary:SP.textDim,background:tab==="Profile"?"rgba(102,157,255,.1)":"transparent"}}>
               <span style={{fontSize:20}}>{icon}</span>
               <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
@@ -5056,7 +5056,7 @@ function TeamsScreen({ currentUser, isAdmin, onBack, setScreen, setHomeTab }) {
             {icon:"📚",label:"History",tab:"history"},
             {icon:"👤",label:"Profile",tab:"profile"},
           ].map(({icon,label,tab})=>(
-            <div key={tab} onClick={()=>{if(tab==="history")setScreen("history");else{setHomeTab(tab);setScreen("home");}}}
+            <div key={tab} onClick={()=>{if(typeof onBack==="function")onBack();if(tab==="history"){setScreen("history");}else{setHomeTab(tab);setScreen("home");}}}
               style={{...S.navItem,color:tab==="history"?SP.secondary:SP.textDim,background:tab==="history"?"rgba(102,157,255,.1)":"transparent"}}>
               <span style={{fontSize:20}}>{icon}</span>
               <span style={{fontSize:9,letterSpacing:1.5,fontWeight:"700",textTransform:"uppercase"}}>{label}</span>
