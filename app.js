@@ -761,11 +761,11 @@ function PlayerPhotoUpload({ player, currentUser, onPhotoSaved, editable }) {
   }
 
   return (
-    <div style={{position:"relative",width:80,height:80,margin:"0 auto 12px"}}>
+    <div style={{position:"relative",width:140,height:140,margin:"0 auto 12px"}}>
       {photoUrl
         ? <img src={photoUrl} alt={player.name}
-            style={{width:80,height:80,borderRadius:"50%",objectFit:"cover",border:"2px solid "+SP.bg3}}/>
-        : <div style={{width:80,height:80,borderRadius:"50%",background:SP.primary,display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,fontWeight:"bold",color:"#0f172a"}}>
+            style={{width:140,height:140,borderRadius:"50%",objectFit:"cover",border:"2px solid "+SP.bg3}}/>
+        : <div style={{width:140,height:140,borderRadius:"50%",background:SP.primary,display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,fontWeight:"bold",color:"#0f172a"}}>
             {player && player.name ? player.name[0].toUpperCase() : "?"}
           </div>
       }
@@ -3043,8 +3043,8 @@ function App({ currentUser }) {
               <div style={{textAlign:"center",marginBottom:24}}>
                 {userPhotoUrl
                   ? <img src={userPhotoUrl} alt={userPlayerName||currentUser.displayName||"Profile"}
-                      style={{width:80,height:80,borderRadius:"50%",objectFit:"cover",margin:"0 auto 14px",display:"block",border:"2px solid rgba(102,157,255,.3)"}}/>
-                  : <div style={{width:80,height:80,borderRadius:"50%",background:"linear-gradient(135deg,"+SP.secondary+",rgba(102,157,255,.3))",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",fontSize:32}}>
+                      style={{width:140,height:140,borderRadius:"50%",objectFit:"cover",margin:"0 auto 14px",display:"block",border:"2px solid rgba(102,157,255,.3)"}}/>
+                  : <div style={{width:140,height:140,borderRadius:"50%",background:"linear-gradient(135deg,"+SP.secondary+",rgba(102,157,255,.3))",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",fontSize:32}}>
                       {(userPlayerName||currentUser.displayName||currentUser.email||"?")[0].toUpperCase()}
                     </div>
                 }
