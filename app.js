@@ -3673,23 +3673,15 @@ function App({ currentUser }) {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               {isViewer?<span className="sp-live-dot"/>:<span style={{color:SP.textDim,fontSize:10,letterSpacing:1}}>📡 BROADCASTING</span>}
-			  {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
-              <button onClick={()=>shareMatch(match.matchCode)}
-                style={{...S.btnSm,color:SP.secondary,borderColor:"rgba(102,157,255,.25)",padding:"4px 10px",fontSize:13}}>
-                🔗 Share
-              </button>
-			  )}
               {isViewer&&<span style={{color:SP.textDim,fontSize:10,letterSpacing:2}}>LIVE</span>}
             </div>
             <div style={{background:"rgba(102,157,255,.1)",border:"1px solid rgba(102,157,255,.25)",borderRadius:8,padding:"4px 12px",display:"flex",alignItems:"center",gap:2}}>
-              //<span style={{color:SP.textDim,fontSize:10}}>CODE</span>
 			  {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
               <button onClick={()=>shareMatch(match.matchCode)}
                 style={{...S.btnSm,color:SP.secondary,borderColor:"rgba(102,157,255,.25)",padding:"4px 10px",fontSize:13}}>
                 🔗 Share :{match.matchCode}
               </button>
 			  )}
-              //<span style={{color:SP.secondary,fontWeight:"bold",fontSize:10,fontFamily:"monospace",letterSpacing:2}}>{match.matchCode}</span>
             </div>
           </div>
         )}
