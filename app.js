@@ -47,7 +47,7 @@ function genCode() {
 }
 
 // ── Factories ────────────────────────────────────────────────────
-const mkP = n => ({ name:n||"Player", runs:0, balls:0, fours:0, sixes:0, out:false, retired:false, howOut:"", dismissedBy:"" });
+const mkP = n => ({ name:n||"Player", runs:0, balls:0, fours:0, sixes:0, out:false, retired:false, howOut:"", dismissedBy:"", caughtBy:"" });
 const mkB = n => ({ name:n||"Bowler", overs:0, balls:0, maidens:0, runs:0, wickets:0 });
 
 const blankSetup = () => ({
@@ -267,6 +267,65 @@ function OpeningBatsmenModal({match, onSelect}) {
             ← Back
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── FielderPickerModal — pick fielder for Caught / Run Out ──
+function FielderPickerModal({ match, dismissalType, onSelect, onCancel }) {
+  if (!match) return null;
+  var bt = match.batting;
+  var wTeam = bt===0 ? match.teamB : match.teamA; // fielding/bowling team
+  const [search, setSearch] = React.useState("");
+
+  var label = dismissalType==="Caught"
+    ? "Who took the catch?"
+    : "Who ran out the batsman?";
+  var sub = dismissalType==="Caught"
+    ? "Select the fielder or bowler who caught it"
+    : "Select the fielder who threw / ran out";
+
+  var players = wTeam.players.filter(p=>
+    p.name && p.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:1200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+      <div style={{background:SP.bg3,borderRadius:"20px 20px 0 0",padding:"24px 20px 36px",width:"100%",maxWidth:480,border:"1px solid rgba(73,72,71,.25)",borderBottom:"none",maxHeight:"80vh",display:"flex",flexDirection:"column"}}>
+        <div style={{textAlign:"center",marginBottom:16,flexShrink:0}}>
+          <div style={{fontSize:24,marginBottom:6}}>{dismissalType==="Caught"?"🤲":"🏃"}</div>
+          <div style={{color:SP.primary,fontSize:14,fontWeight:"bold",letterSpacing:1,marginBottom:4}}>{label.toUpperCase()}</div>
+          <div style={{color:SP.textDim,fontSize:12}}>{sub}</div>
+        </div>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder={"Search "+wTeam.name+" players…"}
+          style={{width:"100%",background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:9,
+            padding:"9px 12px",color:"#fff",fontSize:14,outline:"none",boxSizing:"border-box",
+            fontFamily:"Lexend,Georgia,sans-serif",marginBottom:10,flexShrink:0}}/>
+        <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:6}}>
+          {players.map((p,i)=>(
+            <button key={i} onClick={()=>onSelect(p.name)}
+              style={{padding:"12px 16px",borderRadius:12,border:"1px solid rgba(73,72,71,.25)",
+                background:SP.bg,color:"#fff",fontSize:14,cursor:"pointer",
+                fontFamily:"Lexend,Georgia,sans-serif",display:"flex",justifyContent:"space-between",
+                alignItems:"center",textAlign:"left"}}>
+              <div>
+                <div style={{fontWeight:"bold",marginBottom:2}}>{p.name}</div>
+                <div style={{color:SP.textDim,fontSize:11}}>{p.role||"Fielder"}</div>
+              </div>
+              <span style={{color:SP.primary,fontSize:18}}>→</span>
+            </button>
+          ))}
+          {players.length===0&&(
+            <div style={{color:SP.textDim,textAlign:"center",padding:20,fontSize:13}}>No players found</div>
+          )}
+        </div>
+        <button onClick={onCancel}
+          style={{marginTop:12,width:"100%",padding:"11px 0",background:"transparent",
+            border:"1px solid rgba(73,72,71,.25)",borderRadius:10,color:SP.textDim,
+            fontSize:13,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",flexShrink:0}}>
+          Skip (unknown fielder)
+        </button>
       </div>
     </div>
   );
@@ -1899,6 +1958,7 @@ function App({ currentUser }) {
   const [recallPrompt, setRecallPrompt] = useState(false);
   // Next batter picker: shown after wicket or retirement
   const [nextBatterPick, setNextBatterPick] = useState(false);
+  const [pendingWicket,  setPendingWicket]  = useState(null); // {how} waiting for fielder pick
   // Replace batter: slot (0|1) of a batsman who hasn't faced a ball yet
   const [replacingBatter, setReplacingBatter] = useState(null);
   // Replace bowler who hasn't bowled a ball yet
@@ -2073,7 +2133,28 @@ function App({ currentUser }) {
         setScreen(d.screen);
       }
     } catch(e) {}
+
+    // ── Deep link: ?match=CODE in URL — auto-join on load ──
+    try {
+      var params = new URLSearchParams(window.location.search);
+      var deepCode = params.get("match");
+      if (deepCode) {
+        // Clean the URL without reloading
+        window.history.replaceState({}, "", window.location.pathname);
+        // Store for after Firebase is ready
+        window._pendingMatchCode = deepCode.toUpperCase();
+      }
+    } catch(e2) {}
   }, []);
+
+  // Once Firebase is ready, handle any pending deep link code
+  useEffect(() => {
+    if (fbReady && window._pendingMatchCode) {
+      var code = window._pendingMatchCode;
+      window._pendingMatchCode = null;
+      joinByCode(code);
+    }
+  }, [fbReady]);
 
   // ── Hardware / browser back button interception ──────────────────
   useEffect(() => {
@@ -2588,6 +2669,26 @@ function App({ currentUser }) {
     attachListener(code);
   }
 
+  function shareMatch(code) {
+    var url = window.location.origin + window.location.pathname + "?match=" + code;
+    var text = "Watch this live cricket match on " + APP_NAME + "!";
+    if (navigator.share) {
+      navigator.share({ title: APP_NAME + " — Live Match", text, url }).catch(()=>{});
+    } else {
+      // Fallback: copy to clipboard + show WhatsApp link
+      var waUrl = "https://wa.me/?text=" + encodeURIComponent(text + " " + url);
+      // Try clipboard first
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(url).then(()=>{
+          setScorerToast("Link copied! Share: " + code);
+          setTimeout(()=>setScorerToast(""), 3000);
+        }).catch(()=>{ window.open(waUrl, "_blank"); });
+      } else {
+        window.open(waUrl, "_blank");
+      }
+    }
+  }
+
   // ── History / Undo ───────────────────────────────────────────
   function pushHist(m) {
     setHistory(h => {
@@ -2736,7 +2837,12 @@ function App({ currentUser }) {
     });
   }
 
-  function addWicket(how) {
+  function addWicket(how, fielderName) {
+    // For Caught and Run Out, show fielder picker first
+    if ((how==="Caught" || how==="Run Out") && fielderName===undefined) {
+      setPendingWicket({how});
+      return;
+    }
     setMatch(prev => {
       pushHist(prev);
       var m = JSON.parse(JSON.stringify(prev));
@@ -2762,6 +2868,12 @@ function App({ currentUser }) {
       bT.players[b1].out=true; bT.players[b1].retired=false;
       bT.players[b1].balls++;
       bT.players[b1].dismissedBy = wT.bowlers[bi].name;
+      // For Caught: caughtBy = fielder (may differ from bowler); for Run Out: caughtBy = thrower
+      if ((how==="Caught"||how==="Run Out") && fielderName) {
+        bT.players[b1].caughtBy = fielderName;
+      } else if (how==="Caught") {
+        bT.players[b1].caughtBy = wT.bowlers[bi].name; // caught & bowled
+      }
       wT.bowlers[bi].wickets++; wT.bowlers[bi].balls++;
       m.wickets[bt]++; m.balls[bt]++;
       if (m.balls[bt]===6) {
@@ -3271,11 +3383,11 @@ function App({ currentUser }) {
                       <div style={{color:p.out?"#64748b":p.retired?"#67e8f9":"#e2e8f0",fontSize:13}}>{p.name}</div>
                       {p.out&&<div style={{color:SP.textDim,fontSize:10}}>
                         {p.howOut==="Bowled"?`b ${p.dismissedBy}`:
-                         p.howOut==="Caught"?`c & b ${p.dismissedBy}`:
+                         p.howOut==="Caught"?(p.caughtBy&&p.caughtBy!==p.dismissedBy?`c ${p.caughtBy} b ${p.dismissedBy}`:`c & b ${p.dismissedBy}`):
                          p.howOut==="LBW"?`lbw b ${p.dismissedBy}`:
                          p.howOut==="Stumped"?`st b ${p.dismissedBy}`:
                          p.howOut==="Hit Wicket"?`hit wkt b ${p.dismissedBy}`:
-                         p.howOut==="Run Out"?`run out`:p.howOut}
+                         p.howOut==="Run Out"?(p.caughtBy?`run out (${p.caughtBy})`:`run out`):p.howOut}
                       </div>}
                       {p.retired&&<div style={{color:"#0891b2",fontSize:10}}>Retired Hurt</div>}
                     </td>
@@ -3801,6 +3913,12 @@ function App({ currentUser }) {
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
             <button onClick={()=>setScreen("scorecard")} style={S.btnSm}>📊</button>
+            {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
+              <button onClick={()=>shareMatch(match.matchCode)}
+                style={{...S.btnSm,color:SP.secondary,borderColor:"rgba(102,157,255,.25)"}}>
+                🔗
+              </button>
+            )}
             {canScore && (
               scorerActive
                 ? iRequestedHandover
@@ -3890,11 +4008,11 @@ function App({ currentUser }) {
                       <div style={{color:p.out?"#64748b":p.retired?"#67e8f9":"#e2e8f0",fontSize:13}}>{p.name}</div>
                       {p.out&&<div style={{color:SP.textDim,fontSize:10}}>
                         {p.howOut==="Bowled"   ? `b ${p.dismissedBy}` :
-                         p.howOut==="Caught"   ? `c & b ${p.dismissedBy}` :
+                         p.howOut==="Caught"   ? (p.caughtBy&&p.caughtBy!==p.dismissedBy?`c ${p.caughtBy} b ${p.dismissedBy}`:`c & b ${p.dismissedBy}`) :
                          p.howOut==="LBW"      ? `lbw b ${p.dismissedBy}` :
                          p.howOut==="Stumped"  ? `st b ${p.dismissedBy}` :
                          p.howOut==="Hit Wicket"? `hit wkt b ${p.dismissedBy}` :
-                         p.howOut==="Run Out"  ? `run out` :
+                         p.howOut==="Run Out"  ? (p.caughtBy?`run out (${p.caughtBy})`:`run out`) :
                          p.howOut}
                       </div>}
                       {p.retired&&<div style={{color:"#0891b2",fontSize:10}}>Retired Hurt</div>}
@@ -3974,6 +4092,12 @@ function App({ currentUser }) {
       <PendingExtraModal extra={pendingExtra} onConfirm={confirmExtra} onCancel={()=>setPendingExtra(null)}/>
       {overComplete && <OverCompleteModal match={match} onSelect={selectNewBowler} isFirstBall={match&&match.teamA&&match.teamB&&(match.batting===0?match.teamB:match.teamA).bowlers.length===0}/>}
       {needsOpeners && !nextBatterPick && <OpeningBatsmenModal match={match} onSelect={selectOpeners}/>}
+      {pendingWicket && <FielderPickerModal
+        match={match}
+        dismissalType={pendingWicket.how}
+        onSelect={fielderName=>{setPendingWicket(null);addWicket(pendingWicket.how, fielderName);}}
+        onCancel={()=>{setPendingWicket(null);addWicket(pendingWicket.how, null);}}
+      />}
       {nextBatterPick && <NextBatterModal match={match} onSelect={selectNextBatter}/>}
       {recallPrompt && <RecallPromptModal match={match} onRecall={recallRetired} onDecline={declineRecall}/>}
       <ReplaceBatterModal/>
@@ -3998,6 +4122,12 @@ function App({ currentUser }) {
               ↩ Undo
             </button>
             <button onClick={()=>setScreen("scorecard")} style={{...S.btnSm,padding:"4px 10px",fontSize:11}}>📋</button>
+            {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
+              <button onClick={()=>shareMatch(match.matchCode)}
+                style={{...S.btnSm,color:SP.secondary,borderColor:"rgba(102,157,255,.25)",padding:"4px 10px",fontSize:11}}>
+                🔗 Share
+              </button>
+            )}
             {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
               <button onClick={()=>handOffScoring(match)}
                 style={{...S.btnSm,color:SP.textDim,padding:"4px 10px",fontSize:11}}>
