@@ -3884,9 +3884,9 @@ function App({ currentUser }) {
   function BallLog() {
     if (!lastBalls.length) return null;
     return (
-      <div style={{marginBottom:5,display:"flex",gap:6,flexWrap:"wrap"}}>
+      <div style={{marginBottom:10,display:"flex",gap:6,flexWrap:"wrap"}}>
         {lastBalls.map((b,i)=>(
-          <div key={i} style={{width:36,height:36,borderRadius:"50%",background:bBg(b),display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:6,fontWeight:"bold",fontFamily:"Lexend,Georgia,sans-serif",boxShadow:b.r===6?"0 0 8px rgba(156,255,147,.4)":b.r===4?"0 0 8px rgba(102,157,255,.3)":"none"}}>
+          <div key={i} style={{width:20,height:20,borderRadius:"50%",background:bBg(b),display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:8,fontWeight:"bold",fontFamily:"Lexend,Georgia,sans-serif",boxShadow:b.r===6?"0 0 8px rgba(156,255,147,.4)":b.r===4?"0 0 8px rgba(102,157,255,.3)":"none"}}>
             {bTxt(b)}
           </div>
         ))}
