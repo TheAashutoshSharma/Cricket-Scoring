@@ -4116,10 +4116,6 @@ function App({ currentUser }) {
             {syncing&&<span style={{color:SP.secondary,fontSize:10,marginLeft:6}}>↑</span>}
           </span>
           <div style={{display:"flex",gap:6}}>
-            <button onClick={undo} disabled={!history.length}
-              style={{...S.btnSm,opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",padding:"4px 10px",fontSize:11}}>
-              ↩ Undo
-            </button>
             <button onClick={()=>setScreen("scorecard")} style={{...S.btnSm,padding:"4px 10px",fontSize:11}}>📋</button>
             {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
               <button onClick={()=>handOffScoring(match)}
@@ -4204,6 +4200,10 @@ function App({ currentUser }) {
             {/* RUNS */}
             <div style={S.card}>
               <div style={S.lbl}>RUNS</div>
+			  <button onClick={undo} disabled={!history.length}
+              style={{...S.btnSm,opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",padding:"4px 10px",fontSize:11}}>
+              ↩ Undo
+              </button>
               <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:6}}>
                 {[0,1,2,3,4,5,6].map(r=>(
                   <button key={r} onClick={()=>addRuns(r)}
