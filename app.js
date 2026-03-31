@@ -4200,10 +4200,6 @@ function App({ currentUser }) {
             {/* RUNS */}
             <div style={S.card}>
               <div style={S.lbl}>RUNS</div>
-			  <button onClick={undo} disabled={!history.length}
-              style={{...S.btnSm,opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",padding:"4px 10px",fontSize:11}}>
-              ↩ Undo
-              </button>
               <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:6}}>
                 {[0,1,2,3,4,5,6].map(r=>(
                   <button key={r} onClick={()=>addRuns(r)}
@@ -4224,6 +4220,13 @@ function App({ currentUser }) {
                   cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
                   letterSpacing:1}}>
                 1D &nbsp;<span style={{color:"rgba(103,232,249,.6)",fontSize:11,fontWeight:"normal"}}>Declared — no strike change</span>
+              </button>
+			  <button onClick={undo} disabled={!history.length}
+			  style={{width:"100%",padding:"10px 0",borderRadius:10,border:"1px solid rgba(14,116,144,.4)",
+                  background:"rgba(8,145,178,.12)",color:"#67e8f9",fontWeight:"bold",fontSize:13,
+                  cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
+                  letterSpacing:1}}>
+              ↩ Undo
               </button>
             </div>
 
