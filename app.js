@@ -27,6 +27,7 @@ const ADMIN_EMAILS = [
   "aashuitdude@gmail.com",
   "aashutosh22@gmail.com",
 ];
+const APP_NAME = "Cricket Pulse 🏏"
 
 // ── Firebase ─────────────────────────────────────────────────────
 var _fbApp = null, _fbDB = null, _fbAuth = null;
