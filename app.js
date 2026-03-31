@@ -4172,10 +4172,10 @@ function App({ currentUser }) {
               m2.striker = 0;
               m2.currentBatsmen = [0,1];
               m2.currentBowler = 0;
-              m2.needsBowler = true; // must pick first bowler of 2nd innings
+              m2.needsBowler = true;   // must pick first bowler of 2nd innings
+              m2.needsOpeners = true;  // must pick opening batsmen for 2nd innings
               // In 2nd innings (batting=1), teamB is bowling — clear their bowlers for fresh start
               m2.teamB.bowlers = [];
-              // Also reset currentBowler
               m2.currentBowler = 0;
               return m2;
             })}
