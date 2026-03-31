@@ -4223,8 +4223,7 @@ function App({ currentUser }) {
               </button>
 			  <button onClick={undo} disabled={!history.length}
 			  style={{width:"50%",padding:"10px 0",borderRadius:10,border:"1px solid rgba(14,116,144,.4)",
-                  background:"rgba(251,146,60,.3)",color:"#fb923c",fontWeight:"bold",fontSize:13,
-                  cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
+                  opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",fontWeight:"bold",fontSize:13,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
                   letterSpacing:1}}>
               ↩ Undo
               </button>
