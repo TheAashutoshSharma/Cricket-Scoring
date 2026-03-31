@@ -3673,6 +3673,12 @@ function App({ currentUser }) {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               {isViewer?<span className="sp-live-dot"/>:<span style={{color:SP.textDim,fontSize:10,letterSpacing:1}}>📡 BROADCASTING</span>}
+			  {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
+              <button onClick={()=>shareMatch(match.matchCode)}
+                style={{...S.btnSm,color:SP.secondary,borderColor:"rgba(102,157,255,.25)",padding:"4px 10px",fontSize:11}}>
+                🔗 Share
+              </button>
+			  )}
               {isViewer&&<span style={{color:SP.textDim,fontSize:10,letterSpacing:2}}>LIVE</span>}
             </div>
             <div style={{background:"rgba(102,157,255,.1)",border:"1px solid rgba(102,157,255,.25)",borderRadius:8,padding:"4px 12px",display:"flex",alignItems:"center",gap:8}}>
@@ -4123,12 +4129,6 @@ function App({ currentUser }) {
               ↩ Undo
             </button>
             <button onClick={()=>setScreen("scorecard")} style={{...S.btnSm,padding:"4px 10px",fontSize:11}}>📋</button>
-            {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
-              <button onClick={()=>shareMatch(match.matchCode)}
-                style={{...S.btnSm,color:SP.secondary,borderColor:"rgba(102,157,255,.25)",padding:"4px 10px",fontSize:11}}>
-                🔗 Share
-              </button>
-            )}
             {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
               <button onClick={()=>handOffScoring(match)}
                 style={{...S.btnSm,color:SP.textDim,padding:"4px 10px",fontSize:11}}>
