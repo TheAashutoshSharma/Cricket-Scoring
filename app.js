@@ -3660,7 +3660,7 @@ function App({ currentUser }) {
   var nonStriker = bTeam.players[match.currentBatsmen&&match.currentBatsmen[1-(match.striker||0)]];
   var bowler     = wTeam.bowlers[match.currentBowler||0];
   var target     = bt===1?match.runs[0]+1:null;
-  var needed     = target?target-match.runs[1]:null;
+  var needed     = target?Math.max(0,target-match.runs[1]):null;
   var ballsLeft  = (match.totalOvers-match.overs[bt])*6-match.balls[bt];
   var lastBalls  = (match.ballLog&&match.ballLog[bt])||[];
   lastBalls      = lastBalls.slice(-12);
