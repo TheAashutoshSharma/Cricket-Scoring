@@ -4215,14 +4215,14 @@ function App({ currentUser }) {
               </div>
               {/* 1 Declared — adds 1 run, no strike rotation */}
               <button onClick={()=>addRuns(1, null, true)}
-                style={{width:"50%",padding:"10px 0",borderRadius:10,border:"1px solid rgba(14,116,144,.4)",
+                style={{width:"45%",padding:"10px 0",borderRadius:10,border:"1px solid rgba(14,116,144,.4)",
                   background:"rgba(8,145,178,.12)",color:"#67e8f9",fontWeight:"bold",fontSize:13,
                   cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
                   letterSpacing:1}}>
-                1D &nbsp;<span style={{color:"rgba(103,232,249,.6)",fontSize:11,fontWeight:"normal"}}>Declared — no strike change</span>
+                1D &nbsp;<span style={{color:"rgba(103,232,249,.6)",fontSize:8,fontWeight:"normal"}}>Declared — no strike change</span>
               </button>
 			  <button onClick={undo} disabled={!history.length}
-			  style={{width:"50%",padding:"10px 0",borderRadius:10,border:"1px solid rgba(14,116,144,.4)",
+			  style={{width:"45%",padding:"10px 0",borderRadius:10,border:"1px solid rgba(14,116,144,.4)",
                   opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",fontWeight:"bold",fontSize:13,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
                   letterSpacing:1}}>
               ↩ Undo
