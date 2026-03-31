@@ -3681,9 +3681,9 @@ function App({ currentUser }) {
 			  )}
               {isViewer&&<span style={{color:SP.textDim,fontSize:10,letterSpacing:2}}>LIVE</span>}
             </div>
-            <div style={{background:"rgba(102,157,255,.1)",border:"1px solid rgba(102,157,255,.25)",borderRadius:8,padding:"4px 12px",display:"flex",alignItems:"center",gap:8}}>
+            <div style={{background:"rgba(102,157,255,.1)",border:"1px solid rgba(102,157,255,.25)",borderRadius:8,padding:"4px 12px",display:"flex",alignItems:"center",gap:5}}>
               <span style={{color:SP.textDim,fontSize:10}}>CODE</span>
-              <span style={{color:SP.secondary,fontWeight:"bold",fontSize:18,fontFamily:"monospace",letterSpacing:4}}>{match.matchCode}</span>
+              <span style={{color:SP.secondary,fontWeight:"bold",fontSize:15,fontFamily:"monospace",letterSpacing:2}}>{match.matchCode}</span>
             </div>
           </div>
         )}
