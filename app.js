@@ -2724,7 +2724,12 @@ function App({ currentUser }) {
   }
   function undo() {
     if (!history.length) return;
-    setMatch(history[history.length-1]);
+    var target = history[history.length-1];
+    // If undoing would revert to a different innings, ask for confirmation
+    if (target.batting !== match.batting) {
+      if (!confirm("This will undo the start of the 2nd innings and return to the 1st innings. Are you sure?")) return;
+    }
+    setMatch(target);
     setHistory(h => h.slice(0,-1));
   }
 
