@@ -4276,14 +4276,6 @@ function App({ currentUser }) {
                   </button>
                 ))}
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-                {["Bye","Leg Bye"].map(ex=>(
-                  <button key={ex} onClick={()=>addRuns(1,ex)}
-                    style={{padding:"12px 0",borderRadius:10,border:"none",background:SP.bg4,color:SP.textSec,fontWeight:"bold",fontSize:12,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif"}}>
-                    {ex} +1
-                  </button>
-                ))}
-              </div>
             </div>
 
             {/* WICKET */}
