@@ -3980,13 +3980,6 @@ function App({ currentUser }) {
           <div style={{margin:"0 12px 12px",background:SP.bg3,borderRadius:10,padding:20,textAlign:"center",border:"1px solid rgba(102,157,255,.2)"}}>
             <div style={{fontSize:30,marginBottom:6}}>🏆</div>
             <div style={{color:SP.primary,fontWeight:"bold",fontSize:18,marginBottom:4}}>Match Over!</div>
-																			  
-																																 
-																																																																																	
-									
-				  
-		
-					   
             {match.runs[1]>match.runs[0]?<div style={{color:SP.primary,fontSize:14}}>{match.teamB.name} wins by {10-match.wickets[1]} wickets!</div>
              :match.runs[1]<match.runs[0]?<div style={{color:SP.tertiary,fontSize:14}}>{match.teamA.name} wins by {match.runs[0]-match.runs[1]} runs!</div>
              :<div style={{color:SP.primary,fontSize:14}}>Match Tied!</div>}
@@ -4205,7 +4198,6 @@ function App({ currentUser }) {
               m2.currentBatsmen = [0,1];
               m2.currentBowler = 0;
               m2.needsBowler = true; // must pick first bowler of 2nd innings
-																				   
               // In 2nd innings (batting=1), teamB is bowling — clear their bowlers for fresh start
               m2.teamB.bowlers = [];
               // Also reset currentBowler
@@ -4223,13 +4215,6 @@ function App({ currentUser }) {
           <div style={{margin:"0 12px 12px",background:SP.bg3,borderRadius:10,padding:20,textAlign:"center",border:"1px solid rgba(102,157,255,.2)"}}>
             <div style={{fontSize:30,marginBottom:6}}>🏆</div>
             <div style={{color:SP.primary,fontWeight:"bold",fontSize:18,marginBottom:6}}>Match Over!</div>
-																			  
-																																 
-																																																																																	
-									
-				  
-		
-					   
             {match.runs[1]>match.runs[0]?<div style={{color:SP.primary,fontSize:14}}>{match.teamB.name} wins by {10-match.wickets[1]} wickets!</div>
              :match.runs[1]<match.runs[0]?<div style={{color:SP.tertiary,fontSize:14}}>{match.teamA.name} wins by {match.runs[0]-match.runs[1]} runs!</div>
              :<div style={{color:SP.primary,fontSize:14}}>Match Tied!</div>}
