@@ -3847,17 +3847,19 @@ function App({ currentUser }) {
           <div style={{marginTop:8}}>
             <button onClick={()=>setReplacingBowler(true)}
               style={{fontSize:10,padding:"3px 10px",borderRadius:6,background:"transparent",border:"1px solid rgba(251,191,36,.35)",color:"#fbbf24",cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"600",letterSpacing:.5}}>
-              ⇄ Replace
+              ⇄
             </button>
           </div>
         )}
-		<button onClick={undo} disabled={!history.length}
+		<div style={{marginTop:8}}>
+		  <button onClick={undo} disabled={!history.length}
 			  style={{width:"10%",padding:"1px 0",borderRadius:10,border:"1px solid rgba(14,116,144,.4)",
                   opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",fontWeight:"bold",fontSize:8,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
                   letterSpacing:1}}>
               Undo
 			  ↩
-        </button>
+          </button>
+		</div>
       </div>
     );
   }
