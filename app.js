@@ -3862,7 +3862,24 @@ function App({ currentUser }) {
       </div>
     );
   }
-	
+
+  function UndoCard() {
+    return (
+      <div style={{...S.card,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{color:SP.textDim,fontSize:10,marginBottom:3,letterSpacing:1,fontWeight:"600"}}>BOWLING — {wTeam.name}</div>
+          <button onClick={undo} disabled={!history.length}
+			  style={{padding:"3px 10px",borderRadius:6,border:"1px solid rgba(14,116,144,.4)",
+                  opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",fontWeight:"bold",fontSize:8,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
+                  letterSpacing:1}}>
+              Undo ↩
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+
   function ReplaceBowlerModal() {
     if (!replacingBowler || !bowler) return null;
     var allFielders = wTeam.players;
@@ -3976,6 +3993,7 @@ function App({ currentUser }) {
         <div style={{padding:"0 12px"}}>
           <BatterCard editable={false}/>
           <BowlerCard editable={false}/>
+		  <UndoCard />
           <BallLog/>
         </div>
         {match.inningsOver[0]&&bt===0&&(
@@ -4184,7 +4202,8 @@ function App({ currentUser }) {
         <div style={{padding:"0 12px"}}>
           <BatterCard editable={true}/>
           <BowlerCard editable={true}/>
-          <BallLog/>
+          <UndoCard />
+		  <BallLog/>
         </div>
 
         {/* Innings done */}
