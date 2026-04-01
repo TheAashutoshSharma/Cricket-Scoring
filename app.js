@@ -3705,6 +3705,7 @@ function App({ currentUser }) {
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               {isViewer?<span className="sp-live-dot"/>:<span className="sp-nav-live-dot">📡 BROADCASTING</span>}
+			  {isViewer?<span className="sp-live-dot"/>:<span style={{color:SP.textDim,fontSize:10,letterSpacing:1}}>BROADCASTING</span>}
               {isViewer&&<span style={{color:SP.textDim,fontSize:10,letterSpacing:2}}>LIVE</span>}
             </div>
             <div>
