@@ -3851,14 +3851,6 @@ function App({ currentUser }) {
             </div>
           ))}
         </div>
-		<div style={{marginTop:8, marginLeft:5}}>
-		  <button onClick={undo} disabled={!history.length}
-			  style={{padding:"3px 10px",borderRadius:6,border:"1px solid rgba(14,116,144,.4)",
-                  opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",fontWeight:"bold",fontSize:8,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
-                  letterSpacing:1}}>
-              Undo ↩
-          </button>
-		</div>
       </div>
     );
   }
@@ -3867,9 +3859,8 @@ function App({ currentUser }) {
     return (
       <div style={{...S.card,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{color:SP.textDim,fontSize:10,marginBottom:3,letterSpacing:1,fontWeight:"600"}}>BOWLING — {wTeam.name}</div>
           <button onClick={undo} disabled={!history.length}
-			  style={{padding:"3px 10px",borderRadius:6,border:"1px solid rgba(14,116,144,.4)",
+			  style={{width:"100%",padding:"3px 10px",borderRadius:6,border:"1px solid rgba(14,116,144,.4)",
                   opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",fontWeight:"bold",fontSize:8,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
                   letterSpacing:1}}>
               Undo ↩
