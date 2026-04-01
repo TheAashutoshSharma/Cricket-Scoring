@@ -2265,16 +2265,6 @@ function App({ currentUser }) {
     } catch(e) {}
   }, [match, isViewer, screen, homeTab, showPlayers, showTeams]);
 
-  // Persist undo history to Firebase (scorer only, non-LOCAL matches)
-  useEffect(() => {
-    if (!match || isViewer || !fbReady || !match.matchCode || match.matchCode==="LOCAL") return;
-    if (!_fbDB) return;
-    // Store trimmed undo stack alongside the match
-    _fbDB.ref("matches/"+match.matchCode+"/undoHistory").set(
-      history.length ? history.slice(-MAX_HIST) : null
-    ).catch(()=>{});
-  }, [history]);
-
   // Sync to Firebase (scorer only)
   useEffect(() => {
     if (!match || isViewer || !fbReady || !match.matchCode || match.matchCode==="LOCAL") return;
@@ -2294,6 +2284,9 @@ function App({ currentUser }) {
         scorerName:       live.scorerName       || match.scorerName       || null,
         scorerHeartbeat:  live.scorerHeartbeat  || match.scorerHeartbeat  || null,
         scorerRequest:    live.scorerRequest    || match.scorerRequest    || null,
+        // Write undoHistory directly from local state — avoids race with the
+        // dedicated undo persist effect and ensures it's never overwritten with null
+        undoHistory:      history.length ? history.slice(-MAX_HIST) : (live.undoHistory || null),
       };
       ref.set(matchToWrite)
         .then(()=>setSyncing(false))
@@ -2327,7 +2320,7 @@ function App({ currentUser }) {
     if (uid) {
       _fbDB.ref("userMatches/"+uid+"/"+code).set({...summary, complete: !!bothOver});
     }
-  }, [match, currentUser]);
+  }, [match, history, currentUser]);
 
 
   function attachListener(code) {
