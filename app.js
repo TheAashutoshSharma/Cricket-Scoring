@@ -3832,6 +3832,14 @@ function App({ currentUser }) {
             ? <span onClick={()=>startEdit(wTeamKey,"bowler",match.currentBowler,bowler?bowler.name:"")}
                 style={{color:"#fff",fontSize:15,cursor:"pointer",borderBottom:"1px dashed "+SP.textDim,fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"600"}}>
                 {bowler?bowler.name:""}
+				{editable && bowler && bowler.balls===0 && bowler.overs===0 && (
+				  <div style={{marginTop:8}}>
+					<button onClick={()=>setReplacingBowler(true)}
+					  style={{fontSize:10,padding:"3px 10px",borderRadius:6,background:"transparent",border:"1px solid rgba(251,191,36,.35)",color:"#fbbf24",cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"600",letterSpacing:.5}}>
+					  ⇄
+					</button>
+				  </div>
+				)}
               </span>
             : <span style={{color:"#fff",fontSize:15,fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"600"}}>{bowler?bowler.name:""}</span>}
         </div>
@@ -3843,14 +3851,6 @@ function App({ currentUser }) {
             </div>
           ))}
         </div>
-		{editable && bowler && bowler.balls===0 && bowler.overs===0 && (
-          <div style={{marginTop:8}}>
-            <button onClick={()=>setReplacingBowler(true)}
-              style={{fontSize:10,padding:"3px 10px",borderRadius:6,background:"transparent",border:"1px solid rgba(251,191,36,.35)",color:"#fbbf24",cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"600",letterSpacing:.5}}>
-              ⇄
-            </button>
-          </div>
-        )}
 		<div style={{marginTop:8}}>
 		  <button onClick={undo} disabled={!history.length}
 			  style={{padding:"3px 3px",borderRadius:6,border:"1px solid rgba(14,116,144,.4)",
