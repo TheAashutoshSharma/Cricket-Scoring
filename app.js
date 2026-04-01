@@ -2265,27 +2265,12 @@ function App({ currentUser }) {
     } catch(e) {}
   }, [match, isViewer, screen, homeTab, showPlayers, showTeams]);
 
-  // Persist undo history to Firebase (scorer only, non-LOCAL matches)
-  useEffect(() => {
-    if (!match || isViewer || !fbReady || !match.matchCode || match.matchCode==="LOCAL") return;
-    if (!_fbDB) return;
-    // Store trimmed undo stack alongside the match
-    _fbDB.ref("matches/"+match.matchCode+"/undoHistory").set(
-      history.length ? history.slice(-MAX_HIST) : null
-    ).catch(()=>{});
-  }, [history]);
-
   // Sync to Firebase (scorer only)
   useEffect(() => {
     if (!match || isViewer || !fbReady || !match.matchCode || match.matchCode==="LOCAL") return;
     setSyncing(true);
     var code = match.matchCode;
-    // We write the full match with .set(), but scorerRequest is owned by the handover
-    // flow (written by viewers). We must not clobber it. Strategy: snapshot the current
-    // scorerRequest from Firebase first, then write match + re-attach scorerRequest.
     var ref = _fbDB.ref("matches/"+code);
-    // Read the scorer-lock fields before writing — these are owned by the lock/handover
-    // system and must never be clobbered by the scorer's ball-by-ball sync.
     ref.once("value", snap => {
       var live = snap.val() || {};
       var matchToWrite = {
@@ -2294,6 +2279,9 @@ function App({ currentUser }) {
         scorerName:       live.scorerName       || match.scorerName       || null,
         scorerHeartbeat:  live.scorerHeartbeat  || match.scorerHeartbeat  || null,
         scorerRequest:    live.scorerRequest    || match.scorerRequest    || null,
+        // Write undoHistory directly from local state — avoids race with a separate
+        // effect and ensures it's never overwritten with null on each ball sync
+        undoHistory: history.length ? history.slice(-MAX_HIST) : null,
       };
       ref.set(matchToWrite)
         .then(()=>setSyncing(false))
@@ -2327,7 +2315,7 @@ function App({ currentUser }) {
     if (uid) {
       _fbDB.ref("userMatches/"+uid+"/"+code).set({...summary, complete: !!bothOver});
     }
-  }, [match, currentUser]);
+  }, [match, history, currentUser]);
 
 
   function attachListener(code) {
@@ -2349,6 +2337,12 @@ function App({ currentUser }) {
           // We are now the scorer — stop read-only listener and take over
           if (listRef.current) { listRef.current.off(); listRef.current = null; }
           setMatch(v);
+          // Restore undo history for the incoming scorer
+          if (Array.isArray(v.undoHistory) && v.undoHistory.length) {
+            setHistory(v.undoHistory.map(m => normaliseMatch(m)));
+          } else {
+            setHistory([]);
+          }
           setIsViewer(false);
           setScreen("match");
           watchScorerLock(code);
@@ -2436,6 +2430,12 @@ function App({ currentUser }) {
         // Use latest match data from Firebase (most up to date)
         var m2 = {...latest, scorerUid: uid, scorerName: myName};
         setMatch(m2);
+        // Restore undo history for the new scorer
+        if (Array.isArray(latest.undoHistory) && latest.undoHistory.length) {
+          setHistory(latest.undoHistory.map(m => normaliseMatch(m)));
+        } else {
+          setHistory([]);
+        }
         setIsViewer(false);
         setScreen("match");
         watchScorerLock(code);
@@ -4198,7 +4198,6 @@ function App({ currentUser }) {
               m2.currentBatsmen = [0,1];
               m2.currentBowler = 0;
               m2.needsBowler = true; // must pick first bowler of 2nd innings
-              m2.needsOpeners = true; // must pick opening batsmen for 2nd innings
               // In 2nd innings (batting=1), teamB is bowling — clear their bowlers for fresh start
               m2.teamB.bowlers = [];
               // Also reset currentBowler
