@@ -27,6 +27,7 @@ const ADMIN_EMAILS = [
   "aashuitdude@gmail.com",
   "aashutosh22@gmail.com",
 ];
+const APP_NAME = "Cricket Pulse 🏏"
 
 // ── Firebase ─────────────────────────────────────────────────────
 var _fbApp = null, _fbDB = null, _fbAuth = null;
@@ -47,7 +48,7 @@ function genCode() {
 }
 
 // ── Factories ────────────────────────────────────────────────────
-const mkP = n => ({ name:n||"Player", runs:0, balls:0, fours:0, sixes:0, out:false, retired:false, howOut:"", dismissedBy:"" });
+const mkP = n => ({ name:n||"Player", runs:0, balls:0, fours:0, sixes:0, out:false, retired:false, howOut:"", dismissedBy:"", caughtBy:"" });
 const mkB = n => ({ name:n||"Bowler", overs:0, balls:0, maidens:0, runs:0, wickets:0 });
 
 const blankSetup = () => ({
@@ -267,6 +268,65 @@ function OpeningBatsmenModal({match, onSelect}) {
             ← Back
           </button>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── FielderPickerModal — pick fielder for Caught / Run Out ──
+function FielderPickerModal({ match, dismissalType, onSelect, onCancel }) {
+  if (!match) return null;
+  var bt = match.batting;
+  var wTeam = bt===0 ? match.teamB : match.teamA; // fielding/bowling team
+  const [search, setSearch] = React.useState("");
+
+  var label = dismissalType==="Caught"
+    ? "Who took the catch?"
+    : "Who ran out the batsman?";
+  var sub = dismissalType==="Caught"
+    ? "Select the fielder or bowler who caught it"
+    : "Select the fielder who threw / ran out";
+
+  var players = wTeam.players.filter(p=>
+    p.name && p.name.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:1200,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+      <div style={{background:SP.bg3,borderRadius:"20px 20px 0 0",padding:"24px 20px 36px",width:"100%",maxWidth:480,border:"1px solid rgba(73,72,71,.25)",borderBottom:"none",maxHeight:"80vh",display:"flex",flexDirection:"column"}}>
+        <div style={{textAlign:"center",marginBottom:16,flexShrink:0}}>
+          <div style={{fontSize:24,marginBottom:6}}>{dismissalType==="Caught"?"🤲":"🏃"}</div>
+          <div style={{color:SP.primary,fontSize:14,fontWeight:"bold",letterSpacing:1,marginBottom:4}}>{label.toUpperCase()}</div>
+          <div style={{color:SP.textDim,fontSize:12}}>{sub}</div>
+        </div>
+        <input value={search} onChange={e=>setSearch(e.target.value)} placeholder={"Search "+wTeam.name+" players…"}
+          style={{width:"100%",background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:9,
+            padding:"9px 12px",color:"#fff",fontSize:14,outline:"none",boxSizing:"border-box",
+            fontFamily:"Lexend,Georgia,sans-serif",marginBottom:10,flexShrink:0}}/>
+        <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:6}}>
+          {players.map((p,i)=>(
+            <button key={i} onClick={()=>onSelect(p.name)}
+              style={{padding:"12px 16px",borderRadius:12,border:"1px solid rgba(73,72,71,.25)",
+                background:SP.bg,color:"#fff",fontSize:14,cursor:"pointer",
+                fontFamily:"Lexend,Georgia,sans-serif",display:"flex",justifyContent:"space-between",
+                alignItems:"center",textAlign:"left"}}>
+              <div>
+                <div style={{fontWeight:"bold",marginBottom:2}}>{p.name}</div>
+                <div style={{color:SP.textDim,fontSize:11}}>{p.role||"Fielder"}</div>
+              </div>
+              <span style={{color:SP.primary,fontSize:18}}>→</span>
+            </button>
+          ))}
+          {players.length===0&&(
+            <div style={{color:SP.textDim,textAlign:"center",padding:20,fontSize:13}}>No players found</div>
+          )}
+        </div>
+        <button onClick={onCancel}
+          style={{marginTop:12,width:"100%",padding:"11px 0",background:"transparent",
+            border:"1px solid rgba(73,72,71,.25)",borderRadius:10,color:SP.textDim,
+            fontSize:13,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",flexShrink:0}}>
+          Skip (unknown fielder)
+        </button>
       </div>
     </div>
   );
@@ -1899,6 +1959,7 @@ function App({ currentUser }) {
   const [recallPrompt, setRecallPrompt] = useState(false);
   // Next batter picker: shown after wicket or retirement
   const [nextBatterPick, setNextBatterPick] = useState(false);
+  const [pendingWicket,  setPendingWicket]  = useState(null); // {how} waiting for fielder pick
   // Replace batter: slot (0|1) of a batsman who hasn't faced a ball yet
   const [replacingBatter, setReplacingBatter] = useState(null);
   // Replace bowler who hasn't bowled a ball yet
@@ -2068,12 +2129,44 @@ function App({ currentUser }) {
         var safeMatchScreens = ["match", "viewer", "scorecard", "historycard"];
         setScreen(safeMatchScreens.includes(restoredScreen) ? restoredScreen : (d.isViewer ? "viewer" : "match"));
         if (d.isViewer && d.match.matchCode) attachListener(d.match.matchCode);
-        else if (!d.isViewer && d.match.matchCode && d.match.matchCode !== "LOCAL" && currentUser) watchScorerLock(d.match.matchCode);
+        else if (!d.isViewer && d.match.matchCode && d.match.matchCode !== "LOCAL" && currentUser) {
+          watchScorerLock(d.match.matchCode);
+          // Restore undo history from Firebase
+          if (_fbDB && d.match.matchCode !== "LOCAL") {
+            _fbDB.ref("matches/"+d.match.matchCode+"/undoHistory").once("value", snap => {
+              var h = snap.val();
+              if (Array.isArray(h) && h.length) {
+                setHistory(h.map(m => normaliseMatch(m)));
+              }
+            }).catch(()=>{});
+          }
+        }
       } else if (d.screen) {
         setScreen(d.screen);
       }
     } catch(e) {}
+
+    // ── Deep link: ?match=CODE in URL — auto-join on load ──
+    try {
+      var params = new URLSearchParams(window.location.search);
+      var deepCode = params.get("match");
+      if (deepCode) {
+        // Clean the URL without reloading
+        window.history.replaceState({}, "", window.location.pathname);
+        // Store for after Firebase is ready
+        window._pendingMatchCode = deepCode.toUpperCase();
+      }
+    } catch(e2) {}
   }, []);
+
+  // Once Firebase is ready, handle any pending deep link code
+  useEffect(() => {
+    if (fbReady && window._pendingMatchCode) {
+      var code = window._pendingMatchCode;
+      window._pendingMatchCode = null;
+      joinByCode(code);
+    }
+  }, [fbReady]);
 
   // ── Hardware / browser back button interception ──────────────────
   useEffect(() => {
@@ -2177,12 +2270,7 @@ function App({ currentUser }) {
     if (!match || isViewer || !fbReady || !match.matchCode || match.matchCode==="LOCAL") return;
     setSyncing(true);
     var code = match.matchCode;
-    // We write the full match with .set(), but scorerRequest is owned by the handover
-    // flow (written by viewers). We must not clobber it. Strategy: snapshot the current
-    // scorerRequest from Firebase first, then write match + re-attach scorerRequest.
     var ref = _fbDB.ref("matches/"+code);
-    // Read the scorer-lock fields before writing — these are owned by the lock/handover
-    // system and must never be clobbered by the scorer's ball-by-ball sync.
     ref.once("value", snap => {
       var live = snap.val() || {};
       var matchToWrite = {
@@ -2191,6 +2279,9 @@ function App({ currentUser }) {
         scorerName:       live.scorerName       || match.scorerName       || null,
         scorerHeartbeat:  live.scorerHeartbeat  || match.scorerHeartbeat  || null,
         scorerRequest:    live.scorerRequest    || match.scorerRequest    || null,
+        // Write undoHistory directly from local state — avoids race with a separate
+        // effect and ensures it's never overwritten with null on each ball sync
+        undoHistory: history.length ? history.slice(-MAX_HIST) : null,
       };
       ref.set(matchToWrite)
         .then(()=>setSyncing(false))
@@ -2224,7 +2315,7 @@ function App({ currentUser }) {
     if (uid) {
       _fbDB.ref("userMatches/"+uid+"/"+code).set({...summary, complete: !!bothOver});
     }
-  }, [match, currentUser]);
+  }, [match, history, currentUser]);
 
 
   function attachListener(code) {
@@ -2246,6 +2337,12 @@ function App({ currentUser }) {
           // We are now the scorer — stop read-only listener and take over
           if (listRef.current) { listRef.current.off(); listRef.current = null; }
           setMatch(v);
+          // Restore undo history for the incoming scorer
+          if (Array.isArray(v.undoHistory) && v.undoHistory.length) {
+            setHistory(v.undoHistory.map(m => normaliseMatch(m)));
+          } else {
+            setHistory([]);
+          }
           setIsViewer(false);
           setScreen("match");
           watchScorerLock(code);
@@ -2333,6 +2430,12 @@ function App({ currentUser }) {
         // Use latest match data from Firebase (most up to date)
         var m2 = {...latest, scorerUid: uid, scorerName: myName};
         setMatch(m2);
+        // Restore undo history for the new scorer
+        if (Array.isArray(latest.undoHistory) && latest.undoHistory.length) {
+          setHistory(latest.undoHistory.map(m => normaliseMatch(m)));
+        } else {
+          setHistory([]);
+        }
         setIsViewer(false);
         setScreen("match");
         watchScorerLock(code);
@@ -2538,6 +2641,10 @@ function App({ currentUser }) {
     if (!confirm(msg)) return;
     if (match && match.matchCode && !isViewer) releaseScoring(match.matchCode);
     detach();
+    // Clear undo stack from Firebase when leaving a match
+    if (match && match.matchCode && match.matchCode !== "LOCAL" && _fbDB) {
+      _fbDB.ref("matches/"+match.matchCode+"/undoHistory").remove().catch(()=>{});
+    }
     setMatch(null); setHistory([]); setSetup(blankSetup());
     setIsViewer(false); setScreen("home");
   }
@@ -2588,6 +2695,26 @@ function App({ currentUser }) {
     attachListener(code);
   }
 
+  function shareMatch(code) {
+    var url = window.location.origin + window.location.pathname + "?match=" + code;
+    var text = "Watch this live cricket match on " + APP_NAME + "!";
+    if (navigator.share) {
+      navigator.share({ title: APP_NAME + " — Live Match", text, url }).catch(()=>{});
+    } else {
+      // Fallback: copy to clipboard + show WhatsApp link
+      var waUrl = "https://wa.me/?text=" + encodeURIComponent(text + " " + url);
+      // Try clipboard first
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(url).then(()=>{
+          setScorerToast("Link copied! Share: " + code);
+          setTimeout(()=>setScorerToast(""), 3000);
+        }).catch(()=>{ window.open(waUrl, "_blank"); });
+      } else {
+        window.open(waUrl, "_blank");
+      }
+    }
+  }
+
   // ── History / Undo ───────────────────────────────────────────
   function pushHist(m) {
     setHistory(h => {
@@ -2597,7 +2724,12 @@ function App({ currentUser }) {
   }
   function undo() {
     if (!history.length) return;
-    setMatch(history[history.length-1]);
+    var target = history[history.length-1];
+    // If undoing would revert to a different innings, ask for confirmation
+    if (target.batting !== match.batting) {
+      if (!confirm("This will undo the start of the 2nd innings and return to the 1st innings. Are you sure?")) return;
+    }
+    setMatch(target);
     setHistory(h => h.slice(0,-1));
   }
 
@@ -2736,7 +2868,12 @@ function App({ currentUser }) {
     });
   }
 
-  function addWicket(how) {
+  function addWicket(how, fielderName) {
+    // For Caught and Run Out, show fielder picker first
+    if ((how==="Caught" || how==="Run Out") && fielderName===undefined) {
+      setPendingWicket({how});
+      return;
+    }
     setMatch(prev => {
       pushHist(prev);
       var m = JSON.parse(JSON.stringify(prev));
@@ -2762,6 +2899,12 @@ function App({ currentUser }) {
       bT.players[b1].out=true; bT.players[b1].retired=false;
       bT.players[b1].balls++;
       bT.players[b1].dismissedBy = wT.bowlers[bi].name;
+      // For Caught: caughtBy = fielder (may differ from bowler); for Run Out: caughtBy = thrower
+      if ((how==="Caught"||how==="Run Out") && fielderName) {
+        bT.players[b1].caughtBy = fielderName;
+      } else if (how==="Caught") {
+        bT.players[b1].caughtBy = wT.bowlers[bi].name; // caught & bowled
+      }
       wT.bowlers[bi].wickets++; wT.bowlers[bi].balls++;
       m.wickets[bt]++; m.balls[bt]++;
       if (m.balls[bt]===6) {
@@ -3271,11 +3414,11 @@ function App({ currentUser }) {
                       <div style={{color:p.out?"#64748b":p.retired?"#67e8f9":"#e2e8f0",fontSize:13}}>{p.name}</div>
                       {p.out&&<div style={{color:SP.textDim,fontSize:10}}>
                         {p.howOut==="Bowled"?`b ${p.dismissedBy}`:
-                         p.howOut==="Caught"?`c & b ${p.dismissedBy}`:
+                         p.howOut==="Caught"?(p.caughtBy&&p.caughtBy!==p.dismissedBy?`c ${p.caughtBy} b ${p.dismissedBy}`:`c & b ${p.dismissedBy}`):
                          p.howOut==="LBW"?`lbw b ${p.dismissedBy}`:
                          p.howOut==="Stumped"?`st b ${p.dismissedBy}`:
                          p.howOut==="Hit Wicket"?`hit wkt b ${p.dismissedBy}`:
-                         p.howOut==="Run Out"?`run out`:p.howOut}
+                         p.howOut==="Run Out"?(p.caughtBy?`run out (${p.caughtBy})`:`run out`):p.howOut}
                       </div>}
                       {p.retired&&<div style={{color:"#0891b2",fontSize:10}}>Retired Hurt</div>}
                     </td>
@@ -3547,7 +3690,7 @@ function App({ currentUser }) {
   var nonStriker = bTeam.players[match.currentBatsmen&&match.currentBatsmen[1-(match.striker||0)]];
   var bowler     = wTeam.bowlers[match.currentBowler||0];
   var target     = bt===1?match.runs[0]+1:null;
-  var needed     = target?target-match.runs[1]:null;
+  var needed     = target?Math.max(0,target-match.runs[1]):null;
   var ballsLeft  = (match.totalOvers-match.overs[bt])*6-match.balls[bt];
   var lastBalls  = (match.ballLog&&match.ballLog[bt])||[];
   lastBalls      = lastBalls.slice(-12);
@@ -3562,9 +3705,13 @@ function App({ currentUser }) {
               {isViewer?<span className="sp-live-dot"/>:<span style={{color:SP.textDim,fontSize:10,letterSpacing:1}}>📡 BROADCASTING</span>}
               {isViewer&&<span style={{color:SP.textDim,fontSize:10,letterSpacing:2}}>LIVE</span>}
             </div>
-            <div style={{background:"rgba(102,157,255,.1)",border:"1px solid rgba(102,157,255,.25)",borderRadius:8,padding:"4px 12px",display:"flex",alignItems:"center",gap:8}}>
-              <span style={{color:SP.textDim,fontSize:10}}>CODE</span>
-              <span style={{color:SP.secondary,fontWeight:"bold",fontSize:18,fontFamily:"monospace",letterSpacing:4}}>{match.matchCode}</span>
+            <div>
+			  {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
+              <button onClick={()=>shareMatch(match.matchCode)}
+                style={{...S.btnSm,color:SP.secondary,borderColor:"rgba(102,157,255,.25)",padding:"4px 10px",fontSize:13}}>
+                🔗 Share :{match.matchCode}
+              </button>
+			  )}
             </div>
           </div>
         )}
@@ -3690,6 +3837,14 @@ function App({ currentUser }) {
             ? <span onClick={()=>startEdit(wTeamKey,"bowler",match.currentBowler,bowler?bowler.name:"")}
                 style={{color:"#fff",fontSize:15,cursor:"pointer",borderBottom:"1px dashed "+SP.textDim,fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"600"}}>
                 {bowler?bowler.name:""}
+				{editable && bowler && bowler.balls===0 && bowler.overs===0 && (
+				  <div style={{marginTop:8}}>
+					<button onClick={()=>setReplacingBowler(true)}
+					  style={{fontSize:10,padding:"3px 10px",borderRadius:6,background:"transparent",border:"1px solid rgba(251,191,36,.35)",color:"#fbbf24",cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"600",letterSpacing:.5}}>
+					  ⇄
+					</button>
+				  </div>
+				)}
               </span>
             : <span style={{color:"#fff",fontSize:15,fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"600"}}>{bowler?bowler.name:""}</span>}
         </div>
@@ -3701,18 +3856,24 @@ function App({ currentUser }) {
             </div>
           ))}
         </div>
-		{editable && bowler && bowler.balls===0 && bowler.overs===0 && (
-          <div style={{marginTop:8}}>
-            <button onClick={()=>setReplacingBowler(true)}
-              style={{fontSize:10,padding:"3px 10px",borderRadius:6,background:"transparent",border:"1px solid rgba(251,191,36,.35)",color:"#fbbf24",cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",fontWeight:"600",letterSpacing:.5}}>
-              ⇄ Replace
-            </button>
-          </div>
-        )}
       </div>
     );
   }
-	
+
+  function UndoCard() {
+    return (
+      <div style={{flex:1,minWidth:0, padding:"3px 10px"}}>
+        <button onClick={undo} disabled={!history.length}
+			  style={{width:"100%",padding:"3px 10px",borderRadius:6,border:"1px solid rgba(14,116,144,.4)",
+                  opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",fontWeight:"bold",fontSize:8,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
+                  letterSpacing:1}}>
+              Undo ↩
+        </button>
+      </div>
+    );
+  }
+
+
   function ReplaceBowlerModal() {
     if (!replacingBowler || !bowler) return null;
     var allFielders = wTeam.players;
@@ -3769,7 +3930,7 @@ function App({ currentUser }) {
     return (
       <div style={{marginBottom:10,display:"flex",gap:6,flexWrap:"wrap"}}>
         {lastBalls.map((b,i)=>(
-          <div key={i} style={{width:36,height:36,borderRadius:"50%",background:bBg(b),display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:12,fontWeight:"bold",fontFamily:"Lexend,Georgia,sans-serif",boxShadow:b.r===6?"0 0 8px rgba(156,255,147,.4)":b.r===4?"0 0 8px rgba(102,157,255,.3)":"none"}}>
+          <div key={i} style={{width:20,height:20,borderRadius:"50%",background:bBg(b),display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:8,fontWeight:"bold",fontFamily:"Lexend,Georgia,sans-serif",boxShadow:b.r===6?"0 0 8px rgba(156,255,147,.4)":b.r===4?"0 0 8px rgba(102,157,255,.3)":"none"}}>
             {bTxt(b)}
           </div>
         ))}
@@ -3801,7 +3962,7 @@ function App({ currentUser }) {
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
             <button onClick={()=>setScreen("scorecard")} style={S.btnSm}>📊</button>
-            {canScore && (
+             {canScore && (
               scorerActive
                 ? iRequestedHandover
                   ? <button disabled style={{...S.btnSm,opacity:0.5}}>⏳</button>
@@ -3826,6 +3987,7 @@ function App({ currentUser }) {
         <div style={{padding:"0 12px"}}>
           <BatterCard editable={false}/>
           <BowlerCard editable={false}/>
+		  <UndoCard />
           <BallLog/>
         </div>
         {match.inningsOver[0]&&bt===0&&(
@@ -3890,11 +4052,11 @@ function App({ currentUser }) {
                       <div style={{color:p.out?"#64748b":p.retired?"#67e8f9":"#e2e8f0",fontSize:13}}>{p.name}</div>
                       {p.out&&<div style={{color:SP.textDim,fontSize:10}}>
                         {p.howOut==="Bowled"   ? `b ${p.dismissedBy}` :
-                         p.howOut==="Caught"   ? `c & b ${p.dismissedBy}` :
+                         p.howOut==="Caught"   ? (p.caughtBy&&p.caughtBy!==p.dismissedBy?`c ${p.caughtBy} b ${p.dismissedBy}`:`c & b ${p.dismissedBy}`) :
                          p.howOut==="LBW"      ? `lbw b ${p.dismissedBy}` :
                          p.howOut==="Stumped"  ? `st b ${p.dismissedBy}` :
                          p.howOut==="Hit Wicket"? `hit wkt b ${p.dismissedBy}` :
-                         p.howOut==="Run Out"  ? `run out` :
+                         p.howOut==="Run Out"  ? (p.caughtBy?`run out (${p.caughtBy})`:`run out`) :
                          p.howOut}
                       </div>}
                       {p.retired&&<div style={{color:"#0891b2",fontSize:10}}>Retired Hurt</div>}
@@ -3974,6 +4136,12 @@ function App({ currentUser }) {
       <PendingExtraModal extra={pendingExtra} onConfirm={confirmExtra} onCancel={()=>setPendingExtra(null)}/>
       {overComplete && <OverCompleteModal match={match} onSelect={selectNewBowler} isFirstBall={match&&match.teamA&&match.teamB&&(match.batting===0?match.teamB:match.teamA).bowlers.length===0}/>}
       {needsOpeners && !nextBatterPick && <OpeningBatsmenModal match={match} onSelect={selectOpeners}/>}
+      {pendingWicket && <FielderPickerModal
+        match={match}
+        dismissalType={pendingWicket.how}
+        onSelect={fielderName=>{setPendingWicket(null);addWicket(pendingWicket.how, fielderName);}}
+        onCancel={()=>{setPendingWicket(null);addWicket(pendingWicket.how, null);}}
+      />}
       {nextBatterPick && <NextBatterModal match={match} onSelect={selectNextBatter}/>}
       {recallPrompt && <RecallPromptModal match={match} onRecall={recallRetired} onDecline={declineRecall}/>}
       <ReplaceBatterModal/>
@@ -3993,10 +4161,6 @@ function App({ currentUser }) {
             {syncing&&<span style={{color:SP.secondary,fontSize:10,marginLeft:6}}>↑</span>}
           </span>
           <div style={{display:"flex",gap:6}}>
-            <button onClick={undo} disabled={!history.length}
-              style={{...S.btnSm,opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",padding:"4px 10px",fontSize:11}}>
-              ↩ Undo
-            </button>
             <button onClick={()=>setScreen("scorecard")} style={{...S.btnSm,padding:"4px 10px",fontSize:11}}>📋</button>
             {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
               <button onClick={()=>handOffScoring(match)}
@@ -4032,7 +4196,8 @@ function App({ currentUser }) {
         <div style={{padding:"0 12px"}}>
           <BatterCard editable={true}/>
           <BowlerCard editable={true}/>
-          <BallLog/>
+          <UndoCard />
+		  <BallLog/>
         </div>
 
         {/* Innings done */}
@@ -4047,7 +4212,8 @@ function App({ currentUser }) {
               m2.currentBatsmen = [0,1];
               m2.currentBowler = 0;
               m2.needsBowler = true; // must pick first bowler of 2nd innings
-              // In 2nd innings (batting=1), teamB is bowling — clear their bowlers for fresh start
+              m2.needsOpeners = true; // must pick opening batsmen for 2nd innings
+			  // In 2nd innings (batting=1), teamB is bowling — clear their bowlers for fresh start
               m2.teamB.bowlers = [];
               // Also reset currentBowler
               m2.currentBowler = 0;
@@ -4100,7 +4266,7 @@ function App({ currentUser }) {
                   background:"rgba(8,145,178,.12)",color:"#67e8f9",fontWeight:"bold",fontSize:13,
                   cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
                   letterSpacing:1}}>
-                1D &nbsp;<span style={{color:"rgba(103,232,249,.6)",fontSize:11,fontWeight:"normal"}}>Declared — no strike change</span>
+                1D &nbsp;<span style={{color:"rgba(103,232,249,.6)",fontSize:8,fontWeight:"normal"}}>Declared — no strike change</span>
               </button>
             </div>
 
@@ -4112,14 +4278,6 @@ function App({ currentUser }) {
                   <button key={ex} onClick={()=>setPendingExtra(ex)}
                     style={{padding:"12px 0",borderRadius:10,border:"none",background:"rgba(167,139,250,.15)",color:"#c4b5fd",fontWeight:"bold",fontSize:12,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif"}}>
                     {ex} ›
-                  </button>
-                ))}
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-                {["Bye","Leg Bye"].map(ex=>(
-                  <button key={ex} onClick={()=>addRuns(1,ex)}
-                    style={{padding:"12px 0",borderRadius:10,border:"none",background:SP.bg4,color:SP.textSec,fontWeight:"bold",fontSize:12,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif"}}>
-                    {ex} +1
                   </button>
                 ))}
               </div>
