@@ -3987,13 +3987,6 @@ function App({ currentUser }) {
           <div style={{margin:"0 12px 12px",background:SP.bg3,borderRadius:10,padding:20,textAlign:"center",border:"1px solid rgba(102,157,255,.2)"}}>
             <div style={{fontSize:30,marginBottom:6}}>🏆</div>
             <div style={{color:SP.primary,fontWeight:"bold",fontSize:18,marginBottom:4}}>Match Over!</div>
-			<button onClick={undo} disabled={!history.length}
-			  style={{width:"50%",padding:"10px 0",borderRadius:10,border:"1px solid rgba(14,116,144,.4)",
-                  opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",fontWeight:"bold",fontSize:13,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
-                  letterSpacing:1}}>
-              Undo
-			  ↩
-            </button>
             {match.runs[1]>match.runs[0]?<div style={{color:SP.primary,fontSize:14}}>{match.teamB.name} wins by {10-match.wickets[1]} wickets!</div>
              :match.runs[1]<match.runs[0]?<div style={{color:SP.tertiary,fontSize:14}}>{match.teamA.name} wins by {match.runs[0]-match.runs[1]} runs!</div>
              :<div style={{color:SP.primary,fontSize:14}}>Match Tied!</div>}
@@ -4197,13 +4190,6 @@ function App({ currentUser }) {
         {match.inningsOver[0]&&bt===0&&(
           <div style={{margin:"0 12px 12px",background:"rgba(156,255,147,.08)",borderRadius:10,padding:20,textAlign:"center",border:"1px solid rgba(156,255,147,.2)"}}>
             <div style={{color:SP.primary,fontWeight:"bold",fontSize:16,marginBottom:6}}>Innings Complete!</div>
-			<button onClick={undo} disabled={!history.length}
-			  style={{width:"50%",padding:"10px 0",borderRadius:10,border:"1px solid rgba(14,116,144,.4)",
-                  opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",fontWeight:"bold",fontSize:13,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
-                  letterSpacing:1}}>
-              Undo
-			  ↩
-              </button>			
             <div style={{color:"#fff",fontSize:14,marginBottom:14}}>{match.teamA.name}: {match.runs[0]}/{match.wickets[0]}</div>
             <button onClick={()=>setMatch(m=>{
               var m2 = JSON.parse(JSON.stringify(m));
@@ -4230,13 +4216,6 @@ function App({ currentUser }) {
           <div style={{margin:"0 12px 12px",background:SP.bg3,borderRadius:10,padding:20,textAlign:"center",border:"1px solid rgba(102,157,255,.2)"}}>
             <div style={{fontSize:30,marginBottom:6}}>🏆</div>
             <div style={{color:SP.primary,fontWeight:"bold",fontSize:18,marginBottom:6}}>Match Over!</div>
-			<button onClick={undo} disabled={!history.length}
-			  style={{width:"50%",padding:"10px 0",borderRadius:10,border:"1px solid rgba(14,116,144,.4)",
-                  opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",fontWeight:"bold",fontSize:13,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
-                  letterSpacing:1}}>
-              Undo
-			  ↩
-            </button>
             {match.runs[1]>match.runs[0]?<div style={{color:SP.primary,fontSize:14}}>{match.teamB.name} wins by {10-match.wickets[1]} wickets!</div>
              :match.runs[1]<match.runs[0]?<div style={{color:SP.tertiary,fontSize:14}}>{match.teamA.name} wins by {match.runs[0]-match.runs[1]} runs!</div>
              :<div style={{color:SP.primary,fontSize:14}}>Match Tied!</div>}
@@ -4274,13 +4253,6 @@ function App({ currentUser }) {
                   cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
                   letterSpacing:1}}>
                 1D &nbsp;<span style={{color:"rgba(103,232,249,.6)",fontSize:8,fontWeight:"normal"}}>Declared — no strike change</span>
-              </button> 
-			  <button onClick={undo} disabled={!history.length}
-			  style={{width:"50%",padding:"10px 0",borderRadius:10,border:"1px solid rgba(14,116,144,.4)",
-                  opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",fontWeight:"bold",fontSize:13,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
-                  letterSpacing:1}}>
-              Undo
-			  ↩
               </button>
             </div>
 
