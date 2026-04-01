@@ -567,9 +567,7 @@ if (typeof document !== "undefined" && !document.getElementById("sp-global")) {
     ".sp-live-dot { display:inline-block; width:7px; height:7px; border-radius:50%;",
     "  background:#9cff93; box-shadow:0 0 8px #9cff93; animation:sp-pulse 1.4s infinite; }",
     "@keyframes sp-pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.75)} }",
-    ".sp-nav-live-dot { display:inline-block; width:10px; height:10px; border-radius:50%;",
-    "  background:#669dff; box-shadow:0 0 10px rgba(102,157,255,.8); animation:sp-pulse 1.4s infinite; }",
-	".sp-momentum { border-left:2px solid #669dff; }",
+    ".sp-momentum { border-left:2px solid #669dff; }",
     ".sp-tab { flex:1; padding:10px 0; background:none; border:none; border-bottom:2px solid transparent;",
     "  color:#777575; font-family:'Lexend',Georgia,sans-serif; font-size:11px; cursor:pointer;",
     "  letter-spacing:1.5px; text-transform:uppercase; font-weight:700; transition:color .2s,border-color .2s; }",
@@ -3704,8 +3702,7 @@ function App({ currentUser }) {
         {match.matchCode&&match.matchCode!=="LOCAL"&&(
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <div style={{display:"flex",alignItems:"center",gap:6}}>
-              {isViewer?<span className="sp-live-dot"/>:<span className="sp-nav-live-dot">📡 BROADCASTING</span>}
-			  {isViewer?<span className="sp-live-dot"/>:<span style={{color:SP.textDim,fontSize:10,letterSpacing:1}}>BROADCASTING</span>}
+              {isViewer?<span className="sp-live-dot"/>:<span style={{color:SP.textDim,fontSize:10,letterSpacing:1}}>📡 BROADCASTING</span>}
               {isViewer&&<span style={{color:SP.textDim,fontSize:10,letterSpacing:2}}>LIVE</span>}
             </div>
             <div>
