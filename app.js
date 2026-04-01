@@ -3851,9 +3851,9 @@ function App({ currentUser }) {
             </div>
           ))}
         </div>
-		<div style={{marginTop:8}}>
+		<div style={{marginTop:8, marginLeft:5}}>
 		  <button onClick={undo} disabled={!history.length}
-			  style={{padding:"3px 3px",borderRadius:6,border:"1px solid rgba(14,116,144,.4)",
+			  style={{padding:"3px 10px",borderRadius:6,border:"1px solid rgba(14,116,144,.4)",
                   opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",fontWeight:"bold",fontSize:8,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
                   letterSpacing:1}}>
               Undo ↩
