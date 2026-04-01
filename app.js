@@ -3857,7 +3857,7 @@ function App({ currentUser }) {
 
   function UndoCard() {
     return (
-      <div style={{flex:1,minWidth:0, marginBottom:5}}>
+      <div style={{flex:1,minWidth:0, padding:"3px 10px"}}>
         <button onClick={undo} disabled={!history.length}
 			  style={{width:"100%",padding:"3px 10px",borderRadius:6,border:"1px solid rgba(14,116,144,.4)",
                   opacity:history.length?1:0.3,color:"#fb923c",borderColor:history.length?"rgba(251,146,60,.3)":"transparent",fontWeight:"bold",fontSize:8,cursor:"pointer",touchAction:"manipulation",fontFamily:"Lexend,Georgia,sans-serif",
