@@ -1840,7 +1840,7 @@ function AuthGate({children}) {
               {/* Common fields */}
               <div style={{marginBottom:12}}>
                 <label style={{...S.lbl,display:"block",marginBottom:6}}>{regType==="player"?"PLAYER NAME":"YOUR NAME"}</label>
-                <input value={name} onChange={e=>{setName(e.target.value);clearForm();}} type="text" placeholder={regType==="player"?"e.g. Virat Kohli":"e.g. Arjun Patel"} className="sp-input"
+                <input value={name} onChange={e=>{setName(e.target.value);clearForm();}} type="text" placeholder={regType==="player"?"e.g. Virat Kohli":"e.g. Rohit Sharma"} className="sp-input"
                   onKeyDown={e=>{if(e.key==="Enter")handleRegister();}}/>
               </div>
 
