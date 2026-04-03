@@ -1740,6 +1740,7 @@ function AuthGate({children}) {
   const [err,      setErr]      = useState("");
   const [info,     setInfo]     = useState("");
   const [busy,     setBusy]     = useState(false);
+  const [tagline,  setTagline]  = useState("Enter the Arena");
 
   const ROLES      = ["Batsman","Bowler","All-rounder","Wicket-keeper"];
   const BAT_STYLES = ["Right-hand","Left-hand"];
@@ -1747,6 +1748,13 @@ function AuthGate({children}) {
 
   useEffect(() => {
     initFB();
+    // Fetch tagline from Firebase (real-time, updates live)
+    if (_fbDB) {
+      _fbDB.ref("config/tagline").on("value", snap => {
+        var val = snap.val();
+        if (val && typeof val === "string") setTagline(val);
+      });
+    }
     if (!_fbAuth) { setStatus("login"); return; }
     var unsub = _fbAuth.onAuthStateChanged(u => {
       if (u) {
@@ -1772,7 +1780,7 @@ function AuthGate({children}) {
       else { setAuthUser(null); setStatus("login"); }
     });
     var t = setTimeout(() => setStatus(s => s === "loading" ? "login" : s), 5000);
-    return () => { unsub(); clearTimeout(t); };
+    return () => { unsub(); clearTimeout(t); if (_fbDB) _fbDB.ref("config/tagline").off(); };
   }, []);
 
   function clearForm() { setErr(""); setInfo(""); }
@@ -1887,11 +1895,10 @@ function AuthGate({children}) {
         {/* Logo */}
         <div style={{textAlign:"center",marginBottom:40}}>
           <div style={{width:72,height:72,background:"#1a1919",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",boxShadow:"0 8px 32px rgba(0,0,0,.5)"}}>
-            <img src={"..\icons\icon-180.png"} alt={item.caption||""} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-			<span style={{fontSize:34}}>🏏</span>
+            <img src="icons/icon-192.png" alt="Cricket Pulse" style={{width:52,height:52,objectFit:"contain"}}/>
           </div>
           <h1 style={{color:"#fff",fontSize:28,fontWeight:"900",letterSpacing:-1,margin:"0 0 6px",fontFamily:"Lexend,Georgia,sans-serif",fontStyle:"italic"}}>CRICKET PULSE</h1>
-          <p style={{color:SP.textDim,fontSize:10,letterSpacing:3,margin:0,fontWeight:"600",textTransform:"uppercase"}}>Enter the Arena</p>
+          <p style={{color:SP.textDim,fontSize:10,letterSpacing:3,margin:0,fontWeight:"600",textTransform:"uppercase"}}>{tagline}</p>
         </div>
 
         {/* Tab switcher */}
