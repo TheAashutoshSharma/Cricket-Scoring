@@ -1887,7 +1887,7 @@ function AuthGate({children}) {
         {/* Logo */}
         <div style={{textAlign:"center",marginBottom:40}}>
           <div style={{width:72,height:72,background:"#1a1919",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",boxShadow:"0 8px 32px rgba(0,0,0,.5)"}}>
-            <img src={..\icons\icon-180.png} alt={item.caption||""} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+            <img src={"..\icons\icon-180.png"} alt={item.caption||""} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
 			<span style={{fontSize:34}}>🏏</span>
           </div>
           <h1 style={{color:"#fff",fontSize:28,fontWeight:"900",letterSpacing:-1,margin:"0 0 6px",fontFamily:"Lexend,Georgia,sans-serif",fontStyle:"italic"}}>CRICKET PULSE</h1>
