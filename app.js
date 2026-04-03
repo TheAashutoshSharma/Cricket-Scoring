@@ -58,6 +58,7 @@ const blankSetup = () => ({
   teamBPlayers: Array.from({length:0},(_,i)=>"Player "+(i+1)),
   teamACount:0, teamBCount:0,
   teamAPlayerIds:[], teamBPlayerIds:[],
+  teamASelected:"", teamBSelected:"", // saved team id, "" = create new
   tossWinner: null,   // 0=teamA, 1=teamB
   battingFirst: 0,    // 0=teamA bats first, 1=teamB bats first
 });
@@ -1479,6 +1480,104 @@ function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onCho
 }
 
 // ── NList — player/bowler name entry in setup wizard ─────────────
+// ── TeamSelectorStep — pick saved team or create new in setup wizard ──
+function TeamSelectorStep({ setup, setSetup }) {
+  const [teams,   setTeams]   = React.useState(null); // null=loading
+  const [players, setPlayers] = React.useState({});   // id -> player record
+
+  React.useEffect(() => {
+    if (!_fbDB) { setTeams([]); return; }
+    Promise.all([
+      _fbDB.ref("teams").once("value"),
+      _fbDB.ref("players").once("value"),
+    ]).then(([tSnap, pSnap]) => {
+      var tVal = tSnap.val() || {};
+      var pVal = pSnap.val() || {};
+      setTeams(Object.values(tVal).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+      setPlayers(pVal);
+    }).catch(() => setTeams([]));
+  }, []);
+
+  function applyTeam(slot, teamId) {
+    // slot: "A" | "B"
+    var nameKey    = slot==="A" ? "teamAName"      : "teamBName";
+    var playersKey = slot==="A" ? "teamAPlayers"   : "teamBPlayers";
+    var idsKey     = slot==="A" ? "teamAPlayerIds" : "teamBPlayerIds";
+    var countKey   = slot==="A" ? "teamACount"     : "teamBCount";
+    var selKey     = slot==="A" ? "teamASelected"  : "teamBSelected";
+
+    if (!teamId) {
+      // "Create new" — clear everything for this slot
+      setSetup(p => ({...p,
+        [nameKey]: slot==="A" ? "Team A" : "Team B",
+        [playersKey]: [], [idsKey]: [], [countKey]: 0,
+        [selKey]: "",
+      }));
+      return;
+    }
+    var team = (teams||[]).find(t=>t.id===teamId);
+    if (!team) return;
+    var ids   = team.playerIds||[];
+    var names = ids.map(id => players[id]?.name || "Player").filter(Boolean);
+    setSetup(p => ({...p,
+      [nameKey]: team.name,
+      [playersKey]: names, [idsKey]: ids, [countKey]: names.length,
+      [selKey]: teamId,
+    }));
+  }
+
+  var selA = setup.teamASelected || "";
+  var selB = setup.teamBSelected || "";
+
+  return (
+    <div>
+      {[["A","TEAM 1"],["B","TEAM 2"]].map(([slot, lbl])=>{
+        var sel     = slot==="A" ? selA : selB;
+        var nameKey = slot==="A" ? "teamAName" : "teamBName";
+        var count   = slot==="A" ? (setup.teamAPlayerIds||[]).length : (setup.teamBPlayerIds||[]).length;
+        return (
+          <div key={slot} style={{marginBottom:16}}>
+            <label style={{color:SP.textDim,fontSize:11,display:"block",marginBottom:6,letterSpacing:1}}>{lbl}</label>
+            {teams===null ? (
+              <div style={{color:SP.textDim,fontSize:13,padding:"12px 0"}}>Loading teams…</div>
+            ) : (
+              <div style={{position:"relative"}}>
+                <select
+                  value={sel}
+                  onChange={e=>applyTeam(slot, e.target.value)}
+                  style={{width:"100%",background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:10,
+                    padding:"12px 40px 12px 14px",color:sel?"#fff":SP.textDim,fontSize:15,outline:"none",
+                    boxSizing:"border-box",fontFamily:"Lexend,Georgia,sans-serif",appearance:"none",cursor:"pointer"}}>
+                  <option value="">＋ Create new team</option>
+                  {teams.map(t=>(
+                    <option key={t.id} value={t.id}>{t.name} ({(t.playerIds||[]).length} players)</option>
+                  ))}
+                </select>
+                <span style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",
+                  color:SP.textDim,fontSize:12,pointerEvents:"none"}}>▾</span>
+              </div>
+            )}
+            {/* Manual name input — shown when creating new OR when name was edited */}
+            <input
+              value={setup[nameKey]}
+              onChange={e=>{var v=e.target.value;setSetup(p=>({...p,[nameKey]:v}));}}
+              placeholder={sel ? "" : (slot==="A"?"Team A":"Team B")}
+              style={{width:"100%",background:SP.bg3,border:"1px solid rgba(73,72,71,.15)",
+                borderRadius:8,padding:"10px 14px",color:"#fff",fontSize:14,outline:"none",
+                boxSizing:"border-box",fontFamily:"Lexend,Georgia,sans-serif",marginTop:8}}
+            />
+            {sel && count>0 && (
+              <div style={{color:SP.primary,fontSize:11,marginTop:5,paddingLeft:2}}>
+                ✓ {count} player{count!==1?"s":""} loaded from saved team
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function PlayerPickerStep({teamName, selectedNames, selectedIds, onUpdate, currentUser, teamSlot, setup, setSetup}) {
   // Shows all saved players as selectable list, with inline new player creation
   const [allPlayers,  setAllPlayers]  = React.useState(null);
@@ -3559,15 +3658,11 @@ function App({ currentUser }) {
           <div style={{background:SP.bg2,borderRadius:12,padding:22,border:"none"}}>
             {s.step===0&&(
               <div>
-                {[["TEAM 1 NAME","teamAName"],["TEAM 2 NAME","teamBName"]].map(([lbl,key])=>(
-                  <div key={key} style={{marginBottom:14}}>
-                    <label style={{color:SP.textDim,fontSize:11,display:"block",marginBottom:6,letterSpacing:1}}>{lbl}</label>
-                    <input value={s[key]} onChange={e=>{var v=e.target.value;setSetup(p=>({...p,[key]:v}));}}
-                      style={{width:"100%",background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:10,padding:"12px 14px",color:"#fff",fontSize:16,outline:"none",boxSizing:"border-box",fontFamily:"Lexend,Georgia,sans-serif"}}
-                    />
-                  </div>
-                ))}
-                <label style={{color:SP.textDim,fontSize:11,display:"block",marginBottom:10,letterSpacing:1}}>OVERS PER INNINGS</label>
+                <TeamSelectorStep
+                  setup={s}
+                  setSetup={setSetup}
+                />
+                <label style={{color:SP.textDim,fontSize:11,display:"block",marginBottom:10,letterSpacing:1,marginTop:16}}>OVERS PER INNINGS</label>
                 <div style={{display:"flex",alignItems:"center",gap:0,background:SP.bg,borderRadius:12,border:"1px solid rgba(73,72,71,.25)",overflow:"hidden"}}>
                   <button
                     onClick={()=>setSetup(p=>({...p,overs:Math.max(1,p.overs-1)}))}
