@@ -1740,7 +1740,7 @@ function AuthGate({children}) {
   const [err,      setErr]      = useState("");
   const [info,     setInfo]     = useState("");
   const [busy,     setBusy]     = useState(false);
-  const [tagline,  setTagline]  = useState("Enter the Arena");
+  const [tagline,  setTagline]  = useState("18 Forever & ever");
 
   const ROLES      = ["Batsman","Bowler","All-rounder","Wicket-keeper"];
   const BAT_STYLES = ["Right-hand","Left-hand"];
