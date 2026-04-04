@@ -4065,16 +4065,17 @@ function App({ currentUser }) {
     var totalCompleted = match.overs[bt] || 0;
     var displayStart = totalCompleted - (displayOvers.length - 1);
 
-    // Flatten into a single array with over-label sentinels
+    // Flatten into a single array with over-label sentinels, newest over first
     var items = [];
-    displayOvers.forEach((over, oi) => {
-      items.push({ type: "label", overNum: displayStart + oi + 1 });
-      over.forEach(b => items.push({ type: "ball", b }));
+    displayOvers.slice().reverse().forEach((over, oi) => {
+      var overNum = displayStart + (displayOvers.length - 1 - oi) + 1;
+      items.push({ type: "label", overNum });
+      over.slice().reverse().forEach(b => items.push({ type: "ball", b }));
     });
 
     return (
       <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch",marginBottom:10,paddingBottom:4}}>
-        <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"nowrap",minWidth:"max-content",paddingRight:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"nowrap",minWidth:"max-content",paddingLeft:4}}>
           {items.map((item, i) => item.type==="label" ? (
             <span key={"lbl"+i} style={{
               color:SP.textDim, fontSize:9, fontWeight:"700", letterSpacing:1,
