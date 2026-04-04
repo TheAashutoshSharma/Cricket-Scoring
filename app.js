@@ -3982,7 +3982,7 @@ function App({ currentUser }) {
 
   function UndoCard() {
     return (
-	{isViewer?<span/>:
+	{isViewer?<span style={{color:SP.textDim,fontSize:10,letterSpacing:1}}/>:<span style={{color:SP.textDim,fontSize:10,letterSpacing:1}}>
 	  <div style={{flex:1,minWidth:0, padding:"3px 10px"}}>
         <button onClick={undo} disabled={!history.length}
 			  style={{width:"100%",padding:"3px 10px",borderRadius:6,border:"1px solid rgba(14,116,144,.4)",
@@ -3991,6 +3991,7 @@ function App({ currentUser }) {
               Undo ↩
         </button>
 	  </div>
+	  </span>
 	}
     );
   }
