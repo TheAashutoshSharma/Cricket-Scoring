@@ -3814,7 +3814,6 @@ function App({ currentUser }) {
   var needed     = target?Math.max(0,target-match.runs[1]):null;
   var ballsLeft  = (match.totalOvers-match.overs[bt])*6-match.balls[bt];
   var lastBalls  = (match.ballLog&&match.ballLog[bt])||[];
-  lastBalls      = lastBalls.slice(-12);
 
   // ── Shared UI blocks ──────────────────────────────────────────
   function ScoreHeader() {
@@ -4048,13 +4047,54 @@ function App({ currentUser }) {
 
   function BallLog() {
     if (!lastBalls.length) return null;
+
+    // Split ball log into overs — wides and no-balls are dead (don't count toward 6)
+    var overs = [];
+    var cur = [];
+    var legalInCur = 0;
+    lastBalls.forEach(b => {
+      var isDead = b.extra==="Wide" || b.extra==="No Ball";
+      cur.push(b);
+      if (!isDead && !b.retired) legalInCur++;
+      if (legalInCur === 6) { overs.push(cur); cur = []; legalInCur = 0; }
+    });
+    if (cur.length) overs.push(cur); // current partial over
+
+    // Show only last 2 complete overs + current partial (max 3 rows)
+    var totalOversCompleted = match.overs[bt] || 0;
+    var startOverNum = Math.max(0, totalOversCompleted - (overs.length - 1));
+    var displayOvers = overs.slice(-3);
+    var displayStart = totalOversCompleted - (displayOvers.length - 1);
+
     return (
-      <div style={{marginBottom:10,display:"flex",gap:6,flexWrap:"wrap"}}>
-        {lastBalls.map((b,i)=>(
-          <div key={i} style={{width:20,height:20,borderRadius:"50%",background:bBg(b),display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:8,fontWeight:"bold",fontFamily:"Lexend,Georgia,sans-serif",boxShadow:b.r===6?"0 0 8px rgba(156,255,147,.4)":b.r===4?"0 0 8px rgba(102,157,255,.3)":"none"}}>
-            {bTxt(b)}
-          </div>
-        ))}
+      <div style={{marginBottom:10}}>
+        {displayOvers.map((over, oi) => {
+          var overNum = displayStart + oi + 1; // 1-indexed over number
+          var isPartial = oi === displayOvers.length - 1 && (match.balls[bt] > 0 || !match.inningsOver[bt]);
+          return (
+            <div key={oi} style={{marginBottom:6}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                {/* Over label */}
+                <span style={{color:SP.textDim,fontSize:9,fontWeight:"700",letterSpacing:1,
+                  minWidth:24,textAlign:"right",fontFamily:"Lexend,Georgia,sans-serif",
+                  paddingRight:2,borderRight:"1px solid rgba(73,72,71,.3)",marginRight:2}}>
+                  {overNum}
+                </span>
+                {over.map((b,i)=>(
+                  <div key={i} style={{width:22,height:22,borderRadius:"50%",background:bBg(b),
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    color:"#fff",fontSize:9,fontWeight:"bold",fontFamily:"Lexend,Georgia,sans-serif",
+                    boxShadow:b.r===6?"0 0 8px rgba(156,255,147,.4)":b.r===4?"0 0 8px rgba(102,157,255,.3)":"none"}}>
+                    {bTxt(b)}
+                  </div>
+                ))}
+                {isPartial && over.length === 0 && (
+                  <span style={{color:SP.textDim,fontSize:10}}>—</span>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     );
   }
