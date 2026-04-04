@@ -3140,7 +3140,7 @@ function App({ currentUser }) {
       {/* Top App Bar */}
       <header style={S.topBar}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:20}}>🏏</span>
+          <img src="icons/icon-32.png" alt="Cricket Pulse" style={{width:52,height:52,objectFit:"contain"}}/>
           <span style={{color:"#fff",fontSize:16,fontWeight:"900",letterSpacing:-0.5,fontFamily:"Lexend,Georgia,sans-serif"}}>CRICKET PULSE</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
