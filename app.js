@@ -4048,7 +4048,7 @@ function App({ currentUser }) {
   function BallLog() {
     if (!lastBalls.length) return null;
 
-    // Split ball log into overs — wides and no-balls are dead (don't count toward 6)
+    // Split full ball log into overs (wides/no-balls don't count toward 6)
     var overs = [];
     var cur = [];
     var legalInCur = 0;
@@ -4058,43 +4058,43 @@ function App({ currentUser }) {
       if (!isDead && !b.retired) legalInCur++;
       if (legalInCur === 6) { overs.push(cur); cur = []; legalInCur = 0; }
     });
-    if (cur.length) overs.push(cur); // current partial over
+    if (cur.length) overs.push(cur);
 
-    // Show only last 2 complete overs + current partial (max 3 rows)
-    var totalOversCompleted = match.overs[bt] || 0;
-    var startOverNum = Math.max(0, totalOversCompleted - (overs.length - 1));
+    // Last 2 complete overs + current partial — max 3 groups
     var displayOvers = overs.slice(-3);
-    var displayStart = totalOversCompleted - (displayOvers.length - 1);
+    var totalCompleted = match.overs[bt] || 0;
+    var displayStart = totalCompleted - (displayOvers.length - 1);
+
+    // Flatten into a single array with over-label sentinels
+    var items = [];
+    displayOvers.forEach((over, oi) => {
+      items.push({ type: "label", overNum: displayStart + oi + 1 });
+      over.forEach(b => items.push({ type: "ball", b }));
+    });
 
     return (
-      <div style={{marginBottom:10}}>
-        {displayOvers.map((over, oi) => {
-          var overNum = displayStart + oi + 1; // 1-indexed over number
-          var isPartial = oi === displayOvers.length - 1 && (match.balls[bt] > 0 || !match.inningsOver[bt]);
-          return (
-            <div key={oi} style={{marginBottom:6}}>
-              <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                {/* Over label */}
-                <span style={{color:SP.textDim,fontSize:9,fontWeight:"700",letterSpacing:1,
-                  minWidth:24,textAlign:"right",fontFamily:"Lexend,Georgia,sans-serif",
-                  paddingRight:2,borderRight:"1px solid rgba(73,72,71,.3)",marginRight:2}}>
-                  {overNum}
-                </span>
-                {over.map((b,i)=>(
-                  <div key={i} style={{width:22,height:22,borderRadius:"50%",background:bBg(b),
-                    display:"flex",alignItems:"center",justifyContent:"center",
-                    color:"#fff",fontSize:9,fontWeight:"bold",fontFamily:"Lexend,Georgia,sans-serif",
-                    boxShadow:b.r===6?"0 0 8px rgba(156,255,147,.4)":b.r===4?"0 0 8px rgba(102,157,255,.3)":"none"}}>
-                    {bTxt(b)}
-                  </div>
-                ))}
-                {isPartial && over.length === 0 && (
-                  <span style={{color:SP.textDim,fontSize:10}}>—</span>
-                )}
-              </div>
+      <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch",marginBottom:10,paddingBottom:4}}>
+        <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"nowrap",minWidth:"max-content",paddingRight:8}}>
+          {items.map((item, i) => item.type==="label" ? (
+            <span key={"lbl"+i} style={{
+              color:SP.textDim, fontSize:9, fontWeight:"700", letterSpacing:1,
+              fontFamily:"Lexend,Georgia,sans-serif", paddingRight:5,
+              borderRight:"1px solid rgba(73,72,71,.35)", marginRight:2, whiteSpace:"nowrap",
+              flexShrink:0
+            }}>
+              Ov {item.overNum}
+            </span>
+          ) : (
+            <div key={"b"+i} style={{
+              width:24, height:24, borderRadius:"50%", background:bBg(item.b), flexShrink:0,
+              display:"flex", alignItems:"center", justifyContent:"center",
+              color:"#fff", fontSize:9, fontWeight:"bold", fontFamily:"Lexend,Georgia,sans-serif",
+              boxShadow:item.b.r===6?"0 0 8px rgba(156,255,147,.4)":item.b.r===4?"0 0 8px rgba(102,157,255,.3)":"none"
+            }}>
+              {bTxt(item.b)}
             </div>
-          );
-        })}
+          ))}
+        </div>
       </div>
     );
   }
