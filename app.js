@@ -931,8 +931,6 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
     ]).then(([umSnap, usersSnap]) => {
       var umVal    = umSnap.val()    || {};
       var usersVal = usersSnap.val() || {};
-      console.log("userMatches raw:", JSON.stringify(umVal));
-      console.log("users raw:", JSON.stringify(usersVal));
       var grouped = {};
       Object.entries(umVal).forEach(([uid, matchMap]) => {
         if (!matchMap || typeof matchMap !== "object") return;
@@ -951,7 +949,6 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
           matches: matchList.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)),
         };
       });
-      console.log("grouped:", JSON.stringify(Object.keys(grouped)));
       setUserMatches(grouped);
       setLoadingUM(false);
     }).catch(err => {
@@ -2124,10 +2121,8 @@ function App({ currentUser }) {
   // Load player name + photo whenever the linked player changes
   useEffect(() => {
     if (!userPlayerId || !_fbDB) return;
-    console.log("[DEBUG] Loading player record for userPlayerId:", userPlayerId);
     _fbDB.ref("players/"+userPlayerId).once("value", snap => {
       var p = snap.val();
-      console.log("[DEBUG] Player record:", JSON.stringify(p));
       if (p) {
         setUserPhotoUrl(p.photoUrl || null);
         setUserPlayerName(p.name || null);
@@ -3295,7 +3290,6 @@ function App({ currentUser }) {
               </div>
               {/* Season Stats — only matches the current user played in */}
               {(()=>{
-                console.log("[DEBUG] Profile render — userPlayerId:", userPlayerId, "userPlayerName:", userPlayerName, "matchHistory count:", matchHistory.length);
                 function isMe(p) {
                   if (!p) return false;
                   if (userPlayerId && p.playerId === userPlayerId) return true;
@@ -3313,11 +3307,9 @@ function App({ currentUser }) {
                   if (matched) console.log("[DEBUG] Matched match:", e.teamA, "vs", e.teamB, e.date);
                   return matched;
                 });
-                console.log("[DEBUG] myMatches found:", myMatches.length);
                 if (matchHistory.length > 0) {
                   var sample = matchHistory[0];
                   var samplePlayers = [...(((sample.snapshot||{}).teamA||{}).players||[]),...(((sample.snapshot||{}).teamB||{}).players||[])];
-                  console.log("[DEBUG] Sample match players (first match):", JSON.stringify(samplePlayers.map(p=>({name:p&&p.name,playerId:p&&p.playerId,uid:p&&p.uid}))));
                 }
                 var myRuns = 0, myWickets = 0, myMatches50 = 0;
                 myMatches.forEach(e=>{
