@@ -2086,26 +2086,18 @@ function App({ currentUser }) {
   // Falls back to scanning players/ by uid if no users/ record exists
   useEffect(() => {
     if (!currentUser || !_fbDB) return;
-    console.log("[DEBUG] currentUser uid:", currentUser.uid, "displayName:", currentUser.displayName, "email:", currentUser.email);
     _fbDB.ref("users/"+currentUser.uid).once("value", snap => {
       var rec = snap.val() || {};
-      console.log("[DEBUG] users/ record:", JSON.stringify(rec));
       var pid = (rec.playerIds && rec.playerIds.length) ? rec.playerIds[0] : (rec.playerId || null);
       if (pid) {
-        console.log("[DEBUG] userPlayerId set from users/ node:", pid);
         setUserPlayerId(pid);
       } else {
-        console.log("[DEBUG] No playerId in users/ — scanning players/ by uid...");
         _fbDB.ref("players").orderByChild("uid").equalTo(currentUser.uid).once("value", pSnap => {
           var pVal = pSnap.val();
-          console.log("[DEBUG] players/ scan by uid result:", JSON.stringify(pVal));
           if (pVal) {
             var firstId = Object.keys(pVal)[0];
-            console.log("[DEBUG] userPlayerId set from players/ scan:", firstId);
             setUserPlayerId(firstId);
             _fbDB.ref("users/"+currentUser.uid).update({ playerId: firstId, playerIds: [firstId] }).catch(()=>{});
-          } else {
-            console.log("[DEBUG] No player record found with uid:", currentUser.uid);
           }
         }).catch(e => console.error("[DEBUG] players/ scan error:", e));
       }
