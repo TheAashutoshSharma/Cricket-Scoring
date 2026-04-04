@@ -3445,14 +3445,22 @@ function App({ currentUser }) {
     }
     return (
       <div style={{...S.page,paddingBottom:88}}>
-        <header style={S.topBar}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%"}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <button onClick={()=>setScreen("home")} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
-              <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Match History</span>
-            </div>
+<header style={S.topBar}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <img src="icons/icon-192.png" alt="Cricket Pulse" style={{width:52,height:52,objectFit:"contain"}}/>
+          <span style={{color:"#fff",fontSize:16,fontWeight:"900",letterSpacing:-0.5,fontFamily:"Lexend,Georgia,sans-serif"}}>CRICKET PULSE</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",background:SP.bg3,borderRadius:999,border:"1px solid rgba(73,72,71,.2)"}}>
+            <span style={{fontSize:11}}>{fbReady?"🔵":"🟡"}</span>
+            <span style={{color:SP.textDim,fontSize:9,letterSpacing:2,fontWeight:"700",textTransform:"uppercase"}}>{fbReady?"Sync":"Offline"}</span>
           </div>
-        </header>
+        </div>
+      </header>
+        <div style={{padding:"8px 20px 0",display:"flex",alignItems:"center",gap:10}}>
+          <button onClick={()=>setScreen("home")} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
+          <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Match History</span>
+        </div>
         <div style={{...S.wrap,padding:"12px 20px"}}>
           {matchHistory.length===0 ? (
             <div style={{textAlign:"center",color:SP.textDim,padding:"60px 0",fontSize:13,fontFamily:"Lexend,Georgia,sans-serif"}}>No matches saved yet</div>
@@ -3566,11 +3574,21 @@ function App({ currentUser }) {
     return (
       <div style={{...S.page,paddingBottom:88}}>
         <div style={{...S.wrap,padding:"0 12px"}}>
-          <div style={{...S.topBar,position:"static",padding:"12px 16px",marginBottom:8}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <button onClick={()=>{setMatch(null);setScreen("history");}} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
-              <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Scorecard</span>
-            </div>
+<header style={S.topBar}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <img src="icons/icon-192.png" alt="Cricket Pulse" style={{width:52,height:52,objectFit:"contain"}}/>
+          <span style={{color:"#fff",fontSize:16,fontWeight:"900",letterSpacing:-0.5,fontFamily:"Lexend,Georgia,sans-serif"}}>CRICKET PULSE</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",background:SP.bg3,borderRadius:999,border:"1px solid rgba(73,72,71,.2)"}}>
+            <span style={{fontSize:11}}>{fbReady?"🔵":"🟡"}</span>
+            <span style={{color:SP.textDim,fontSize:9,letterSpacing:2,fontWeight:"700",textTransform:"uppercase"}}>{fbReady?"Sync":"Offline"}</span>
+          </div>
+        </div>
+      </header>
+          <div style={{padding:"8px 16px 0",display:"flex",alignItems:"center",gap:10}}>
+            <button onClick={()=>{setMatch(null);setScreen("history");}} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
+            <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Scorecard</span>
           </div>
           {match.teamA&&match.teamB&&<TCardH team={match.teamA} inn={0} opp={match.teamB}/>}
           {match.inningsOver&&match.inningsOver[0]&&match.teamB&&<TCardH team={match.teamB} inn={1} opp={match.teamA}/>}
@@ -4201,11 +4219,21 @@ function App({ currentUser }) {
     return (
       <div style={{...S.page,paddingBottom:88}}>
         <div style={{...S.wrap,padding:"0 12px"}}>
-          <div style={{...S.topBar,position:"static",padding:"12px 16px",marginBottom:8}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <button onClick={()=>setScreen(prev)} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
-              <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Scorecard</span>
-            </div>
+<header style={S.topBar}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <img src="icons/icon-192.png" alt="Cricket Pulse" style={{width:52,height:52,objectFit:"contain"}}/>
+          <span style={{color:"#fff",fontSize:16,fontWeight:"900",letterSpacing:-0.5,fontFamily:"Lexend,Georgia,sans-serif"}}>CRICKET PULSE</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",background:SP.bg3,borderRadius:999,border:"1px solid rgba(73,72,71,.2)"}}>
+            <span style={{fontSize:11}}>{fbReady?"🔵":"🟡"}</span>
+            <span style={{color:SP.textDim,fontSize:9,letterSpacing:2,fontWeight:"700",textTransform:"uppercase"}}>{fbReady?"Sync":"Offline"}</span>
+          </div>
+        </div>
+      </header>
+          <div style={{padding:"8px 16px 0",display:"flex",alignItems:"center",gap:10}}>
+            <button onClick={()=>setScreen(prev)} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
+            <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Scorecard</span>
           </div>
           <TCard team={match.teamA} inn={0} opp={match.teamB}/>
           {(match.batting===1||match.inningsOver[0])&&<TCard team={match.teamB} inn={1} opp={match.teamA}/>}
