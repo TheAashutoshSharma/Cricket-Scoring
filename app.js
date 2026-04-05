@@ -58,6 +58,7 @@ const blankSetup = () => ({
   teamBPlayers: Array.from({length:0},(_,i)=>"Player "+(i+1)),
   teamACount:0, teamBCount:0,
   teamAPlayerIds:[], teamBPlayerIds:[],
+  teamASelected:"", teamBSelected:"", // saved team id, "" = create new
   tossWinner: null,   // 0=teamA, 1=teamB
   battingFirst: 0,    // 0=teamA bats first, 1=teamB bats first
 });
@@ -930,8 +931,6 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
     ]).then(([umSnap, usersSnap]) => {
       var umVal    = umSnap.val()    || {};
       var usersVal = usersSnap.val() || {};
-      console.log("userMatches raw:", JSON.stringify(umVal));
-      console.log("users raw:", JSON.stringify(usersVal));
       var grouped = {};
       Object.entries(umVal).forEach(([uid, matchMap]) => {
         if (!matchMap || typeof matchMap !== "object") return;
@@ -950,7 +949,6 @@ function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
           matches: matchList.sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)),
         };
       });
-      console.log("grouped:", JSON.stringify(Object.keys(grouped)));
       setUserMatches(grouped);
       setLoadingUM(false);
     }).catch(err => {
@@ -1479,6 +1477,104 @@ function TossStep({teamAName, teamBName, tossWinner, battingFirst, onToss, onCho
 }
 
 // ── NList — player/bowler name entry in setup wizard ─────────────
+// ── TeamSelectorStep — pick saved team or create new in setup wizard ──
+function TeamSelectorStep({ setup, setSetup }) {
+  const [teams,   setTeams]   = React.useState(null); // null=loading
+  const [players, setPlayers] = React.useState({});   // id -> player record
+
+  React.useEffect(() => {
+    if (!_fbDB) { setTeams([]); return; }
+    Promise.all([
+      _fbDB.ref("teams").once("value"),
+      _fbDB.ref("players").once("value"),
+    ]).then(([tSnap, pSnap]) => {
+      var tVal = tSnap.val() || {};
+      var pVal = pSnap.val() || {};
+      setTeams(Object.values(tVal).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+      setPlayers(pVal);
+    }).catch(() => setTeams([]));
+  }, []);
+
+  function applyTeam(slot, teamId) {
+    // slot: "A" | "B"
+    var nameKey    = slot==="A" ? "teamAName"      : "teamBName";
+    var playersKey = slot==="A" ? "teamAPlayers"   : "teamBPlayers";
+    var idsKey     = slot==="A" ? "teamAPlayerIds" : "teamBPlayerIds";
+    var countKey   = slot==="A" ? "teamACount"     : "teamBCount";
+    var selKey     = slot==="A" ? "teamASelected"  : "teamBSelected";
+
+    if (!teamId) {
+      // "Create new" — clear everything for this slot
+      setSetup(p => ({...p,
+        [nameKey]: slot==="A" ? "Team A" : "Team B",
+        [playersKey]: [], [idsKey]: [], [countKey]: 0,
+        [selKey]: "",
+      }));
+      return;
+    }
+    var team = (teams||[]).find(t=>t.id===teamId);
+    if (!team) return;
+    var ids   = team.playerIds||[];
+    var names = ids.map(id => players[id]?.name || "Player").filter(Boolean);
+    setSetup(p => ({...p,
+      [nameKey]: team.name,
+      [playersKey]: names, [idsKey]: ids, [countKey]: names.length,
+      [selKey]: teamId,
+    }));
+  }
+
+  var selA = setup.teamASelected || "";
+  var selB = setup.teamBSelected || "";
+
+  return (
+    <div>
+      {[["A","TEAM 1"],["B","TEAM 2"]].map(([slot, lbl])=>{
+        var sel     = slot==="A" ? selA : selB;
+        var nameKey = slot==="A" ? "teamAName" : "teamBName";
+        var count   = slot==="A" ? (setup.teamAPlayerIds||[]).length : (setup.teamBPlayerIds||[]).length;
+        return (
+          <div key={slot} style={{marginBottom:16}}>
+            <label style={{color:SP.textDim,fontSize:11,display:"block",marginBottom:6,letterSpacing:1}}>{lbl}</label>
+            {teams===null ? (
+              <div style={{color:SP.textDim,fontSize:13,padding:"12px 0"}}>Loading teams…</div>
+            ) : (
+              <div style={{position:"relative"}}>
+                <select
+                  value={sel}
+                  onChange={e=>applyTeam(slot, e.target.value)}
+                  style={{width:"100%",background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:10,
+                    padding:"12px 40px 12px 14px",color:sel?"#fff":SP.textDim,fontSize:15,outline:"none",
+                    boxSizing:"border-box",fontFamily:"Lexend,Georgia,sans-serif",appearance:"none",cursor:"pointer"}}>
+                  <option value="">＋ Create new team</option>
+                  {teams.map(t=>(
+                    <option key={t.id} value={t.id}>{t.name} ({(t.playerIds||[]).length} players)</option>
+                  ))}
+                </select>
+                <span style={{position:"absolute",right:14,top:"50%",transform:"translateY(-50%)",
+                  color:SP.textDim,fontSize:12,pointerEvents:"none"}}>▾</span>
+              </div>
+            )}
+            {/* Manual name input — shown when creating new OR when name was edited */}
+            <input
+              value={setup[nameKey]}
+              onChange={e=>{var v=e.target.value;setSetup(p=>({...p,[nameKey]:v}));}}
+              placeholder={sel ? "" : (slot==="A"?"Team A":"Team B")}
+              style={{width:"100%",background:SP.bg3,border:"1px solid rgba(73,72,71,.15)",
+                borderRadius:8,padding:"10px 14px",color:"#fff",fontSize:14,outline:"none",
+                boxSizing:"border-box",fontFamily:"Lexend,Georgia,sans-serif",marginTop:8}}
+            />
+            {sel && count>0 && (
+              <div style={{color:SP.primary,fontSize:11,marginTop:5,paddingLeft:2}}>
+                ✓ {count} player{count!==1?"s":""} loaded from saved team
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function PlayerPickerStep({teamName, selectedNames, selectedIds, onUpdate, currentUser, teamSlot, setup, setSetup}) {
   // Shows all saved players as selectable list, with inline new player creation
   const [allPlayers,  setAllPlayers]  = React.useState(null);
@@ -1641,6 +1737,7 @@ function AuthGate({children}) {
   const [err,      setErr]      = useState("");
   const [info,     setInfo]     = useState("");
   const [busy,     setBusy]     = useState(false);
+  const [tagline,  setTagline]  = useState("18 Forever & ever");
 
   const ROLES      = ["Batsman","Bowler","All-rounder","Wicket-keeper"];
   const BAT_STYLES = ["Right-hand","Left-hand"];
@@ -1648,6 +1745,13 @@ function AuthGate({children}) {
 
   useEffect(() => {
     initFB();
+    // Fetch tagline from Firebase (real-time, updates live)
+    if (_fbDB) {
+      _fbDB.ref("config/tagline").on("value", snap => {
+        var val = snap.val();
+        if (val && typeof val === "string") setTagline(val);
+      });
+    }
     if (!_fbAuth) { setStatus("login"); return; }
     var unsub = _fbAuth.onAuthStateChanged(u => {
       if (u) {
@@ -1673,7 +1777,7 @@ function AuthGate({children}) {
       else { setAuthUser(null); setStatus("login"); }
     });
     var t = setTimeout(() => setStatus(s => s === "loading" ? "login" : s), 5000);
-    return () => { unsub(); clearTimeout(t); };
+    return () => { unsub(); clearTimeout(t); if (_fbDB) _fbDB.ref("config/tagline").off(); };
   }, []);
 
   function clearForm() { setErr(""); setInfo(""); }
@@ -1788,10 +1892,10 @@ function AuthGate({children}) {
         {/* Logo */}
         <div style={{textAlign:"center",marginBottom:40}}>
           <div style={{width:72,height:72,background:"#1a1919",borderRadius:12,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 20px",boxShadow:"0 8px 32px rgba(0,0,0,.5)"}}>
-            <span style={{fontSize:34}}>🏏</span>
+            <img src="icons/icon-192.png" alt="Cricket Pulse" style={{width:52,height:52,objectFit:"contain"}}/>
           </div>
           <h1 style={{color:"#fff",fontSize:28,fontWeight:"900",letterSpacing:-1,margin:"0 0 6px",fontFamily:"Lexend,Georgia,sans-serif",fontStyle:"italic"}}>CRICKET PULSE</h1>
-          <p style={{color:SP.textDim,fontSize:10,letterSpacing:3,margin:0,fontWeight:"600",textTransform:"uppercase"}}>Enter the Arena</p>
+          <p style={{color:SP.textDim,fontSize:10,letterSpacing:3,margin:0,fontWeight:"600",textTransform:"uppercase"}}>{tagline}</p>
         </div>
 
         {/* Tab switcher */}
@@ -1840,7 +1944,7 @@ function AuthGate({children}) {
               {/* Common fields */}
               <div style={{marginBottom:12}}>
                 <label style={{...S.lbl,display:"block",marginBottom:6}}>{regType==="player"?"PLAYER NAME":"YOUR NAME"}</label>
-                <input value={name} onChange={e=>{setName(e.target.value);clearForm();}} type="text" placeholder={regType==="player"?"e.g. Virat Kohli":"e.g. Arjun Patel"} className="sp-input"
+                <input value={name} onChange={e=>{setName(e.target.value);clearForm();}} type="text" placeholder={regType==="player"?"e.g. Virat Kohli":"e.g. Rohit Sharma"} className="sp-input"
                   onKeyDown={e=>{if(e.key==="Enter")handleRegister();}}/>
               </div>
 
@@ -1979,26 +2083,18 @@ function App({ currentUser }) {
   // Falls back to scanning players/ by uid if no users/ record exists
   useEffect(() => {
     if (!currentUser || !_fbDB) return;
-    console.log("[DEBUG] currentUser uid:", currentUser.uid, "displayName:", currentUser.displayName, "email:", currentUser.email);
     _fbDB.ref("users/"+currentUser.uid).once("value", snap => {
       var rec = snap.val() || {};
-      console.log("[DEBUG] users/ record:", JSON.stringify(rec));
       var pid = (rec.playerIds && rec.playerIds.length) ? rec.playerIds[0] : (rec.playerId || null);
       if (pid) {
-        console.log("[DEBUG] userPlayerId set from users/ node:", pid);
         setUserPlayerId(pid);
       } else {
-        console.log("[DEBUG] No playerId in users/ — scanning players/ by uid...");
         _fbDB.ref("players").orderByChild("uid").equalTo(currentUser.uid).once("value", pSnap => {
           var pVal = pSnap.val();
-          console.log("[DEBUG] players/ scan by uid result:", JSON.stringify(pVal));
           if (pVal) {
             var firstId = Object.keys(pVal)[0];
-            console.log("[DEBUG] userPlayerId set from players/ scan:", firstId);
             setUserPlayerId(firstId);
             _fbDB.ref("users/"+currentUser.uid).update({ playerId: firstId, playerIds: [firstId] }).catch(()=>{});
-          } else {
-            console.log("[DEBUG] No player record found with uid:", currentUser.uid);
           }
         }).catch(e => console.error("[DEBUG] players/ scan error:", e));
       }
@@ -2025,10 +2121,8 @@ function App({ currentUser }) {
   // Load player name + photo whenever the linked player changes
   useEffect(() => {
     if (!userPlayerId || !_fbDB) return;
-    console.log("[DEBUG] Loading player record for userPlayerId:", userPlayerId);
     _fbDB.ref("players/"+userPlayerId).once("value", snap => {
       var p = snap.val();
-      console.log("[DEBUG] Player record:", JSON.stringify(p));
       if (p) {
         setUserPhotoUrl(p.photoUrl || null);
         setUserPlayerName(p.name || null);
@@ -3033,7 +3127,7 @@ function App({ currentUser }) {
       {/* Top App Bar */}
       <header style={S.topBar}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:20}}>🏏</span>
+          <img src="icons/icon-192.png" alt="Cricket Pulse" style={{width:52,height:52,objectFit:"contain"}}/>
           <span style={{color:"#fff",fontSize:16,fontWeight:"900",letterSpacing:-0.5,fontFamily:"Lexend,Georgia,sans-serif"}}>CRICKET PULSE</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -3196,7 +3290,6 @@ function App({ currentUser }) {
               </div>
               {/* Season Stats — only matches the current user played in */}
               {(()=>{
-                console.log("[DEBUG] Profile render — userPlayerId:", userPlayerId, "userPlayerName:", userPlayerName, "matchHistory count:", matchHistory.length);
                 function isMe(p) {
                   if (!p) return false;
                   if (userPlayerId && p.playerId === userPlayerId) return true;
@@ -3214,11 +3307,9 @@ function App({ currentUser }) {
                   if (matched) console.log("[DEBUG] Matched match:", e.teamA, "vs", e.teamB, e.date);
                   return matched;
                 });
-                console.log("[DEBUG] myMatches found:", myMatches.length);
                 if (matchHistory.length > 0) {
                   var sample = matchHistory[0];
                   var samplePlayers = [...(((sample.snapshot||{}).teamA||{}).players||[]),...(((sample.snapshot||{}).teamB||{}).players||[])];
-                  console.log("[DEBUG] Sample match players (first match):", JSON.stringify(samplePlayers.map(p=>({name:p&&p.name,playerId:p&&p.playerId,uid:p&&p.uid}))));
                 }
                 var myRuns = 0, myWickets = 0, myMatches50 = 0;
                 myMatches.forEach(e=>{
@@ -3338,14 +3429,22 @@ function App({ currentUser }) {
     }
     return (
       <div style={{...S.page,paddingBottom:88}}>
-        <header style={S.topBar}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",width:"100%"}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <button onClick={()=>setScreen("home")} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
-              <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Match History</span>
-            </div>
+<header style={S.topBar}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <img src="icons/icon-192.png" alt="Cricket Pulse" style={{width:52,height:52,objectFit:"contain"}}/>
+          <span style={{color:"#fff",fontSize:16,fontWeight:"900",letterSpacing:-0.5,fontFamily:"Lexend,Georgia,sans-serif"}}>CRICKET PULSE</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",background:SP.bg3,borderRadius:999,border:"1px solid rgba(73,72,71,.2)"}}>
+            <span style={{fontSize:11}}>{fbReady?"🔵":"🟡"}</span>
+            <span style={{color:SP.textDim,fontSize:9,letterSpacing:2,fontWeight:"700",textTransform:"uppercase"}}>{fbReady?"Sync":"Offline"}</span>
           </div>
-        </header>
+        </div>
+      </header>
+        <div style={{padding:"8px 20px 0",display:"flex",alignItems:"center",gap:10}}>
+          <button onClick={()=>setScreen("home")} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
+          <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Match History</span>
+        </div>
         <div style={{...S.wrap,padding:"12px 20px"}}>
           {matchHistory.length===0 ? (
             <div style={{textAlign:"center",color:SP.textDim,padding:"60px 0",fontSize:13,fontFamily:"Lexend,Georgia,sans-serif"}}>No matches saved yet</div>
@@ -3459,11 +3558,21 @@ function App({ currentUser }) {
     return (
       <div style={{...S.page,paddingBottom:88}}>
         <div style={{...S.wrap,padding:"0 12px"}}>
-          <div style={{...S.topBar,position:"static",padding:"12px 16px",marginBottom:8}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <button onClick={()=>{setMatch(null);setScreen("history");}} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
-              <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Scorecard</span>
-            </div>
+<header style={S.topBar}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <img src="icons/icon-192.png" alt="Cricket Pulse" style={{width:52,height:52,objectFit:"contain"}}/>
+          <span style={{color:"#fff",fontSize:16,fontWeight:"900",letterSpacing:-0.5,fontFamily:"Lexend,Georgia,sans-serif"}}>CRICKET PULSE</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",background:SP.bg3,borderRadius:999,border:"1px solid rgba(73,72,71,.2)"}}>
+            <span style={{fontSize:11}}>{fbReady?"🔵":"🟡"}</span>
+            <span style={{color:SP.textDim,fontSize:9,letterSpacing:2,fontWeight:"700",textTransform:"uppercase"}}>{fbReady?"Sync":"Offline"}</span>
+          </div>
+        </div>
+      </header>
+          <div style={{padding:"8px 16px 0",display:"flex",alignItems:"center",gap:10}}>
+            <button onClick={()=>{setMatch(null);setScreen("history");}} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
+            <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Scorecard</span>
           </div>
           {match.teamA&&match.teamB&&<TCardH team={match.teamA} inn={0} opp={match.teamB}/>}
           {match.inningsOver&&match.inningsOver[0]&&match.teamB&&<TCardH team={match.teamB} inn={1} opp={match.teamA}/>}
@@ -3559,15 +3668,11 @@ function App({ currentUser }) {
           <div style={{background:SP.bg2,borderRadius:12,padding:22,border:"none"}}>
             {s.step===0&&(
               <div>
-                {[["TEAM 1 NAME","teamAName"],["TEAM 2 NAME","teamBName"]].map(([lbl,key])=>(
-                  <div key={key} style={{marginBottom:14}}>
-                    <label style={{color:SP.textDim,fontSize:11,display:"block",marginBottom:6,letterSpacing:1}}>{lbl}</label>
-                    <input value={s[key]} onChange={e=>{var v=e.target.value;setSetup(p=>({...p,[key]:v}));}}
-                      style={{width:"100%",background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:10,padding:"12px 14px",color:"#fff",fontSize:16,outline:"none",boxSizing:"border-box",fontFamily:"Lexend,Georgia,sans-serif"}}
-                    />
-                  </div>
-                ))}
-                <label style={{color:SP.textDim,fontSize:11,display:"block",marginBottom:10,letterSpacing:1}}>OVERS PER INNINGS</label>
+                <TeamSelectorStep
+                  setup={s}
+                  setSetup={setSetup}
+                />
+                <label style={{color:SP.textDim,fontSize:11,display:"block",marginBottom:10,letterSpacing:1,marginTop:16}}>OVERS PER INNINGS</label>
                 <div style={{display:"flex",alignItems:"center",gap:0,background:SP.bg,borderRadius:12,border:"1px solid rgba(73,72,71,.25)",overflow:"hidden"}}>
                   <button
                     onClick={()=>setSetup(p=>({...p,overs:Math.max(1,p.overs-1)}))}
@@ -3693,7 +3798,6 @@ function App({ currentUser }) {
   var needed     = target?Math.max(0,target-match.runs[1]):null;
   var ballsLeft  = (match.totalOvers-match.overs[bt])*6-match.balls[bt];
   var lastBalls  = (match.ballLog&&match.ballLog[bt])||[];
-  lastBalls      = lastBalls.slice(-12);
 
   // ── Shared UI blocks ──────────────────────────────────────────
   function ScoreHeader() {
@@ -3927,13 +4031,55 @@ function App({ currentUser }) {
 
   function BallLog() {
     if (!lastBalls.length) return null;
+
+    // Split full ball log into overs (wides/no-balls don't count toward 6)
+    var overs = [];
+    var cur = [];
+    var legalInCur = 0;
+    lastBalls.forEach(b => {
+      var isDead = b.extra==="Wide" || b.extra==="No Ball";
+      cur.push(b);
+      if (!isDead && !b.retired) legalInCur++;
+      if (legalInCur === 6) { overs.push(cur); cur = []; legalInCur = 0; }
+    });
+    if (cur.length) overs.push(cur);
+
+    // Last 2 complete overs + current partial — max 3 groups
+    var displayOvers = overs.slice(-3);
+    var totalCompleted = match.overs[bt] || 0;
+    var displayStart = totalCompleted - (displayOvers.length - 1);
+
+    // Flatten into a single array with over-label sentinels, newest over first
+    var items = [];
+    displayOvers.slice().reverse().forEach((over, oi) => {
+      var overNum = displayStart + (displayOvers.length - 1 - oi) + 1;
+      items.push({ type: "label", overNum });
+      over.slice().reverse().forEach(b => items.push({ type: "ball", b }));
+    });
+
     return (
-      <div style={{marginBottom:10,display:"flex",gap:6,flexWrap:"wrap"}}>
-        {lastBalls.map((b,i)=>(
-          <div key={i} style={{width:20,height:20,borderRadius:"50%",background:bBg(b),display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontSize:8,fontWeight:"bold",fontFamily:"Lexend,Georgia,sans-serif",boxShadow:b.r===6?"0 0 8px rgba(156,255,147,.4)":b.r===4?"0 0 8px rgba(102,157,255,.3)":"none"}}>
-            {bTxt(b)}
-          </div>
-        ))}
+      <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch",marginBottom:10,paddingBottom:4}}>
+        <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"nowrap",minWidth:"max-content",paddingLeft:4}}>
+          {items.map((item, i) => item.type==="label" ? (
+            <span key={"lbl"+i} style={{
+              color:SP.textDim, fontSize:9, fontWeight:"700", letterSpacing:1,
+              fontFamily:"Lexend,Georgia,sans-serif", paddingRight:5,
+              borderRight:"1px solid rgba(73,72,71,.35)", marginRight:2, whiteSpace:"nowrap",
+              flexShrink:0
+            }}>
+              Ov {item.overNum}
+            </span>
+          ) : (
+            <div key={"b"+i} style={{
+              width:24, height:24, borderRadius:"50%", background:bBg(item.b), flexShrink:0,
+              display:"flex", alignItems:"center", justifyContent:"center",
+              color:"#fff", fontSize:9, fontWeight:"bold", fontFamily:"Lexend,Georgia,sans-serif",
+              boxShadow:item.b.r===6?"0 0 8px rgba(156,255,147,.4)":item.b.r===4?"0 0 8px rgba(102,157,255,.3)":"none"
+            }}>
+              {bTxt(item.b)}
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -3987,7 +4133,6 @@ function App({ currentUser }) {
         <div style={{padding:"0 12px"}}>
           <BatterCard editable={false}/>
           <BowlerCard editable={false}/>
-		  <UndoCard />
           <BallLog/>
         </div>
         {match.inningsOver[0]&&bt===0&&(
@@ -4000,7 +4145,7 @@ function App({ currentUser }) {
           <div style={{margin:"0 12px 12px",background:SP.bg3,borderRadius:10,padding:20,textAlign:"center",border:"1px solid rgba(102,157,255,.2)"}}>
             <div style={{fontSize:30,marginBottom:6}}>🏆</div>
             <div style={{color:SP.primary,fontWeight:"bold",fontSize:18,marginBottom:4}}>Match Over!</div>
-            {match.runs[1]>match.runs[0]?<div style={{color:SP.primary,fontSize:14}}>{match.teamB.name} wins by {10-match.wickets[1]} wickets!</div>
+            {match.runs[1]>match.runs[0]?<div style={{color:SP.primary,fontSize:14}}>{match.teamB.name} wins by {(()=>{var n=match.numPlayers&&match.numPlayers[1]?match.numPlayers[1]:10;return n>11?n-match.wickets[1]-1:n-match.wickets[1];})()} wickets!</div>
              :match.runs[1]<match.runs[0]?<div style={{color:SP.tertiary,fontSize:14}}>{match.teamA.name} wins by {match.runs[0]-match.runs[1]} runs!</div>
              :<div style={{color:SP.primary,fontSize:14}}>Match Tied!</div>}
           </div>
@@ -4098,11 +4243,21 @@ function App({ currentUser }) {
     return (
       <div style={{...S.page,paddingBottom:88}}>
         <div style={{...S.wrap,padding:"0 12px"}}>
-          <div style={{...S.topBar,position:"static",padding:"12px 16px",marginBottom:8}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <button onClick={()=>setScreen(prev)} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
-              <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Scorecard</span>
-            </div>
+<header style={S.topBar}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <img src="icons/icon-192.png" alt="Cricket Pulse" style={{width:52,height:52,objectFit:"contain"}}/>
+          <span style={{color:"#fff",fontSize:16,fontWeight:"900",letterSpacing:-0.5,fontFamily:"Lexend,Georgia,sans-serif"}}>CRICKET PULSE</span>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 10px",background:SP.bg3,borderRadius:999,border:"1px solid rgba(73,72,71,.2)"}}>
+            <span style={{fontSize:11}}>{fbReady?"🔵":"🟡"}</span>
+            <span style={{color:SP.textDim,fontSize:9,letterSpacing:2,fontWeight:"700",textTransform:"uppercase"}}>{fbReady?"Sync":"Offline"}</span>
+          </div>
+        </div>
+      </header>
+          <div style={{padding:"8px 16px 0",display:"flex",alignItems:"center",gap:10}}>
+            <button onClick={()=>setScreen(prev)} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
+            <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Scorecard</span>
           </div>
           <TCard team={match.teamA} inn={0} opp={match.teamB}/>
           {(match.batting===1||match.inningsOver[0])&&<TCard team={match.teamB} inn={1} opp={match.teamA}/>}
@@ -4230,7 +4385,7 @@ function App({ currentUser }) {
           <div style={{margin:"0 12px 12px",background:SP.bg3,borderRadius:10,padding:20,textAlign:"center",border:"1px solid rgba(102,157,255,.2)"}}>
             <div style={{fontSize:30,marginBottom:6}}>🏆</div>
             <div style={{color:SP.primary,fontWeight:"bold",fontSize:18,marginBottom:6}}>Match Over!</div>
-            {match.runs[1]>match.runs[0]?<div style={{color:SP.primary,fontSize:14}}>{match.teamB.name} wins by {10-match.wickets[1]} wickets!</div>
+            {match.runs[1]>match.runs[0]?<div style={{color:SP.primary,fontSize:14}}>{match.teamB.name} wins by {(()=>{var n=match.numPlayers&&match.numPlayers[1]?match.numPlayers[1]:10;return n>11?n-match.wickets[1]-1:n-match.wickets[1];})()} wickets!</div>
              :match.runs[1]<match.runs[0]?<div style={{color:SP.tertiary,fontSize:14}}>{match.teamA.name} wins by {match.runs[0]-match.runs[1]} runs!</div>
              :<div style={{color:SP.primary,fontSize:14}}>Match Tied!</div>}
             <button onClick={()=>{saveToHistory(match);resetAll();}}
