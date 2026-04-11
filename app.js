@@ -1646,7 +1646,7 @@ function PlayerPickerStep({teamName, selectedNames, selectedIds, onUpdate, curre
           playerIds: selectedIds||[],
           updatedAt: Date.now(),
         });
-        setSaveMsg("✓ Updated "" + nm + """);
+        setSaveMsg("✓ Updated " + nm);
       } else {
         var id = "T_"+Date.now()+"_"+Math.random().toString(36).slice(2,6);
         var t = {
