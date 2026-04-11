@@ -2645,6 +2645,38 @@ function App({ currentUser }) {
     }
   }
 
+  function autoSaveTeams(m) {
+    if (!_fbDB || !m) return;
+    // Save both teams automatically with their current players
+    var teamsToSave = [
+      { team: m.teamA, players: m.teamA.players },
+      { team: m.teamB, players: m.teamB.players },
+    ];
+    teamsToSave.forEach(({team, players}) => {
+      if (!team || !team.name || !players || !players.length) return;
+      // Check if a team with this name already exists — update it, else create new
+      _fbDB.ref("teams").orderByChild("name").equalTo(team.name).once("value", snap => {
+        var existing = snap.val();
+        if (existing) {
+          // Update existing team's playerIds
+          var key = Object.keys(existing)[0];
+          var playerIds = players.map(p=>p.playerId).filter(Boolean);
+          if (playerIds.length) _fbDB.ref("teams/"+key+"/playerIds").set(playerIds);
+        } else {
+          // Create new team record
+          var id = "T_"+Date.now()+"_"+Math.random().toString(36).slice(2,6);
+          var playerIds = players.map(p=>p.playerId).filter(Boolean);
+          _fbDB.ref("teams/"+id).set({
+            id, name: team.name,
+            playerIds,
+            createdBy: currentUser ? currentUser.uid : null,
+            createdAt: Date.now(),
+          });
+        }
+      });
+    });
+  }
+
   function saveToHistory(m) {
     var entry = {
       id: m.matchCode || String(Date.now()),
@@ -2728,6 +2760,29 @@ function App({ currentUser }) {
         }).catch(()=>{});
       });
     });
+  }
+
+  function startRematch(m) {
+    // Pre-fill setup with the same teams and players from the finished match
+    autoSaveTeams(m);
+    saveToHistory(m);
+    var teamA = m.teamA;
+    var teamB = m.teamB;
+    var newSetup = blankSetup();
+    newSetup.teamAName    = teamA.name;
+    newSetup.teamBName    = teamB.name;
+    newSetup.teamAPlayers = teamA.players.map(p=>p.name);
+    newSetup.teamBPlayers = teamB.players.map(p=>p.name);
+    newSetup.teamAPlayerIds = teamA.players.map(p=>p.playerId||null);
+    newSetup.teamBPlayerIds = teamB.players.map(p=>p.playerId||null);
+    newSetup.teamACount   = teamA.players.length;
+    newSetup.teamBCount   = teamB.players.length;
+    newSetup.overs        = m.totalOvers;
+    newSetup.step         = 1; // skip to team A player selection so they can tweak
+    setHistory([]);
+    setMatch(null);
+    setSetup(newSetup);
+    setScreen("setup");
   }
 
   function resetAll() {
@@ -3574,7 +3629,7 @@ function App({ currentUser }) {
             <button onClick={()=>{setMatch(null);setScreen("history");}} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
             <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Scorecard</span>
           </div>
-          {match.teamA&&match.teamB&&<TCardH team={match.teamA} inn={0} opp={match.teamB}/>}
+          {match.teamA&&match.teamB&&<TCardH team={match.teamA} inn={0} opp={{...match.teamB, bowlers: match.teamB.inn1Bowlers||match.teamB.bowlers}}/>}
           {match.inningsOver&&match.inningsOver[0]&&match.teamB&&<TCardH team={match.teamB} inn={1} opp={match.teamA}/>}
           {match.matchCode&&match.matchCode!=="LOCAL"&&(
             <MatchMediaGallery matchCode={match.matchCode} matchDate={match.createdAt} currentUser={currentUser}/>
@@ -4259,7 +4314,7 @@ function App({ currentUser }) {
             <button onClick={()=>setScreen(prev)} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
             <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Scorecard</span>
           </div>
-          <TCard team={match.teamA} inn={0} opp={match.teamB}/>
+          <TCard team={match.teamA} inn={0} opp={{...match.teamB, bowlers: match.teamB.inn1Bowlers||match.teamB.bowlers}}/>
           {(match.batting===1||match.inningsOver[0])&&<TCard team={match.teamB} inn={1} opp={match.teamA}/>}
           {match.matchCode&&match.matchCode!=="LOCAL"&&(
             <MatchMediaGallery matchCode={match.matchCode} matchDate={match.createdAt} currentUser={currentUser}/>
@@ -4368,9 +4423,10 @@ function App({ currentUser }) {
               m2.currentBowler = 0;
               m2.needsBowler = true; // must pick first bowler of 2nd innings
               m2.needsOpeners = true; // must pick opening batsmen for 2nd innings
-			  // In 2nd innings (batting=1), teamB is bowling — clear their bowlers for fresh start
-              m2.teamB.bowlers = [];
-              // Also reset currentBowler
+              // Preserve 1st innings bowling figures before clearing for 2nd innings
+              m2.teamB.inn1Bowlers = JSON.parse(JSON.stringify(m2.teamB.bowlers));
+              // teamA will bowl in 2nd innings — clear their bowlers for fresh start
+              m2.teamA.bowlers = [];
               m2.currentBowler = 0;
               return m2;
             })}
@@ -4388,10 +4444,16 @@ function App({ currentUser }) {
             {match.runs[1]>match.runs[0]?<div style={{color:SP.primary,fontSize:14}}>{match.teamB.name} wins by {(()=>{var n=match.numPlayers&&match.numPlayers[1]?match.numPlayers[1]:10;return n>11?n-match.wickets[1]-1:n-match.wickets[1];})()} wickets!</div>
              :match.runs[1]<match.runs[0]?<div style={{color:SP.tertiary,fontSize:14}}>{match.teamA.name} wins by {match.runs[0]-match.runs[1]} runs!</div>
              :<div style={{color:SP.primary,fontSize:14}}>Match Tied!</div>}
-            <button onClick={()=>{saveToHistory(match);resetAll();}}
-              style={{marginTop:14,padding:"10px 24px",background:"#fbbf24",color:"#0f172a",border:"none",borderRadius:10,fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
-              Save & New Match
-            </button>
+            <div style={{marginTop:14,display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
+              <button onClick={()=>{startRematch(match);}}
+                style={{padding:"10px 20px",background:SP.primary,color:"#00440a",border:"none",borderRadius:10,fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+                🔁 Rematch
+              </button>
+              <button onClick={()=>{autoSaveTeams(match);saveToHistory(match);resetAll();}}
+                style={{padding:"10px 20px",background:"#fbbf24",color:"#0f172a",border:"none",borderRadius:10,fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+                Save & New Match
+              </button>
+            </div>
           </div>
         )}
 
