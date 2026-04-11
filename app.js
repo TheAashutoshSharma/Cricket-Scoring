@@ -973,6 +973,37 @@ function ScorecardInnings({ match, inn, team, opp }) {
   );
 }
 
+function TabbedScorecard({ match, defaultTab }) {
+  var has2nd = !!(match.batting===1 || (match.inningsOver&&match.inningsOver[0]));
+  var init = defaultTab!==undefined ? defaultTab : (has2nd ? 1 : 0);
+  const [scTab, setScTab] = React.useState(init);
+  var opp0 = {...match.teamB, bowlers: match.teamB.inn1Bowlers||match.teamB.bowlers};
+  return (
+    <div>
+      {has2nd&&(
+        <div style={{display:"flex",background:SP.bg2,borderRadius:10,padding:4,gap:4,marginBottom:12}}>
+          {[match.teamA.name, match.teamB.name].map((nm,i)=>(
+            <button key={i} onClick={()=>setScTab(i)}
+              style={{flex:1,padding:"9px 0",borderRadius:7,border:"none",fontWeight:"700",fontSize:12,
+                cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",
+                background:scTab===i?SP.primary:"transparent",
+                color:scTab===i?"#0f172a":SP.textDim}}>
+              {nm}
+            </button>
+          ))}
+        </div>
+      )}
+      {scTab===0&&(
+        <ScorecardInnings match={match} inn={0} team={match.teamA} opp={opp0}/>
+      )}
+      {scTab===1&&has2nd&&(
+        <ScorecardInnings match={match} inn={1} team={match.teamB} opp={match.teamA}/>
+      )}
+    </div>
+  );
+}
+
+
 function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
   const [liveEntries,  setLiveEntries]  = React.useState(null);
   const [userMatches,  setUserMatches]  = React.useState(null); // {uid: {name, email, matches:[]}}
@@ -3707,33 +3738,7 @@ function App({ currentUser }) {
             <button onClick={()=>{setMatch(null);setScreen("history");}} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
             <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Scorecard</span>
           </div>
-          {(()=>{
-            var has2nd = match.inningsOver&&match.inningsOver[0]&&match.teamB;
-            var [scTab, setScTab] = React.useState(0);
-            return (
-              <>
-                {has2nd&&(
-                  <div style={{display:"flex",background:SP.bg2,borderRadius:10,padding:4,gap:4,marginBottom:12}}>
-                    {[match.teamA.name, match.teamB.name].map((nm,i)=>(
-                      <button key={i} onClick={()=>setScTab(i)}
-                        style={{flex:1,padding:"9px 0",borderRadius:7,border:"none",fontWeight:"700",fontSize:12,
-                          cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",
-                          background:scTab===i?SP.primary:"transparent",
-                          color:scTab===i?"#0f172a":SP.textDim}}>
-                        {nm}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {scTab===0&&match.teamA&&match.teamB&&(
-                  <ScorecardInnings match={match} inn={0} team={match.teamA} opp={{...match.teamB, bowlers: match.teamB.inn1Bowlers||match.teamB.bowlers}}/>
-                )}
-                {scTab===1&&has2nd&&(
-                  <ScorecardInnings match={match} inn={1} team={match.teamB} opp={match.teamA}/>
-                )}
-              </>
-            );
-          })()}
+          <TabbedScorecard match={match} defaultTab={0}/>
           {match.matchCode&&match.matchCode!=="LOCAL"&&(
             <MatchMediaGallery matchCode={match.matchCode} matchDate={match.createdAt} currentUser={currentUser}/>
           )}
@@ -4417,33 +4422,7 @@ function App({ currentUser }) {
             <button onClick={()=>setScreen(prev)} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
             <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Scorecard</span>
           </div>
-          {(()=>{
-            var has2nd = match.batting===1||match.inningsOver[0];
-            var [scTab, setScTab] = React.useState(has2nd?1:0);
-            return (
-              <>
-                {has2nd&&(
-                  <div style={{display:"flex",background:SP.bg2,borderRadius:10,padding:4,gap:4,marginBottom:12}}>
-                    {[match.teamA.name, match.teamB.name].map((nm,i)=>(
-                      <button key={i} onClick={()=>setScTab(i)}
-                        style={{flex:1,padding:"9px 0",borderRadius:7,border:"none",fontWeight:"700",fontSize:12,
-                          cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",
-                          background:scTab===i?SP.primary:"transparent",
-                          color:scTab===i?"#0f172a":SP.textDim}}>
-                        {nm}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                {scTab===0&&(
-                  <ScorecardInnings match={match} inn={0} team={match.teamA} opp={{...match.teamB, bowlers: match.teamB.inn1Bowlers||match.teamB.bowlers}}/>
-                )}
-                {scTab===1&&has2nd&&(
-                  <ScorecardInnings match={match} inn={1} team={match.teamB} opp={match.teamA}/>
-                )}
-              </>
-            );
-          })()}
+          <TabbedScorecard match={match}/>
           {match.matchCode&&match.matchCode!=="LOCAL"&&(
             <MatchMediaGallery matchCode={match.matchCode} matchDate={match.createdAt} currentUser={currentUser}/>
           )}
