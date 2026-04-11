@@ -4308,7 +4308,7 @@ function App({ currentUser }) {
   if (screen==="viewer") {
     var canScore = match && canClaimScoring(match);
     var iAmScorer = match && currentUser && match.scorerUid === currentUser.uid;
-    var scorerActive = match && match.scorerUid && !iAmScorer; // someone else is scoring
+    var scorerActive = match && match.scorerUid && !iAmScorer;
     var iRequestedHandover = match && match.scorerRequest && currentUser && match.scorerRequest.uid === currentUser.uid;
     return (
     <div style={S.page}>
@@ -4319,15 +4319,15 @@ function App({ currentUser }) {
         </div>
       ) : null}
       <div style={S.wrap}>
-        {/* Viewer top bar */}
+
+        {/* ── Top bar ── */}
         <div style={{...S.topBar}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <span style={{fontSize:16}}>🏏</span>
+            <img src="icons/icon-192.png" alt="Cricket Pulse" style={{width:32,height:32,objectFit:"contain"}}/>
             <span style={{color:"#fff",fontSize:13,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>CRICKET PULSE</span>
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <button onClick={()=>setScreen("scorecard")} style={S.btnSm}>📊</button>
-             {canScore && (
+            {canScore && (
               scorerActive
                 ? iRequestedHandover
                   ? <button disabled style={{...S.btnSm,opacity:0.5}}>⏳</button>
@@ -4337,8 +4337,44 @@ function App({ currentUser }) {
             <button onClick={resetAll} style={{...S.btnSm,color:SP.tertiary,borderColor:"rgba(255,112,114,.2)"}}>✕</button>
           </div>
         </div>
-        {/* Scorer info strip */}
-        <div style={{background:SP.bg2,borderBottom:"1px solid "+SP.bg3,padding:"6px 14px",display:"flex",alignItems:"center",gap:8}}>
+
+        {/* ── Live score banner ── */}
+        <div style={{margin:"10px 12px 0",background:"linear-gradient(135deg,#0f1f40,#111827)",borderRadius:16,padding:"16px 18px",border:"1px solid rgba(102,157,255,.15)"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <span className="sp-live-dot"/>
+              <span style={{color:SP.textDim,fontSize:10,fontWeight:"700",letterSpacing:2}}>LIVE</span>
+            </div>
+            {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
+              <button onClick={()=>shareMatch(match.matchCode)}
+                style={{display:"flex",alignItems:"center",gap:5,padding:"5px 12px",background:"rgba(102,157,255,.12)",border:"1px solid rgba(102,157,255,.35)",borderRadius:999,color:SP.secondary,fontWeight:"700",fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",letterSpacing:.5}}>
+                🔗 <span>Share :{match.matchCode}</span>
+              </button>
+            )}
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:target?10:0}}>
+            <div>
+              <div style={{color:SP.secondary,fontSize:10,letterSpacing:2,marginBottom:4,fontWeight:"700"}}>BATTING</div>
+              <div style={{color:"#fff",fontWeight:"bold",fontSize:18,fontFamily:"Lexend,Georgia,sans-serif"}}>{bTeam.name}</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div style={{lineHeight:1}}>
+                <span style={{color:"#fff",fontSize:36,fontWeight:"900"}}>{match.runs[bt]}</span>
+                <span style={{color:SP.textDim,fontSize:22,fontWeight:"400"}}>/{match.wickets[bt]}</span>
+              </div>
+              <div style={{color:SP.textDim,fontSize:13,marginTop:2}}>{match.overs[bt]}.{match.balls[bt]} / {match.totalOvers} ov</div>
+            </div>
+          </div>
+          {target&&(
+            <div style={{background:"rgba(255,112,114,.08)",border:"1px solid rgba(255,112,114,.2)",borderRadius:10,padding:"8px 14px",display:"flex",gap:16,marginTop:8}}>
+              <span style={{color:"rgba(255,160,160,.8)",fontSize:13}}>Target: <b style={{color:"#fff"}}>{target}</b></span>
+              <span style={{color:"rgba(255,160,160,.8)",fontSize:13}}>Need: <b style={{color:"#fff"}}>{needed}</b> off <b style={{color:"#fff"}}>{ballsLeft}</b> balls</span>
+            </div>
+          )}
+        </div>
+
+        {/* ── Scorer info strip ── */}
+        <div style={{background:SP.bg2,borderBottom:"1px solid "+SP.bg3,padding:"6px 14px",display:"flex",alignItems:"center",gap:8,margin:"8px 12px 0",borderRadius:10}}>
           {match&&match.scorerName
             ? <span style={{color:SP.textSec,fontSize:12,fontFamily:"Lexend,Georgia,sans-serif"}}>🏏 <b style={{color:"#fff"}}>{match.scorerName}</b> is scoring</span>
             : <span style={{color:SP.textDim,fontSize:12,fontFamily:"Lexend,Georgia,sans-serif"}}>No active scorer</span>}
@@ -4348,34 +4384,51 @@ function App({ currentUser }) {
             </span>
           )}
         </div>
-        <ScoreHeader/>
-        <div style={{padding:"0 12px"}}>
-          <BatterCard editable={false}/>
-          <BowlerCard editable={false}/>
-          <BallLog/>
-        </div>
-        {match.inningsOver[0]&&bt===0&&(
-          <div style={{margin:"0 12px 12px",background:"rgba(156,255,147,.08)",borderRadius:10,padding:18,textAlign:"center",border:"1px solid rgba(156,255,147,.2)"}}>
-            <div style={{color:SP.primary,fontWeight:"bold",fontSize:15}}>1st Innings Complete</div>
-            <div style={{color:"#fff",fontSize:13,marginTop:4}}>{match.teamA.name}: {match.runs[0]}/{match.wickets[0]}</div>
+
+        {/* ── Handover approval banner ── */}
+        {match&&match.scorerRequest&&currentUser&&match.scorerRequest.uid!==currentUser.uid && (
+          <div style={{margin:"8px 12px 0",background:"rgba(156,255,147,.06)",border:"1px solid rgba(251,191,36,.4)",borderRadius:10,padding:"12px 16px"}}>
+            <div style={{color:SP.primary,fontSize:13,fontWeight:"bold",marginBottom:8}}>
+              ✋ {match.scorerRequest.name} wants to score
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>approveHandover(match, match.scorerRequest)}
+                style={{flex:1,padding:"9px 0",background:"linear-gradient(135deg,#4ade80,#16a34a)",border:"none",borderRadius:10,color:"#0f172a",fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+                ✓ Approve
+              </button>
+              <button onClick={()=>declineHandover(match)}
+                style={{flex:1,padding:"9px 0",background:"transparent",border:"1px solid #ef4444",borderRadius:10,color:SP.tertiary,fontWeight:"bold",fontSize:13,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+                ✗ Decline
+              </button>
+            </div>
           </div>
         )}
+
+        {/* ── Match over banner ── */}
         {match.inningsOver[1]&&bt===1&&(
-          <div style={{margin:"0 12px 12px",background:SP.bg3,borderRadius:10,padding:20,textAlign:"center",border:"1px solid rgba(102,157,255,.2)"}}>
-            <div style={{fontSize:30,marginBottom:6}}>🏆</div>
+          <div style={{margin:"8px 12px 0",background:SP.bg3,borderRadius:12,padding:20,textAlign:"center",border:"1px solid rgba(102,157,255,.2)"}}>
+            <div style={{fontSize:28,marginBottom:6}}>🏆</div>
             <div style={{color:SP.primary,fontWeight:"bold",fontSize:18,marginBottom:4}}>Match Over!</div>
             {match.runs[1]>match.runs[0]?<div style={{color:SP.primary,fontSize:14}}>{match.teamB.name} wins by {(()=>{var n=match.numPlayers&&match.numPlayers[1]?match.numPlayers[1]:10;return n>11?n-match.wickets[1]-1:n-match.wickets[1];})()} wickets!</div>
              :match.runs[1]<match.runs[0]?<div style={{color:SP.tertiary,fontSize:14}}>{match.teamA.name} wins by {match.runs[0]-match.runs[1]} runs!</div>
              :<div style={{color:SP.primary,fontSize:14}}>Match Tied!</div>}
           </div>
         )}
-        <div style={{textAlign:"center",padding:"14px 0",color:"#334155",fontSize:11}}>Updates every ball automatically</div>
-        {/* Media gallery — viewers can upload and see all media */}
+
+        {/* ── Tabbed scorecard (with ball log inside each innings) ── */}
+        <div style={{padding:"10px 12px 0"}}>
+          <TabbedScorecard match={match}/>
+        </div>
+
+        {/* ── Media gallery ── */}
         {match&&match.matchCode&&match.matchCode!=="LOCAL"&&(
           <div style={{padding:"0 12px"}}>
             <MatchMediaGallery matchCode={match.matchCode} matchDate={match.createdAt} currentUser={currentUser}/>
           </div>
         )}
+
+        <div style={{textAlign:"center",padding:"10px 0",color:"#334155",fontSize:11}}>Updates every ball automatically</div>
+
         <nav style={S.bottomNav}>
           {[
             {icon:"🏠",label:"Home",tab:"home"},
