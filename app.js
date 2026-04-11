@@ -118,7 +118,7 @@ function normaliseMatch(v) {
   if (!v.ballLog) v.ballLog = [[],[]];
   if (!v.fallOfWickets) v.fallOfWickets = [[],[]];
   else { if (!v.fallOfWickets[0]) v.fallOfWickets[0]=[]; if (!v.fallOfWickets[1]) v.fallOfWickets[1]=[]; }
-  else { if (!v.ballLog[0]) v.ballLog[0]=[]; if (!v.ballLog[1]) v.ballLog[1]=[]; }
+  if (!v.ballLog[0]) v.ballLog[0]=[]; if (!v.ballLog[1]) v.ballLog[1]=[];
   if (!v.inningsOver) v.inningsOver = [false, false];
   if (!v.runs) v.runs = [0,0];
   if (!v.wickets) v.wickets = [0,0];
