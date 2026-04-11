@@ -5269,7 +5269,7 @@ function TeamsScreen({ currentUser, isAdmin, onBack, setScreen, setHomeTab }) {
   }
 
   function deleteTeam(t) {
-    if (!confirm("Delete team ""+t.name+""? This cannot be undone.")) return;
+    if (!confirm("Delete team "+t.name+"? This cannot be undone.")) return;
     _fbDB.ref("teams/"+t.id).remove().then(() => {
       setTeams(ts => ts.filter(x => x.id !== t.id));
       setView("list"); setSel(null);
