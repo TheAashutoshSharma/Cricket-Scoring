@@ -1490,7 +1490,7 @@ function TeamSelectorStep({ setup, setSetup }) {
     ]).then(([tSnap, pSnap]) => {
       var tVal = tSnap.val() || {};
       var pVal = pSnap.val() || {};
-      setTeams(Object.values(tVal).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+      setTeams(Object.values(tVal).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)));
       setPlayers(pVal);
     }).catch(() => setTeams([]));
   }, []);
@@ -1635,19 +1635,30 @@ function PlayerPickerStep({teamName, selectedNames, selectedIds, onUpdate, curre
   async function saveAsTeam() {
     var nm = teamName.trim();
     if (!nm || !(selectedIds||[]).length || !_fbDB) return;
-    setSavingTeam(true);
-    setSaveMsg("");
+    setSavingTeam(true); setSaveMsg("");
     try {
-      var id = "T_"+Date.now()+"_"+Math.random().toString(36).slice(2,6);
-      var t = {
-        id, name:nm,
-        playerIds: selectedIds||[],
-        ownerIds: currentUser ? [currentUser.uid] : [],
-        createdBy: currentUser ? currentUser.uid : null,
-        createdAt: Date.now(),
-      };
-      await _fbDB.ref("teams/"+id).set(t);
-      setSaveMsg("✓ Saved as " + nm);
+      // Check if a team with this name already exists — overwrite if so
+      var snap = await _fbDB.ref("teams").orderByChild("name").equalTo(nm).once("value");
+      var existing = snap.val();
+      if (existing) {
+        var key = Object.keys(existing)[0];
+        await _fbDB.ref("teams/"+key).update({
+          playerIds: selectedIds||[],
+          updatedAt: Date.now(),
+        });
+        setSaveMsg("✓ Updated "" + nm + """);
+      } else {
+        var id = "T_"+Date.now()+"_"+Math.random().toString(36).slice(2,6);
+        var t = {
+          id, name: nm,
+          playerIds: selectedIds||[],
+          ownerIds: currentUser ? [currentUser.uid] : [],
+          createdBy: currentUser ? currentUser.uid : null,
+          createdAt: Date.now(),
+        };
+        await _fbDB.ref("teams/"+id).set(t);
+        setSaveMsg("✓ Saved "" + nm + """);
+      }
       setTimeout(()=>setSaveMsg(""), 3000);
     } catch(e) { setSaveMsg("Error: "+e.message); }
     setSavingTeam(false);
@@ -5243,7 +5254,7 @@ function TeamsScreen({ currentUser, isAdmin, onBack, setScreen, setHomeTab }) {
     ]).then(([tSnap, pSnap]) => {
       var tVal = tSnap.val() || {};
       var pVal = pSnap.val() || {};
-      setTeams(Object.values(tVal).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
+      setTeams(Object.values(tVal).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)));
       setPlayers(Object.values(pVal).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
       setLoading(false);
     }).catch(()=>setLoading(false));
@@ -5252,10 +5263,17 @@ function TeamsScreen({ currentUser, isAdmin, onBack, setScreen, setHomeTab }) {
   function canEdit(t) {
     if (!currentUser) return false;
     if (isAdmin) return true;
-    // Support both legacy single createdBy and new ownerIds array
     if (t.ownerIds && t.ownerIds.includes(currentUser.uid)) return true;
     if (t.createdBy && t.createdBy === currentUser.uid) return true;
     return false;
+  }
+
+  function deleteTeam(t) {
+    if (!confirm("Delete team ""+t.name+""? This cannot be undone.")) return;
+    _fbDB.ref("teams/"+t.id).remove().then(() => {
+      setTeams(ts => ts.filter(x => x.id !== t.id));
+      setView("list"); setSel(null);
+    }).catch(e => setErr(e.message));
   }
 
   function isOwnerOf(t) {
@@ -5291,14 +5309,14 @@ function TeamsScreen({ currentUser, isAdmin, onBack, setScreen, setHomeTab }) {
     if (view==="edit" && sel) {
       _fbDB.ref("teams/"+sel.id).update({ name: form.name.trim(), playerIds: form.playerIds, ownerIds }).then(() => {
         var updated = {...sel, name: form.name.trim(), playerIds: form.playerIds, ownerIds};
-        setTeams(ts => ts.map(t => t.id===sel.id ? updated : t).sort((a,b)=>a.name.localeCompare(b.name)));
+        setTeams(ts => ts.map(t => t.id===sel.id ? updated : t));
         setSel(updated); setView("detail"); setSaving(false);
       }).catch(e => { setErr(e.message); setSaving(false); });
     } else {
       var id = "T_" + Date.now() + "_" + Math.random().toString(36).slice(2,6);
       var t = { id, name: form.name.trim(), playerIds: form.playerIds, ownerIds, createdBy: currentUser ? currentUser.uid : null, createdAt: Date.now() };
       _fbDB.ref("teams/"+id).set(t).then(() => {
-        setTeams(ts => [...ts, t].sort((a,b)=>a.name.localeCompare(b.name)));
+        setTeams(ts => [t, ...ts]);
         setView("list"); setSaving(false);
       }).catch(e => { setErr(e.message); setSaving(false); });
     }
@@ -5409,12 +5427,20 @@ function TeamsScreen({ currentUser, isAdmin, onBack, setScreen, setHomeTab }) {
               <button onClick={()=>setView("list")} style={S.btnSm}>← Back</button>
               <h2 style={{color:SP.primary,margin:0,fontSize:16,letterSpacing:2}}>{sel.name.toUpperCase()}</h2>
             </div>
-            {editable && (
-              <button onClick={()=>{setForm({name:sel.name,playerIds:[...(sel.playerIds||[])],ownerIds:[...(sel.ownerIds||(sel.createdBy?[sel.createdBy]:[]))]});setView("edit");}}
-                style={{padding:"7px 14px",background:"transparent",border:"1px solid #fbbf24",borderRadius:10,color:SP.primary,fontWeight:"bold",fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
-                ✏️ Edit
-              </button>
-            )}
+            <div style={{display:"flex",gap:8}}>
+              {editable && (
+                <button onClick={()=>{setForm({name:sel.name,playerIds:[...(sel.playerIds||[])],ownerIds:[...(sel.ownerIds||(sel.createdBy?[sel.createdBy]:[]))]});setView("edit");}}
+                  style={{padding:"7px 14px",background:"transparent",border:"1px solid #fbbf24",borderRadius:10,color:SP.primary,fontWeight:"bold",fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+                  ✏️ Edit
+                </button>
+              )}
+              {canEdit(sel) && (
+                <button onClick={()=>deleteTeam(sel)}
+                  style={{padding:"7px 14px",background:"transparent",border:"1px solid rgba(255,112,114,.4)",borderRadius:10,color:SP.tertiary,fontWeight:"bold",fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+                  🗑️ Delete
+                </button>
+              )}
+            </div>
           </div>
           <div style={{color:SP.textDim,fontSize:12,marginBottom:14,display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
             <span>{teamPlayers.length} players</span>
