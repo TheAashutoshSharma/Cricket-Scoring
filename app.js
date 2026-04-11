@@ -84,6 +84,7 @@ const blankMatch = (setup, code) => {
     extras:[0,0],
     extrasBreakdown:[{wide:0,noBall:0,bye:0,legBye:0},{wide:0,noBall:0,bye:0,legBye:0}],
     ballLog:[[],[]],
+    fallOfWickets:[[],[]],
     inningsOver:[false,false],
     numPlayers:[firstCount, secondCount],
     needsBowler: true,
@@ -115,6 +116,8 @@ function normaliseMatch(v) {
   if (!v.teamB.players) v.teamB.players = [];
   if (!v.teamB.bowlers) v.teamB.bowlers = [];
   if (!v.ballLog) v.ballLog = [[],[]];
+  if (!v.fallOfWickets) v.fallOfWickets = [[],[]];
+  else { if (!v.fallOfWickets[0]) v.fallOfWickets[0]=[]; if (!v.fallOfWickets[1]) v.fallOfWickets[1]=[]; }
   else { if (!v.ballLog[0]) v.ballLog[0]=[]; if (!v.ballLog[1]) v.ballLog[1]=[]; }
   if (!v.inningsOver) v.inningsOver = [false, false];
   if (!v.runs) v.runs = [0,0];
@@ -850,6 +853,126 @@ function PlayerPhotoUpload({ player, currentUser, onPhotoSaved, editable }) {
 }
 
 
+
+// ════════════════════════════════════════════════════════════════
+// Shared scorecard innings renderer
+function ScorecardInnings({ match, inn, team, opp }) {
+  var eb   = (match.extrasBreakdown && match.extrasBreakdown[inn]) || {};
+  var fow  = (match.fallOfWickets && match.fallOfWickets[inn]) || [];
+  var batted    = team.players.filter(p => p.balls > 0 || p.out || p.retired);
+  var yetToBat  = team.players.filter(p => !p.balls && !p.out && !p.retired);
+  var bowlers   = ((opp && opp.bowlers) || []).filter(b => b.overs > 0 || b.balls > 0);
+
+  function dismissalText(p) {
+    if (p.retired) return "Retired Hurt";
+    if (!p.out) return "not out";
+    if (p.howOut==="Bowled")     return "b "+p.dismissedBy;
+    if (p.howOut==="Caught")     return (p.caughtBy&&p.caughtBy!==p.dismissedBy)?"c "+p.caughtBy+" b "+p.dismissedBy:"c & b "+p.dismissedBy;
+    if (p.howOut==="LBW")        return "lbw b "+p.dismissedBy;
+    if (p.howOut==="Stumped")    return "st b "+p.dismissedBy;
+    if (p.howOut==="Hit Wicket") return "hit wkt b "+p.dismissedBy;
+    if (p.howOut==="Run Out")    return p.caughtBy?"run out ("+p.caughtBy+")":"run out";
+    return p.howOut;
+  }
+
+  var cC = {textAlign:"center",padding:"8px 4px",fontSize:13,color:SP.textSec};
+  var hC = {textAlign:"center",padding:"6px 4px",fontSize:10,color:SP.textDim,fontWeight:"600",letterSpacing:.5};
+  var rB = {borderTop:"1px solid rgba(73,72,71,.15)"};
+
+  return (
+    <div style={{background:SP.bg3,borderRadius:12,overflow:"hidden",border:"1px solid rgba(73,72,71,.25)",marginBottom:16}}>
+      {/* Batting header */}
+      <div style={{background:SP.bg2,padding:"8px 14px",borderBottom:"1px solid rgba(73,72,71,.2)"}}>
+        <span style={{color:SP.textDim,fontSize:10,fontWeight:"700",letterSpacing:1.5}}>BATTING</span>
+      </div>
+      <table style={{width:"100%",borderCollapse:"collapse"}}>
+        <thead><tr style={{background:SP.bg}}>
+          <th style={{...hC,textAlign:"left",padding:"6px 14px",minWidth:140}}>Batter</th>
+          <th style={hC}>R</th><th style={hC}>B</th><th style={hC}>4s</th><th style={hC}>6s</th><th style={hC}>S/R</th>
+        </tr></thead>
+        <tbody>
+          {batted.map((p,i)=>(
+            <tr key={i} style={rB}>
+              <td style={{padding:"8px 14px"}}>
+                <div style={{color:p.out?"#64748b":p.retired?"#67e8f9":"#f1f5f9",fontSize:13,fontWeight:"600"}}>{p.name}</div>
+                <div style={{color:SP.textDim,fontSize:11,marginTop:1}}>{dismissalText(p)}</div>
+              </td>
+              <td style={{...cC,color:SP.primary,fontWeight:"700",fontSize:14}}>{p.runs}</td>
+              <td style={cC}>{p.balls}</td>
+              <td style={{...cC,color:SP.secondary}}>{p.fours}</td>
+              <td style={{...cC,color:"#f59e0b"}}>{p.sixes}</td>
+              <td style={cC}>{srFn(p)}</td>
+            </tr>
+          ))}
+          <tr style={rB}>
+            <td style={{padding:"8px 14px"}} colSpan="2">
+              <div style={{color:SP.textSec,fontSize:12,fontWeight:"600"}}>Extras</div>
+              <div style={{color:SP.textDim,fontSize:10}}>
+                {[eb.wide?"W "+eb.wide:"",eb.noBall?"NB "+eb.noBall:"",eb.bye?"B "+eb.bye:"",eb.legBye?"LB "+eb.legBye:""].filter(Boolean).join("  ")||"none"}
+              </div>
+            </td>
+            <td colSpan="4" style={{...cC,color:"#fff",fontWeight:"700"}}>{match.extras?match.extras[inn]:0}</td>
+          </tr>
+          <tr style={rB}>
+            <td style={{padding:"8px 14px"}} colSpan="2">
+              <div style={{color:"#fff",fontSize:13,fontWeight:"700"}}>Total</div>
+              <div style={{color:SP.textDim,fontSize:10}}>{match.wickets[inn]} wkts, {match.overs[inn]}.{match.balls[inn]} ov</div>
+            </td>
+            <td colSpan="4" style={{...cC,color:SP.primary,fontWeight:"800",fontSize:15}}>{match.runs[inn]}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {yetToBat.length>0&&(
+        <div style={{padding:"10px 14px",borderTop:"1px solid rgba(73,72,71,.15)"}}>
+          <div style={{color:SP.textDim,fontSize:10,fontWeight:"700",letterSpacing:1,marginBottom:4}}>YET TO BAT</div>
+          <div style={{color:SP.textSec,fontSize:12,lineHeight:1.8}}>{yetToBat.map((p,i)=><span key={i}>{p.name}{i<yetToBat.length-1?" · ":""}</span>)}</div>
+        </div>
+      )}
+
+      {fow.length>0&&(
+        <div style={{padding:"10px 14px",borderTop:"1px solid rgba(73,72,71,.15)"}}>
+          <div style={{color:SP.textDim,fontSize:10,fontWeight:"700",letterSpacing:1,marginBottom:4}}>FALL OF WICKETS</div>
+          <div style={{color:SP.textSec,fontSize:11,lineHeight:1.9}}>
+            {fow.map((f,i)=>(
+              <span key={i} style={{marginRight:4,whiteSpace:"nowrap"}}>
+                <b style={{color:"#fff"}}>{f.runs}/{f.wkt}</b>
+                <span style={{color:SP.textDim}}> ({f.name}, {f.overs}.{f.balls} ov){i<fow.length-1?" ·":""} </span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {bowlers.length>0&&(
+        <>
+          <div style={{background:SP.bg2,padding:"8px 14px",borderTop:"2px solid rgba(73,72,71,.25)"}}>
+            <span style={{color:SP.textDim,fontSize:10,fontWeight:"700",letterSpacing:1.5}}>BOWLING</span>
+          </div>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr style={{background:SP.bg}}>
+              <th style={{...hC,textAlign:"left",padding:"6px 14px",minWidth:130}}>Bowler</th>
+              <th style={hC}>O</th><th style={hC}>M</th><th style={hC}>R</th><th style={hC}>W</th><th style={hC}>Econ</th>
+            </tr></thead>
+            <tbody>
+              {bowlers.map((b,i)=>(
+                <tr key={i} style={rB}>
+                  <td style={{padding:"8px 14px",color:"#f1f5f9",fontSize:13}}>{b.name}</td>
+                  <td style={cC}>{b.overs}.{b.balls}</td>
+                  <td style={cC}>{b.maidens}</td>
+                  <td style={cC}>{b.runs}</td>
+                  <td style={{...cC,color:SP.tertiary,fontWeight:"700",fontSize:14}}>{b.wickets}</td>
+                  <td style={cC}>{ecoFn(b)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AdminPanel({matchHistory, setMatchHistory, onDone, currentUser}) {
   const [liveEntries,  setLiveEntries]  = React.useState(null);
   const [userMatches,  setUserMatches]  = React.useState(null); // {uid: {name, email, matches:[]}}
@@ -1490,7 +1613,7 @@ function TeamSelectorStep({ setup, setSetup }) {
     ]).then(([tSnap, pSnap]) => {
       var tVal = tSnap.val() || {};
       var pVal = pSnap.val() || {};
-      setTeams(Object.values(tVal).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)));
+      setTeams(Object.values(tVal).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
       setPlayers(pVal);
     }).catch(() => setTeams([]));
   }, []);
@@ -1635,30 +1758,19 @@ function PlayerPickerStep({teamName, selectedNames, selectedIds, onUpdate, curre
   async function saveAsTeam() {
     var nm = teamName.trim();
     if (!nm || !(selectedIds||[]).length || !_fbDB) return;
-    setSavingTeam(true); setSaveMsg("");
+    setSavingTeam(true);
+    setSaveMsg("");
     try {
-      // Check if a team with this name already exists — overwrite if so
-      var snap = await _fbDB.ref("teams").orderByChild("name").equalTo(nm).once("value");
-      var existing = snap.val();
-      if (existing) {
-        var key = Object.keys(existing)[0];
-        await _fbDB.ref("teams/"+key).update({
-          playerIds: selectedIds||[],
-          updatedAt: Date.now(),
-        });
-        setSaveMsg("✓ Updated " + nm);
-      } else {
-        var id = "T_"+Date.now()+"_"+Math.random().toString(36).slice(2,6);
-        var t = {
-          id, name: nm,
-          playerIds: selectedIds||[],
-          ownerIds: currentUser ? [currentUser.uid] : [],
-          createdBy: currentUser ? currentUser.uid : null,
-          createdAt: Date.now(),
-        };
-        await _fbDB.ref("teams/"+id).set(t);
-        setSaveMsg("✓ Saved " + nm);
-      }
+      var id = "T_"+Date.now()+"_"+Math.random().toString(36).slice(2,6);
+      var t = {
+        id, name:nm,
+        playerIds: selectedIds||[],
+        ownerIds: currentUser ? [currentUser.uid] : [],
+        createdBy: currentUser ? currentUser.uid : null,
+        createdAt: Date.now(),
+      };
+      await _fbDB.ref("teams/"+id).set(t);
+      setSaveMsg("✓ Saved as " + nm);
       setTimeout(()=>setSaveMsg(""), 3000);
     } catch(e) { setSaveMsg("Error: "+e.message); }
     setSavingTeam(false);
@@ -2656,38 +2768,6 @@ function App({ currentUser }) {
     }
   }
 
-  function autoSaveTeams(m) {
-    if (!_fbDB || !m) return;
-    // Save both teams automatically with their current players
-    var teamsToSave = [
-      { team: m.teamA, players: m.teamA.players },
-      { team: m.teamB, players: m.teamB.players },
-    ];
-    teamsToSave.forEach(({team, players}) => {
-      if (!team || !team.name || !players || !players.length) return;
-      // Check if a team with this name already exists — update it, else create new
-      _fbDB.ref("teams").orderByChild("name").equalTo(team.name).once("value", snap => {
-        var existing = snap.val();
-        if (existing) {
-          // Update existing team's playerIds
-          var key = Object.keys(existing)[0];
-          var playerIds = players.map(p=>p.playerId).filter(Boolean);
-          if (playerIds.length) _fbDB.ref("teams/"+key+"/playerIds").set(playerIds);
-        } else {
-          // Create new team record
-          var id = "T_"+Date.now()+"_"+Math.random().toString(36).slice(2,6);
-          var playerIds = players.map(p=>p.playerId).filter(Boolean);
-          _fbDB.ref("teams/"+id).set({
-            id, name: team.name,
-            playerIds,
-            createdBy: currentUser ? currentUser.uid : null,
-            createdAt: Date.now(),
-          });
-        }
-      });
-    });
-  }
-
   function saveToHistory(m) {
     var entry = {
       id: m.matchCode || String(Date.now()),
@@ -2771,29 +2851,6 @@ function App({ currentUser }) {
         }).catch(()=>{});
       });
     });
-  }
-
-  function startRematch(m) {
-    // Pre-fill setup with the same teams and players from the finished match
-    autoSaveTeams(m);
-    saveToHistory(m);
-    var teamA = m.teamA;
-    var teamB = m.teamB;
-    var newSetup = blankSetup();
-    newSetup.teamAName    = teamA.name;
-    newSetup.teamBName    = teamB.name;
-    newSetup.teamAPlayers = teamA.players.map(p=>p.name);
-    newSetup.teamBPlayers = teamB.players.map(p=>p.name);
-    newSetup.teamAPlayerIds = teamA.players.map(p=>p.playerId||null);
-    newSetup.teamBPlayerIds = teamB.players.map(p=>p.playerId||null);
-    newSetup.teamACount   = teamA.players.length;
-    newSetup.teamBCount   = teamB.players.length;
-    newSetup.overs        = m.totalOvers;
-    newSetup.step         = 1; // skip to team A player selection so they can tweak
-    setHistory([]);
-    setMatch(null);
-    setSetup(newSetup);
-    setScreen("setup");
   }
 
   function resetAll() {
@@ -3073,6 +3130,16 @@ function App({ currentUser }) {
         if (!(m.wickets[bt]>=maxWkts(m,bt)||m.overs[bt]>=m.totalOvers||chaseWon(m))) m.needsBowler = true;
       }
       m.ballLog[bt].push({r:0,wicket:how});
+      // Record fall of wicket
+      if (!m.fallOfWickets) m.fallOfWickets = [[],[]];
+      if (!m.fallOfWickets[bt]) m.fallOfWickets[bt] = [];
+      m.fallOfWickets[bt].push({
+        wkt: m.wickets[bt],
+        runs: m.runs[bt],
+        overs: m.overs[bt],
+        balls: m.balls[bt],
+        name: bT.players[b1].name,
+      });
       // Check who is still available
       var inUse2 = [m.currentBatsmen[0], m.currentBatsmen[1]];
       var nextBatter = -1;
@@ -3640,8 +3707,33 @@ function App({ currentUser }) {
             <button onClick={()=>{setMatch(null);setScreen("history");}} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
             <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Scorecard</span>
           </div>
-          {match.teamA&&match.teamB&&<TCardH team={match.teamA} inn={0} opp={{...match.teamB, bowlers: match.teamB.inn1Bowlers||match.teamB.bowlers}}/>}
-          {match.inningsOver&&match.inningsOver[0]&&match.teamB&&<TCardH team={match.teamB} inn={1} opp={match.teamA}/>}
+          {(()=>{
+            var has2nd = match.inningsOver&&match.inningsOver[0]&&match.teamB;
+            var [scTab, setScTab] = React.useState(0);
+            return (
+              <>
+                {has2nd&&(
+                  <div style={{display:"flex",background:SP.bg2,borderRadius:10,padding:4,gap:4,marginBottom:12}}>
+                    {[match.teamA.name, match.teamB.name].map((nm,i)=>(
+                      <button key={i} onClick={()=>setScTab(i)}
+                        style={{flex:1,padding:"9px 0",borderRadius:7,border:"none",fontWeight:"700",fontSize:12,
+                          cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",
+                          background:scTab===i?SP.primary:"transparent",
+                          color:scTab===i?"#0f172a":SP.textDim}}>
+                        {nm}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {scTab===0&&match.teamA&&match.teamB&&(
+                  <ScorecardInnings match={match} inn={0} team={match.teamA} opp={{...match.teamB, bowlers: match.teamB.inn1Bowlers||match.teamB.bowlers}}/>
+                )}
+                {scTab===1&&has2nd&&(
+                  <ScorecardInnings match={match} inn={1} team={match.teamB} opp={match.teamA}/>
+                )}
+              </>
+            );
+          })()}
           {match.matchCode&&match.matchCode!=="LOCAL"&&(
             <MatchMediaGallery matchCode={match.matchCode} matchDate={match.createdAt} currentUser={currentUser}/>
           )}
@@ -4325,8 +4417,33 @@ function App({ currentUser }) {
             <button onClick={()=>setScreen(prev)} style={{background:"none",border:"none",color:SP.textSec,fontSize:18,cursor:"pointer",padding:0}}>←</button>
             <span style={{color:"#fff",fontSize:15,fontWeight:"700",fontFamily:"Lexend,Georgia,sans-serif"}}>Scorecard</span>
           </div>
-          <TCard team={match.teamA} inn={0} opp={{...match.teamB, bowlers: match.teamB.inn1Bowlers||match.teamB.bowlers}}/>
-          {(match.batting===1||match.inningsOver[0])&&<TCard team={match.teamB} inn={1} opp={match.teamA}/>}
+          {(()=>{
+            var has2nd = match.batting===1||match.inningsOver[0];
+            var [scTab, setScTab] = React.useState(has2nd?1:0);
+            return (
+              <>
+                {has2nd&&(
+                  <div style={{display:"flex",background:SP.bg2,borderRadius:10,padding:4,gap:4,marginBottom:12}}>
+                    {[match.teamA.name, match.teamB.name].map((nm,i)=>(
+                      <button key={i} onClick={()=>setScTab(i)}
+                        style={{flex:1,padding:"9px 0",borderRadius:7,border:"none",fontWeight:"700",fontSize:12,
+                          cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif",
+                          background:scTab===i?SP.primary:"transparent",
+                          color:scTab===i?"#0f172a":SP.textDim}}>
+                        {nm}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {scTab===0&&(
+                  <ScorecardInnings match={match} inn={0} team={match.teamA} opp={{...match.teamB, bowlers: match.teamB.inn1Bowlers||match.teamB.bowlers}}/>
+                )}
+                {scTab===1&&has2nd&&(
+                  <ScorecardInnings match={match} inn={1} team={match.teamB} opp={match.teamA}/>
+                )}
+              </>
+            );
+          })()}
           {match.matchCode&&match.matchCode!=="LOCAL"&&(
             <MatchMediaGallery matchCode={match.matchCode} matchDate={match.createdAt} currentUser={currentUser}/>
           )}
@@ -4434,10 +4551,9 @@ function App({ currentUser }) {
               m2.currentBowler = 0;
               m2.needsBowler = true; // must pick first bowler of 2nd innings
               m2.needsOpeners = true; // must pick opening batsmen for 2nd innings
-              // Preserve 1st innings bowling figures before clearing for 2nd innings
-              m2.teamB.inn1Bowlers = JSON.parse(JSON.stringify(m2.teamB.bowlers));
-              // teamA will bowl in 2nd innings — clear their bowlers for fresh start
-              m2.teamA.bowlers = [];
+			  // In 2nd innings (batting=1), teamB is bowling — clear their bowlers for fresh start
+              m2.teamB.bowlers = [];
+              // Also reset currentBowler
               m2.currentBowler = 0;
               return m2;
             })}
@@ -4455,16 +4571,10 @@ function App({ currentUser }) {
             {match.runs[1]>match.runs[0]?<div style={{color:SP.primary,fontSize:14}}>{match.teamB.name} wins by {(()=>{var n=match.numPlayers&&match.numPlayers[1]?match.numPlayers[1]:10;return n>11?n-match.wickets[1]-1:n-match.wickets[1];})()} wickets!</div>
              :match.runs[1]<match.runs[0]?<div style={{color:SP.tertiary,fontSize:14}}>{match.teamA.name} wins by {match.runs[0]-match.runs[1]} runs!</div>
              :<div style={{color:SP.primary,fontSize:14}}>Match Tied!</div>}
-            <div style={{marginTop:14,display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}>
-              <button onClick={()=>{startRematch(match);}}
-                style={{padding:"10px 20px",background:SP.primary,color:"#00440a",border:"none",borderRadius:10,fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
-                🔁 Rematch
-              </button>
-              <button onClick={()=>{autoSaveTeams(match);saveToHistory(match);resetAll();}}
-                style={{padding:"10px 20px",background:"#fbbf24",color:"#0f172a",border:"none",borderRadius:10,fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
-                Save & New Match
-              </button>
-            </div>
+            <button onClick={()=>{saveToHistory(match);resetAll();}}
+              style={{marginTop:14,padding:"10px 24px",background:"#fbbf24",color:"#0f172a",border:"none",borderRadius:10,fontWeight:"bold",fontSize:14,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+              Save & New Match
+            </button>
           </div>
         )}
 
@@ -5254,7 +5364,7 @@ function TeamsScreen({ currentUser, isAdmin, onBack, setScreen, setHomeTab }) {
     ]).then(([tSnap, pSnap]) => {
       var tVal = tSnap.val() || {};
       var pVal = pSnap.val() || {};
-      setTeams(Object.values(tVal).sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)));
+      setTeams(Object.values(tVal).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
       setPlayers(Object.values(pVal).sort((a,b)=>(a.name||"").localeCompare(b.name||"")));
       setLoading(false);
     }).catch(()=>setLoading(false));
@@ -5263,17 +5373,10 @@ function TeamsScreen({ currentUser, isAdmin, onBack, setScreen, setHomeTab }) {
   function canEdit(t) {
     if (!currentUser) return false;
     if (isAdmin) return true;
+    // Support both legacy single createdBy and new ownerIds array
     if (t.ownerIds && t.ownerIds.includes(currentUser.uid)) return true;
     if (t.createdBy && t.createdBy === currentUser.uid) return true;
     return false;
-  }
-
-  function deleteTeam(t) {
-    if (!confirm("Delete team "+t.name+"? This cannot be undone.")) return;
-    _fbDB.ref("teams/"+t.id).remove().then(() => {
-      setTeams(ts => ts.filter(x => x.id !== t.id));
-      setView("list"); setSel(null);
-    }).catch(e => setErr(e.message));
   }
 
   function isOwnerOf(t) {
@@ -5309,14 +5412,14 @@ function TeamsScreen({ currentUser, isAdmin, onBack, setScreen, setHomeTab }) {
     if (view==="edit" && sel) {
       _fbDB.ref("teams/"+sel.id).update({ name: form.name.trim(), playerIds: form.playerIds, ownerIds }).then(() => {
         var updated = {...sel, name: form.name.trim(), playerIds: form.playerIds, ownerIds};
-        setTeams(ts => ts.map(t => t.id===sel.id ? updated : t));
+        setTeams(ts => ts.map(t => t.id===sel.id ? updated : t).sort((a,b)=>a.name.localeCompare(b.name)));
         setSel(updated); setView("detail"); setSaving(false);
       }).catch(e => { setErr(e.message); setSaving(false); });
     } else {
       var id = "T_" + Date.now() + "_" + Math.random().toString(36).slice(2,6);
       var t = { id, name: form.name.trim(), playerIds: form.playerIds, ownerIds, createdBy: currentUser ? currentUser.uid : null, createdAt: Date.now() };
       _fbDB.ref("teams/"+id).set(t).then(() => {
-        setTeams(ts => [t, ...ts]);
+        setTeams(ts => [...ts, t].sort((a,b)=>a.name.localeCompare(b.name)));
         setView("list"); setSaving(false);
       }).catch(e => { setErr(e.message); setSaving(false); });
     }
@@ -5427,20 +5530,12 @@ function TeamsScreen({ currentUser, isAdmin, onBack, setScreen, setHomeTab }) {
               <button onClick={()=>setView("list")} style={S.btnSm}>← Back</button>
               <h2 style={{color:SP.primary,margin:0,fontSize:16,letterSpacing:2}}>{sel.name.toUpperCase()}</h2>
             </div>
-            <div style={{display:"flex",gap:8}}>
-              {editable && (
-                <button onClick={()=>{setForm({name:sel.name,playerIds:[...(sel.playerIds||[])],ownerIds:[...(sel.ownerIds||(sel.createdBy?[sel.createdBy]:[]))]});setView("edit");}}
-                  style={{padding:"7px 14px",background:"transparent",border:"1px solid #fbbf24",borderRadius:10,color:SP.primary,fontWeight:"bold",fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
-                  ✏️ Edit
-                </button>
-              )}
-              {canEdit(sel) && (
-                <button onClick={()=>deleteTeam(sel)}
-                  style={{padding:"7px 14px",background:"transparent",border:"1px solid rgba(255,112,114,.4)",borderRadius:10,color:SP.tertiary,fontWeight:"bold",fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
-                  🗑️ Delete
-                </button>
-              )}
-            </div>
+            {editable && (
+              <button onClick={()=>{setForm({name:sel.name,playerIds:[...(sel.playerIds||[])],ownerIds:[...(sel.ownerIds||(sel.createdBy?[sel.createdBy]:[]))]});setView("edit");}}
+                style={{padding:"7px 14px",background:"transparent",border:"1px solid #fbbf24",borderRadius:10,color:SP.primary,fontWeight:"bold",fontSize:12,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+                ✏️ Edit
+              </button>
+            )}
           </div>
           <div style={{color:SP.textDim,fontSize:12,marginBottom:14,display:"flex",gap:12,alignItems:"center",flexWrap:"wrap"}}>
             <span>{teamPlayers.length} players</span>
