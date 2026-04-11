@@ -1657,7 +1657,7 @@ function PlayerPickerStep({teamName, selectedNames, selectedIds, onUpdate, curre
           createdAt: Date.now(),
         };
         await _fbDB.ref("teams/"+id).set(t);
-        setSaveMsg("✓ Saved "" + nm + """);
+        setSaveMsg("✓ Saved " + nm);
       }
       setTimeout(()=>setSaveMsg(""), 3000);
     } catch(e) { setSaveMsg("Error: "+e.message); }
