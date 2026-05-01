@@ -381,7 +381,7 @@ function RunOutPickerModal({ match, onSelect, onCancel }) {
             <div style={{textAlign:"center",marginBottom:20}}>
               <div style={{fontSize:24,marginBottom:6}}>🏃</div>
               <div style={{color:SP.primary,fontSize:14,fontWeight:"bold",letterSpacing:1,marginBottom:4}}>WHICH BATSMAN WAS RUN OUT?</div>
-              <div style={{color:SP.textDim,fontSize:12}}>Select the player who was unable to reach the crease</div>
+              <div style={{color:SP.textDim,fontSize:12}}>Identify the batsman who was run out</div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
               <button onClick={()=>pickPlayer(match.striker)}
@@ -410,12 +410,12 @@ function RunOutPickerModal({ match, onSelect, onCancel }) {
           <>
             <div style={{textAlign:"center",marginBottom:20}}>
               <div style={{fontSize:24,marginBottom:6}}>🏏</div>
-              <div style={{color:SP.primary,fontSize:14,fontWeight:"bold",letterSpacing:1,marginBottom:4}}>WHICH END?</div>
+              <div style={{color:SP.primary,fontSize:14,fontWeight:"bold",letterSpacing:1,marginBottom:4}}>WHICH END WAS THE BATSMAN OUT?</div>
               <div style={{color:SP.textDim,fontSize:12}}>
                 <b style={{color:"#fff"}}>{pickedPlayer?pickedPlayer.name:"Batter"}</b> was run out at which end?
               </div>
               <div style={{color:SP.textDim,fontSize:11,marginTop:4}}>
-                (Where were they when the bails came off?)
+                (Identify the end where the run out occurred)
               </div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
