@@ -415,7 +415,7 @@ function RunOutPickerModal({ match, onSelect, onCancel }) {
                 <b style={{color:"#fff"}}>{pickedPlayer?pickedPlayer.name:"Batter"}</b> was run out at which end?
               </div>
               <div style={{color:SP.textDim,fontSize:11,marginTop:4}}>
-                (Where were they when the bails came off?)
+                (Select the end where the wicket was broken)
               </div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
