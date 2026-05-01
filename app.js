@@ -380,8 +380,8 @@ function RunOutPickerModal({ match, onSelect, onCancel }) {
           <>
             <div style={{textAlign:"center",marginBottom:20}}>
               <div style={{fontSize:24,marginBottom:6}}>🏃</div>
-              <div style={{color:SP.primary,fontSize:14,fontWeight:"bold",letterSpacing:1,marginBottom:4}}>WHO WAS RUN OUT?</div>
-              <div style={{color:SP.textDim,fontSize:12}}>Select the dismissed batsman</div>
+              <div style={{color:SP.primary,fontSize:14,fontWeight:"bold",letterSpacing:1,marginBottom:4}}>WHICH BATSMAN WAS RUN OUT?</div>
+              <div style={{color:SP.textDim,fontSize:12}}>Select the player who was unable to reach the crease</div>
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
               <button onClick={()=>pickPlayer(match.striker)}
