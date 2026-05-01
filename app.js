@@ -336,6 +336,57 @@ function FielderPickerModal({ match, dismissalType, onSelect, onCancel }) {
   );
 }
 
+// ── RunOutPickerModal — which batter & which end for Run Out ──
+function RunOutPickerModal({ match, onSelect, onCancel }) {
+  if (!match) return null;
+  var bt = match.batting;
+  var bTeam = bt===0 ? match.teamA : match.teamB;
+  var striker    = bTeam.players[match.currentBatsmen[match.striker]];
+  var nonStriker = bTeam.players[match.currentBatsmen[1-match.striker]];
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:1300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+      <div style={{background:SP.bg3,borderRadius:"20px 20px 0 0",padding:"24px 20px 36px",width:"100%",maxWidth:480,border:"1px solid rgba(73,72,71,.25)",borderBottom:"none"}}>
+        <div style={{textAlign:"center",marginBottom:20}}>
+          <div style={{fontSize:24,marginBottom:6}}>🏃</div>
+          <div style={{color:SP.primary,fontSize:14,fontWeight:"bold",letterSpacing:1,marginBottom:4}}>WHO WAS RUN OUT?</div>
+          <div style={{color:SP.textDim,fontSize:12}}>Select the batsman who was dismissed</div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {/* Striker */}
+          <button onClick={()=>onSelect(match.striker)}
+            style={{padding:"16px",borderRadius:12,border:"1px solid rgba(156,255,147,.25)",
+              background:"rgba(156,255,147,.06)",color:"#fff",cursor:"pointer",
+              fontFamily:"Lexend,Georgia,sans-serif",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontSize:15,fontWeight:"700",marginBottom:4}}>{striker?striker.name:"Striker"}</div>
+              <div style={{color:SP.primary,fontSize:11}}>🏏 On strike (striker's end)</div>
+            </div>
+            <span style={{color:SP.primary,fontSize:20}}>→</span>
+          </button>
+          {/* Non-striker */}
+          <button onClick={()=>onSelect(1-match.striker)}
+            style={{padding:"16px",borderRadius:12,border:"1px solid rgba(102,157,255,.25)",
+              background:"rgba(102,157,255,.06)",color:"#fff",cursor:"pointer",
+              fontFamily:"Lexend,Georgia,sans-serif",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontSize:15,fontWeight:"700",marginBottom:4}}>{nonStriker?nonStriker.name:"Non-striker"}</div>
+              <div style={{color:SP.secondary,fontSize:11}}>🏃 Non-striker's end</div>
+            </div>
+            <span style={{color:SP.secondary,fontSize:20}}>→</span>
+          </button>
+        </div>
+        <button onClick={onCancel}
+          style={{marginTop:14,width:"100%",padding:"11px 0",background:"transparent",
+            border:"1px solid rgba(73,72,71,.25)",borderRadius:10,color:SP.textDim,
+            fontSize:13,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── NextBatterModal — pick the next batsman after wicket/retirement ──
 function NextBatterModal({match, onSelect}) {
   if (!match) return null;
@@ -3116,18 +3167,26 @@ function App({ currentUser }) {
     });
   }
 
-  function addWicket(how, fielderName) {
-    // For Caught and Run Out, show fielder picker first
+  function addWicket(how, fielderName, runOutSlot) {
+    // Step 1: Caught/RunOut — show fielder picker first
     if ((how==="Caught" || how==="Run Out") && fielderName===undefined) {
-      setPendingWicket({how});
+      setPendingWicket({how, stage:"fielder"});
+      return;
+    }
+    // Step 2: RunOut — after fielder picked, show which batter / which end
+    if (how==="Run Out" && runOutSlot===undefined) {
+      setPendingWicket({how, fielderName, stage:"runOutBatter"});
       return;
     }
     setMatch(prev => {
       pushHist(prev);
       var m = JSON.parse(JSON.stringify(prev));
       m.needsBowler = false;
-      var bt=m.batting, b1=m.currentBatsmen[m.striker], bi=m.currentBowler;
+      var bt=m.batting, bi=m.currentBowler;
       var bT=bt===0?m.teamA:m.teamB, wT=bt===0?m.teamB:m.teamA;
+      // For Run Out, the dismissed batter may be the non-striker (runOutSlot=1)
+      var dismissedSlot = (how==="Run Out" && runOutSlot!==undefined) ? runOutSlot : m.striker;
+      var b1 = m.currentBatsmen[dismissedSlot];
       bT.players[b1].out=false; bT.players[b1].retired=true; bT.players[b1].howOut=how;
       if (how===RET_HURT) {
         m.ballLog[bt].push({r:0,retired:true});
@@ -3182,9 +3241,20 @@ function App({ currentUser }) {
       var mx = maxWkts(m, bt);
       var inningsNowOver = m.wickets[bt] >= mx;
       // Last man: penultimate wicket — surviving batter bats alone
+      // For Run Out: if non-striker was dismissed, striker keeps strike
+      // If striker was dismissed, non-striker crossed → non-striker now at striker's end
+      if (how==="Run Out" && runOutSlot!==undefined) {
+        if (runOutSlot === 1) {
+          // Non-striker out → striker keeps strike, new batter at non-striker end
+          // m.striker stays as-is
+        } else {
+          // Striker out → non-striker crossed → they become new striker
+          m.striker = 1 - m.striker;
+        }
+      }
       var isLastManIn = !inningsNowOver && noMoreBatters && !hasRetired;
       if (isLastManIn) {
-        m.currentBatsmen[m.striker] = m.currentBatsmen[1-m.striker];
+        m.currentBatsmen[dismissedSlot] = m.currentBatsmen[1-dismissedSlot];
       }
       if (chaseWon(m) || m.overs[bt]>=m.totalOvers || inningsNowOver) {
         m.inningsOver[bt]=true;
@@ -3195,8 +3265,9 @@ function App({ currentUser }) {
           m.inningsOver[bt]=true;
         }
       } else if (!inningsNowOver && !isLastManIn) {
-        // Prompt scorer to pick next batter
+        // Prompt scorer to pick next batter — remember which slot to fill
         m.needsNextBatter = true;
+        m.nextBatterSlot = dismissedSlot;
       }
       return m;
     });
@@ -3906,7 +3977,11 @@ function App({ currentUser }) {
               {s.step>0&&<button onClick={()=>setSetup(p=>({...p,step:p.step-1}))}
                 style={{flex:1,padding:"13px 0",background:SP.bg,border:"1px solid rgba(73,72,71,.25)",borderRadius:12,color:SP.textSec,fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>← Back</button>}
               {s.step<STEPS.length-1
-                ?<button onClick={()=>setSetup(p=>({...p,step:p.step+1}))}
+                ?<button onClick={()=>{
+                    if (s.step===1 && (s.teamAPlayers||[]).length<2) { alert("Select at least 2 players for "+s.teamAName); return; }
+                    if (s.step===2 && (s.teamBPlayers||[]).length<2) { alert("Select at least 2 players for "+s.teamBName); return; }
+                    setSetup(p=>({...p,step:p.step+1}));
+                  }}
                   style={{flex:2,padding:"13px 0",background:"linear-gradient(135deg,#1d4ed8,#1e40af)",borderRadius:12,border:"none",color:"#fff",fontWeight:"bold",fontSize:15,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>Next →</button>
                 :<button onClick={s.battingFirst!==null&&s.battingFirst!==undefined?startMatch:undefined}
                   disabled={s.battingFirst===null||s.battingFirst===undefined}
@@ -4511,12 +4586,43 @@ function App({ currentUser }) {
       <PendingExtraModal extra={pendingExtra} onConfirm={confirmExtra} onCancel={()=>setPendingExtra(null)}/>
       {overComplete && <OverCompleteModal match={match} onSelect={selectNewBowler} isFirstBall={match&&match.teamA&&match.teamB&&(match.batting===0?match.teamB:match.teamA).bowlers.length===0}/>}
       {needsOpeners && !nextBatterPick && <OpeningBatsmenModal match={match} onSelect={selectOpeners}/>}
-      {pendingWicket && <FielderPickerModal
-        match={match}
-        dismissalType={pendingWicket.how}
-        onSelect={fielderName=>{setPendingWicket(null);addWicket(pendingWicket.how, fielderName);}}
-        onCancel={()=>{setPendingWicket(null);addWicket(pendingWicket.how, null);}}
-      />}
+      {pendingWicket && pendingWicket.stage==="fielder" && (
+        <FielderPickerModal
+          match={match}
+          dismissalType={pendingWicket.how}
+          onSelect={fielderName=>{
+            if (pendingWicket.how==="Run Out") {
+              setPendingWicket({...pendingWicket, fielderName, stage:"runOutBatter"});
+            } else {
+              setPendingWicket(null);
+              addWicket(pendingWicket.how, fielderName);
+            }
+          }}
+          onCancel={()=>{
+            if (pendingWicket.how==="Run Out") {
+              setPendingWicket({...pendingWicket, fielderName:null, stage:"runOutBatter"});
+            } else {
+              setPendingWicket(null);
+              addWicket(pendingWicket.how, null);
+            }
+          }}
+        />
+      )}
+      {pendingWicket && pendingWicket.stage==="runOutBatter" && (
+        <RunOutPickerModal
+          match={match}
+          onSelect={slot=>{
+            var fw = pendingWicket.fielderName;
+            setPendingWicket(null);
+            addWicket("Run Out", fw, slot);
+          }}
+          onCancel={()=>{
+            var fw = pendingWicket.fielderName;
+            setPendingWicket(null);
+            addWicket("Run Out", fw, match.striker); // default to striker
+          }}
+        />
+      )}
       {nextBatterPick && <NextBatterModal match={match} onSelect={selectNextBatter}/>}
       {recallPrompt && <RecallPromptModal match={match} onRecall={recallRetired} onDecline={declineRecall}/>}
       <ReplaceBatterModal/>
