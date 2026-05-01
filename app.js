@@ -352,23 +352,13 @@ function RunOutPickerModal({ match, onSelect, onCancel }) {
   function pickPlayer(slot) { setPickedSlot(slot); setStep("end"); }
 
   function pickEnd(endLabel) {
-    // endLabel: "strikers" | "nonStrikers"
-    // Was the dismissed batter at striker's end or non-striker's end at moment of dismissal?
-    // If they were at striker's end → they HADN'T crossed (dismissed before completing run)
-    // If at non-striker's end  → they HAD crossed (dismissed after completing run)
-    // The surviving batter ends up at the opposite end from where the dismissed batter was.
-    // New batter enters at the end the dismissed batter occupied.
-    //
-    // For strike after dismissal:
-    //   dismissedAtStrikersEnd  → surviving batter is at non-striker's end → non-striker keeps that end → striker = surviving batter slot
-    //   dismissedAtNonStrikersEnd → surviving batter is at striker's end → they keep strike
+    // endLabel: "strikers" | "nonStrikers" — the fixed field end where the wicket was broken
+    // dismissedAtStrikersEnd: the dismissed batter was at the batting crease (striker's end)
     var dismissedAtStrikersEnd = (endLabel === "strikers");
-    // survivingSlot is the other player's slot
-    var survivingSlot = 1 - pickedSlot;
-    // If dismissed at striker's end: surviving batter at non-striker end, so striker becomes surviving batter
-    // i.e. new striker = survivingSlot mapping
-    // We pass back {slot: pickedSlot (who got out), survivingEndsAtStrikersEnd: !dismissedAtStrikersEnd}
-    onSelect({ dismissedSlot: pickedSlot, survivingEndsAtStrikersEnd: !dismissedAtStrikersEnd });
+    // survivingBatterAtStrikersEnd: the surviving batter ended at the batting crease
+    //   = opposite end from the dismissed batter
+    var survivingEndsAtStrikersEnd = !dismissedAtStrikersEnd;
+    onSelect({ dismissedSlot: pickedSlot, survivingEndsAtStrikersEnd });
   }
 
   var pickedPlayer = pickedSlot===match.striker ? strikerP : nonStrikerP;
@@ -3313,23 +3303,18 @@ function App({ currentUser }) {
       var hasRetired = bT.players.some(p=>p.retired);
       var mx = maxWkts(m, bt);
       var inningsNowOver = m.wickets[bt] >= mx;
-      // For Run Out: determine who faces next ball based on where each batter ended up
+      // For Run Out: set m.striker so the right batter faces next ball
       if (how==="Run Out" && runOutInfo) {
-        var sEAS = runOutInfo.survivingEndsAtStrikersEnd;
+        var sEAS = runOutInfo.survivingEndsAtStrikersEnd; // surviving batter at striker's end?
         var survivingSlot = 1 - dismissedSlot;
-        var overJustEnded = (m.balls[bt] === 0 && m.overs[bt] > 0); // balls reset to 0 when over completes
+        var overJustEnded = (m.balls[bt] === 0 && m.overs[bt] > 0);
         if (overJustEnded) {
-          // End of over: strike rotates automatically, so whoever was at non-striker end
-          // before the over ended now faces. Flip sEAS to account for the rotation.
+          // Last ball of over: ends swap, so invert sEAS
           sEAS = !sEAS;
         }
-        if (sEAS) {
-          // Surviving batter ends at striker's end (after any over rotation) → they face next ball
-          m.striker = survivingSlot;
-        } else {
-          // Surviving batter ends at non-striker's end → new batter fills dismissed slot and faces next
-          m.striker = dismissedSlot;
-        }
+        // sEAS=true  → surviving batter is at striker's end → they face next ball → m.striker = their slot
+        // sEAS=false → surviving batter is at non-striker's end → new batter enters at dismissed slot and faces
+        m.striker = sEAS ? survivingSlot : dismissedSlot;
       }
       var isLastManIn = !inningsNowOver && noMoreBatters && !hasRetired;
       if (isLastManIn) {
