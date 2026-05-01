@@ -336,48 +336,120 @@ function FielderPickerModal({ match, dismissalType, onSelect, onCancel }) {
   );
 }
 
-// ── RunOutPickerModal — which batter & which end for Run Out ──
+// ── RunOutPickerModal — which player & at which end were they dismissed ──
+// Two-step: 1) pick player  2) pick end they were at when out
+// The end determines if the surviving batter crossed (i.e. held their ground or completed the run)
 function RunOutPickerModal({ match, onSelect, onCancel }) {
   if (!match) return null;
   var bt = match.batting;
   var bTeam = bt===0 ? match.teamA : match.teamB;
-  var striker    = bTeam.players[match.currentBatsmen[match.striker]];
-  var nonStriker = bTeam.players[match.currentBatsmen[1-match.striker]];
+  var strikerP    = bTeam.players[match.currentBatsmen[match.striker]];
+  var nonStrikerP = bTeam.players[match.currentBatsmen[1-match.striker]];
+  // step: "player" | "end"
+  const [step, setStep] = React.useState("player");
+  const [pickedSlot, setPickedSlot] = React.useState(null); // 0=striker slot, 1=non-striker slot
+
+  function pickPlayer(slot) { setPickedSlot(slot); setStep("end"); }
+
+  function pickEnd(endLabel) {
+    // endLabel: "strikers" | "nonStrikers"
+    // Was the dismissed batter at striker's end or non-striker's end at moment of dismissal?
+    // If they were at striker's end → they HADN'T crossed (dismissed before completing run)
+    // If at non-striker's end  → they HAD crossed (dismissed after completing run)
+    // The surviving batter ends up at the opposite end from where the dismissed batter was.
+    // New batter enters at the end the dismissed batter occupied.
+    //
+    // For strike after dismissal:
+    //   dismissedAtStrikersEnd  → surviving batter is at non-striker's end → non-striker keeps that end → striker = surviving batter slot
+    //   dismissedAtNonStrikersEnd → surviving batter is at striker's end → they keep strike
+    var dismissedAtStrikersEnd = (endLabel === "strikers");
+    // survivingSlot is the other player's slot
+    var survivingSlot = 1 - pickedSlot;
+    // If dismissed at striker's end: surviving batter at non-striker end, so striker becomes surviving batter
+    // i.e. new striker = survivingSlot mapping
+    // We pass back {slot: pickedSlot (who got out), survivingEndsAtStrikersEnd: !dismissedAtStrikersEnd}
+    onSelect({ dismissedSlot: pickedSlot, survivingEndsAtStrikersEnd: !dismissedAtStrikersEnd });
+  }
+
+  var pickedPlayer = pickedSlot===0 ? strikerP : nonStrikerP;
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:1300,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
       <div style={{background:SP.bg3,borderRadius:"20px 20px 0 0",padding:"24px 20px 36px",width:"100%",maxWidth:480,border:"1px solid rgba(73,72,71,.25)",borderBottom:"none"}}>
-        <div style={{textAlign:"center",marginBottom:20}}>
-          <div style={{fontSize:24,marginBottom:6}}>🏃</div>
-          <div style={{color:SP.primary,fontSize:14,fontWeight:"bold",letterSpacing:1,marginBottom:4}}>WHO WAS RUN OUT?</div>
-          <div style={{color:SP.textDim,fontSize:12}}>Select the batsman who was dismissed</div>
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          {/* Striker */}
-          <button onClick={()=>onSelect(match.striker)}
-            style={{padding:"16px",borderRadius:12,border:"1px solid rgba(156,255,147,.25)",
-              background:"rgba(156,255,147,.06)",color:"#fff",cursor:"pointer",
-              fontFamily:"Lexend,Georgia,sans-serif",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <div style={{fontSize:15,fontWeight:"700",marginBottom:4}}>{striker?striker.name:"Striker"}</div>
-              <div style={{color:SP.primary,fontSize:11}}>🏏 On strike (striker's end)</div>
+        {step==="player" ? (
+          <>
+            <div style={{textAlign:"center",marginBottom:20}}>
+              <div style={{fontSize:24,marginBottom:6}}>🏃</div>
+              <div style={{color:SP.primary,fontSize:14,fontWeight:"bold",letterSpacing:1,marginBottom:4}}>WHO WAS RUN OUT?</div>
+              <div style={{color:SP.textDim,fontSize:12}}>Select the dismissed batsman</div>
             </div>
-            <span style={{color:SP.primary,fontSize:20}}>→</span>
-          </button>
-          {/* Non-striker */}
-          <button onClick={()=>onSelect(1-match.striker)}
-            style={{padding:"16px",borderRadius:12,border:"1px solid rgba(102,157,255,.25)",
-              background:"rgba(102,157,255,.06)",color:"#fff",cursor:"pointer",
-              fontFamily:"Lexend,Georgia,sans-serif",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div>
-              <div style={{fontSize:15,fontWeight:"700",marginBottom:4}}>{nonStriker?nonStriker.name:"Non-striker"}</div>
-              <div style={{color:SP.secondary,fontSize:11}}>🏃 Non-striker's end</div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <button onClick={()=>pickPlayer(match.striker)}
+                style={{padding:"16px",borderRadius:12,border:"1px solid rgba(156,255,147,.25)",
+                  background:"rgba(156,255,147,.06)",color:"#fff",cursor:"pointer",
+                  fontFamily:"Lexend,Georgia,sans-serif",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontSize:15,fontWeight:"700",marginBottom:3}}>{strikerP?strikerP.name:"Striker"}</div>
+                  <div style={{color:SP.primary,fontSize:11}}>🏏 Was on strike</div>
+                </div>
+                <span style={{color:SP.primary,fontSize:20}}>→</span>
+              </button>
+              <button onClick={()=>pickPlayer(1-match.striker)}
+                style={{padding:"16px",borderRadius:12,border:"1px solid rgba(102,157,255,.25)",
+                  background:"rgba(102,157,255,.06)",color:"#fff",cursor:"pointer",
+                  fontFamily:"Lexend,Georgia,sans-serif",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontSize:15,fontWeight:"700",marginBottom:3}}>{nonStrikerP?nonStrikerP.name:"Non-striker"}</div>
+                  <div style={{color:SP.secondary,fontSize:11}}>🏃 Was non-striker</div>
+                </div>
+                <span style={{color:SP.secondary,fontSize:20}}>→</span>
+              </button>
             </div>
-            <span style={{color:SP.secondary,fontSize:20}}>→</span>
-          </button>
-        </div>
+          </>
+        ) : (
+          <>
+            <div style={{textAlign:"center",marginBottom:20}}>
+              <div style={{fontSize:24,marginBottom:6}}>🏏</div>
+              <div style={{color:SP.primary,fontSize:14,fontWeight:"bold",letterSpacing:1,marginBottom:4}}>WHICH END?</div>
+              <div style={{color:SP.textDim,fontSize:12}}>
+                <b style={{color:"#fff"}}>{pickedPlayer?pickedPlayer.name:"Batter"}</b> was run out at which end?
+              </div>
+              <div style={{color:SP.textDim,fontSize:11,marginTop:4}}>
+                (Where were they when the bails came off?)
+              </div>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <button onClick={()=>pickEnd("strikers")}
+                style={{padding:"16px",borderRadius:12,border:"1px solid rgba(156,255,147,.25)",
+                  background:"rgba(156,255,147,.06)",color:"#fff",cursor:"pointer",
+                  fontFamily:"Lexend,Georgia,sans-serif",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontSize:15,fontWeight:"700",marginBottom:3}}>Striker's End</div>
+                  <div style={{color:SP.primary,fontSize:11}}>Had NOT completed the run / was sent back</div>
+                </div>
+                <span style={{color:SP.primary,fontSize:20}}>→</span>
+              </button>
+              <button onClick={()=>pickEnd("nonStrikers")}
+                style={{padding:"16px",borderRadius:12,border:"1px solid rgba(102,157,255,.25)",
+                  background:"rgba(102,157,255,.06)",color:"#fff",cursor:"pointer",
+                  fontFamily:"Lexend,Georgia,sans-serif",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontSize:15,fontWeight:"700",marginBottom:3}}>Non-Striker's End</div>
+                  <div style={{color:SP.secondary,fontSize:11}}>Had completed the run / crossed over</div>
+                </div>
+                <span style={{color:SP.secondary,fontSize:20}}>→</span>
+              </button>
+            </div>
+            <button onClick={()=>setStep("player")}
+              style={{marginTop:12,width:"100%",padding:"10px 0",background:"transparent",
+                border:"1px solid rgba(73,72,71,.25)",borderRadius:10,color:SP.textDim,
+                fontSize:13,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
+              ← Back
+            </button>
+          </>
+        )}
         <button onClick={onCancel}
-          style={{marginTop:14,width:"100%",padding:"11px 0",background:"transparent",
+          style={{marginTop:10,width:"100%",padding:"10px 0",background:"transparent",
             border:"1px solid rgba(73,72,71,.25)",borderRadius:10,color:SP.textDim,
             fontSize:13,cursor:"pointer",fontFamily:"Lexend,Georgia,sans-serif"}}>
           Cancel
@@ -3167,14 +3239,14 @@ function App({ currentUser }) {
     });
   }
 
-  function addWicket(how, fielderName, runOutSlot) {
+  function addWicket(how, fielderName, runOutInfo) {
     // Step 1: Caught/RunOut — show fielder picker first
     if ((how==="Caught" || how==="Run Out") && fielderName===undefined) {
       setPendingWicket({how, stage:"fielder"});
       return;
     }
     // Step 2: RunOut — after fielder picked, show which batter / which end
-    if (how==="Run Out" && runOutSlot===undefined) {
+    if (how==="Run Out" && runOutInfo===undefined) {
       setPendingWicket({how, fielderName, stage:"runOutBatter"});
       return;
     }
@@ -3185,7 +3257,8 @@ function App({ currentUser }) {
       var bt=m.batting, bi=m.currentBowler;
       var bT=bt===0?m.teamA:m.teamB, wT=bt===0?m.teamB:m.teamA;
       // For Run Out, the dismissed batter may be the non-striker (runOutSlot=1)
-      var dismissedSlot = (how==="Run Out" && runOutSlot!==undefined) ? runOutSlot : m.striker;
+      var runOutSlot = runOutInfo && runOutInfo.dismissedSlot !== undefined ? runOutInfo.dismissedSlot : null;
+      var dismissedSlot = (how==="Run Out" && runOutSlot!==null) ? runOutSlot : m.striker;
       var b1 = m.currentBatsmen[dismissedSlot];
       bT.players[b1].out=false; bT.players[b1].retired=true; bT.players[b1].howOut=how;
       if (how===RET_HURT) {
@@ -3241,15 +3314,17 @@ function App({ currentUser }) {
       var mx = maxWkts(m, bt);
       var inningsNowOver = m.wickets[bt] >= mx;
       // Last man: penultimate wicket — surviving batter bats alone
-      // For Run Out: if non-striker was dismissed, striker keeps strike
-      // If striker was dismissed, non-striker crossed → non-striker now at striker's end
-      if (how==="Run Out" && runOutSlot!==undefined) {
-        if (runOutSlot === 1) {
-          // Non-striker out → striker keeps strike, new batter at non-striker end
-          // m.striker stays as-is
+      // For Run Out: use survivingEndsAtStrikersEnd to set who faces next ball
+      if (how==="Run Out" && runOutInfo) {
+        var sEAS = runOutInfo.survivingEndsAtStrikersEnd;
+        // Find which slot the surviving batter is in
+        var survivingSlot = 1 - dismissedSlot;
+        // If surviving batter is at striker end → they face next ball → m.striker = survivingSlot
+        // If surviving batter is at non-striker end → new batter faces next ball → m.striker = dismissedSlot
+        if (sEAS) {
+          m.striker = survivingSlot; // surviving batter at striker's end, they face next
         } else {
-          // Striker out → non-striker crossed → they become new striker
-          m.striker = 1 - m.striker;
+          m.striker = dismissedSlot; // new batter will fill dismissed slot, and faces next
         }
       }
       var isLastManIn = !inningsNowOver && noMoreBatters && !hasRetired;
@@ -4611,15 +4686,16 @@ function App({ currentUser }) {
       {pendingWicket && pendingWicket.stage==="runOutBatter" && (
         <RunOutPickerModal
           match={match}
-          onSelect={slot=>{
+          onSelect={runOutInfo=>{
             var fw = pendingWicket.fielderName;
             setPendingWicket(null);
-            addWicket("Run Out", fw, slot);
+            addWicket("Run Out", fw, runOutInfo);
           }}
           onCancel={()=>{
             var fw = pendingWicket.fielderName;
             setPendingWicket(null);
-            addWicket("Run Out", fw, match.striker); // default to striker
+            // Default: striker out at striker's end (no crossing)
+            addWicket("Run Out", fw, {dismissedSlot: match.striker, survivingEndsAtStrikersEnd: false});
           }}
         />
       )}
