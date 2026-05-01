@@ -3313,18 +3313,22 @@ function App({ currentUser }) {
       var hasRetired = bT.players.some(p=>p.retired);
       var mx = maxWkts(m, bt);
       var inningsNowOver = m.wickets[bt] >= mx;
-      // Last man: penultimate wicket — surviving batter bats alone
-      // For Run Out: use survivingEndsAtStrikersEnd to set who faces next ball
+      // For Run Out: determine who faces next ball based on where each batter ended up
       if (how==="Run Out" && runOutInfo) {
         var sEAS = runOutInfo.survivingEndsAtStrikersEnd;
-        // Find which slot the surviving batter is in
         var survivingSlot = 1 - dismissedSlot;
-        // If surviving batter is at striker end → they face next ball → m.striker = survivingSlot
-        // If surviving batter is at non-striker end → new batter faces next ball → m.striker = dismissedSlot
+        var overJustEnded = (m.balls[bt] === 0 && m.overs[bt] > 0); // balls reset to 0 when over completes
+        if (overJustEnded) {
+          // End of over: strike rotates automatically, so whoever was at non-striker end
+          // before the over ended now faces. Flip sEAS to account for the rotation.
+          sEAS = !sEAS;
+        }
         if (sEAS) {
-          m.striker = survivingSlot; // surviving batter at striker's end, they face next
+          // Surviving batter ends at striker's end (after any over rotation) → they face next ball
+          m.striker = survivingSlot;
         } else {
-          m.striker = dismissedSlot; // new batter will fill dismissed slot, and faces next
+          // Surviving batter ends at non-striker's end → new batter fills dismissed slot and faces next
+          m.striker = dismissedSlot;
         }
       }
       var isLastManIn = !inningsNowOver && noMoreBatters && !hasRetired;
@@ -3372,8 +3376,14 @@ function App({ currentUser }) {
   function selectNextBatter(playerIdx) {
     setMatch(prev => {
       var m = JSON.parse(JSON.stringify(prev));
-      m.currentBatsmen[m.striker] = playerIdx;
+      // Fill the dismissed batter's slot (nextBatterSlot), not necessarily m.striker.
+      // m.striker already points to whoever faces next ball (set correctly by addWicket).
+      var slot = (m.nextBatterSlot !== undefined && m.nextBatterSlot !== null)
+        ? m.nextBatterSlot
+        : m.striker;
+      m.currentBatsmen[slot] = playerIdx;
       m.needsNextBatter = false;
+      m.nextBatterSlot = null;
       return m;
     });
     setNextBatterPick(false);
